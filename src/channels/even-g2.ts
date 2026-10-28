@@ -88,6 +88,8 @@ export type VoiceAction = 'answered_ja' | 'answered_nein' | 'needs_confirm' | 'm
 
 export interface EvenG2Deps {
     token: string
+    /** Tailscale logins accepted without token from loopback (tailscale serve); empty = token only. */
+    tailscaleUsers?: readonly string[]
     /**
      * Runs the normal message pipeline (channel even-g2, owner principal) and
      * returns the final reply. `onDelta` gets the answer text as it grows
@@ -155,6 +157,34 @@ export function tokenMatches(provided: string, expected: string): boolean {
 function bearer(req: IncomingMessage): string {
     const header = String(req.headers.authorization || '').trim()
     return /^Bearer\s+/i.test(header) ? header.replace(/^Bearer\s+/i, '') : ''
+}
+
+/** NOVA_EVEN_G2_TAILSCALE_USERS: Tailscale logins (comma/semicolon/space separated), lower case. */
+export function parseTailscaleUsers(raw: unknown): string[] {
+    return String(raw ?? '').split(/[\s,;]+/).map(item => item.trim().toLowerCase()).filter(Boolean)
+}
+
+const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1'])
+
+/**
+ * 2.89.13 (Alfred 28.10.): the HUD connects in the tailnet without a token, like Quiet Hub.
+ * `tailscale serve` (checked in 1.104.4, ipn/ipnlocal/serve.go addTailscaleIdentityHeaders) deletes any
+ * client-sent Tailscale-User-* header and sets the login of the calling tailnet user; it sets none for
+ * Funnel, tagged devices or local callers - those keep the token. The listener is loopback-only, so the
+ * header is trusted only from loopback. Known limit: any local process on this machine can send the header
+ * itself; acceptable on the owner's own Main, which is why the list is opt-in (unset = token only).
+ */
+export function evenG2AuthKind(req: IncomingMessage, deps: Pick<EvenG2Deps, 'token' | 'tailscaleUsers'>): 'bearer' | 'tailscale' | null {
+    if (tokenMatches(bearer(req), deps.token)) return 'bearer'
+    const allowed = deps.tailscaleUsers || []
+    if (!allowed.length || !LOOPBACK.has(String(req.socket?.remoteAddress || ''))) return null
+    const login = String(req.headers['tailscale-user-login'] || '').trim().toLowerCase()
+    return login && allowed.includes(login) ? 'tailscale' : null
+}
+
+/** What a rejected request carried — the kind only, never a value. */
+function presentedKind(req: IncomingMessage): 'bearer' | 'tailscale' | 'none' {
+    return req.headers.authorization ? 'bearer' : req.headers['tailscale-user-login'] ? 'tailscale' : 'none'
 }
 
 const EMOJI = /(?:\p{Extended_Pictographic}|\p{Regional_Indicator})(?:\uFE0F|\u200D|\p{Emoji_Modifier})*/gu
@@ -736,8 +766,8 @@ export function createEvenG2Handler(deps: EvenG2Deps): (req: IncomingMessage, re
         void (async () => {
             if (method === 'GET' && path === '/health') { json(res, 200, { ok: true }); return }
             if (isHud && method === 'OPTIONS') { res.writeHead(204, headers); res.end(); return }
-            if (!tokenMatches(bearer(req), deps.token)) {
-                console.warn(`[EvenG2] 401 ${method} ${path}`)
+            if (!evenG2AuthKind(req, deps)) {
+                console.warn(`[EvenG2] 401 ${method} ${path} (${presentedKind(req)})`)
                 req.resume()
                 json(res, 401, { error: 'unauthorized' }, headers)
                 return
@@ -782,7 +812,8 @@ export async function startEvenG2Channel(config: any, env: NodeJS.ProcessEnv, ma
         console.log(`[EvenG2] nicht gestartet: ${resolution.reason}`)
         return null
     }
-    const server = await startEvenG2Server(resolution.settings, makeDeps(resolution.token))
-    console.log(`[EvenG2] ✅ aktiv auf http://${EVEN_G2_HOST}:${server.port} (nur Loopback; HTTPS über tailscale serve)`)
+    const tailscaleUsers = parseTailscaleUsers(env.NOVA_EVEN_G2_TAILSCALE_USERS)
+    const server = await startEvenG2Server(resolution.settings, { ...makeDeps(resolution.token), tailscaleUsers })
+    console.log(`[EvenG2] ✅ aktiv auf http://${EVEN_G2_HOST}:${server.port} (nur Loopback; HTTPS über tailscale serve${tailscaleUsers.length ? `; Tailnet-Anmeldung für ${tailscaleUsers.length} Login(s)` : ''})`)
     return server
 }

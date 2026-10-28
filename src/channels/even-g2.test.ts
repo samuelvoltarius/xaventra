@@ -5,7 +5,7 @@ import type { AddressInfo } from 'node:net'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
     EVEN_G2_DEFAULT_PORT, answerCardFromG2, buildHudSnapshot, formatForG2, resolveEvenG2Settings,
-    startEvenG2Channel, startEvenG2Server, tokenMatches, type EvenG2Deps, type EvenG2Server,
+    evenG2AuthKind, parseTailscaleUsers, startEvenG2Channel, startEvenG2Server, tokenMatches, type EvenG2Deps, type EvenG2Server,
 } from './even-g2.js'
 import { createApprovalCard, listApprovalCards, registerCardExecutor, unregisterCardExecutor } from '../core/approval-cards.js'
 
@@ -323,5 +323,47 @@ describe('Even G2 HUD feed', () => {
 
     it('unknown card: 404', async () => {
         expect((await answerCardFromG2('kdeadbeef0000', 'ja', { ownerIds: [OWNER], dataDir, ledger: null })).status).toBe(404)
+    })
+})
+
+// 2.89.13 (Alfred 28.10.): the HUD connects in the tailnet without a token, like Quiet Hub. tailscale serve
+// (1.104.4, ipn/ipnlocal/serve.go addTailscaleIdentityHeaders) deletes client-sent Tailscale-User-* headers and
+// sets the login of the calling tailnet user; the listener is loopback-only and :8790 is "tailnet only".
+describe('Even G2: tailnet login instead of token', () => {
+    const LOGIN = 'owner@example.com'
+    const hud = (url: string, headers: Record<string, string> = {}) => fetch(`${url}/hud`, { headers })
+
+    it('loopback + allowed Tailscale login: 200 without token', async () => {
+        const { url } = await start(deps({ tailscaleUsers: [LOGIN] }))
+        expect((await hud(url, { 'Tailscale-User-Login': LOGIN })).status).toBe(200)
+        expect((await hud(url, { 'Tailscale-User-Login': 'OWNER@Example.com' })).status).toBe(200)
+    })
+
+    it('a foreign login: 401', async () => {
+        const { url } = await start(deps({ tailscaleUsers: [LOGIN] }))
+        expect((await hud(url, { 'Tailscale-User-Login': 'other@example.com' })).status).toBe(401)
+        expect((await hud(url)).status).toBe(401)
+    })
+
+    it('not loopback: the header counts for nothing', () => {
+        const req: any = { headers: { 'tailscale-user-login': LOGIN }, socket: { remoteAddress: '100.64.0.5' } }
+        expect(evenG2AuthKind(req, { token: TOKEN, tailscaleUsers: [LOGIN] })).toBeNull()
+        req.socket.remoteAddress = '::ffff:127.0.0.1'
+        expect(evenG2AuthKind(req, { token: TOKEN, tailscaleUsers: [LOGIN] })).toBe('tailscale')
+    })
+
+    it('the channel start reads NOVA_EVEN_G2_TAILSCALE_USERS', async () => {
+        const server = await startEvenG2Channel({ channels: { evenG2: { enabled: true, port: 0 } } }, { NOVA_EVEN_G2_TOKEN: TOKEN, NOVA_EVEN_G2_TAILSCALE_USERS: LOGIN }, () => deps())
+        servers.push(server!)
+        const url = `http://127.0.0.1:${(server!.server.address() as AddressInfo).port}`
+        expect((await hud(url, { 'Tailscale-User-Login': LOGIN })).status).toBe(200)
+    })
+
+    it('without the list only the token works', async () => {
+        const { url } = await start(deps())
+        expect((await hud(url, { 'Tailscale-User-Login': LOGIN })).status).toBe(401)
+        expect((await hud(url, { Authorization: `Bearer ${TOKEN}` })).status).toBe(200)
+        expect(parseTailscaleUsers('')).toEqual([])
+        expect(parseTailscaleUsers(' a@example.com, B@example.com ;')).toEqual(['a@example.com', 'b@example.com'])
     })
 })
