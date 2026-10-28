@@ -147,6 +147,13 @@ const BEHELF_TOOLS: ReadonlySet<string> = new Set([
 // runs ended with "no matching tool" after the 3rd search. They stay under the general tool budget only.
 /** Makeshift calls tolerated per run (admitted by the model, not offered by the router); the next one closes the run. */
 const MAX_BEHELF_CALLS = 3
+/** 2.89.12 (Telegram 28.10.): tools that describe Xaventra herself. Live every multi-step task circled in them
+ * (nova_capabilities up to 6×, environment_inventory, mesh_capabilities) with changing arguments - the loop
+ * detector only sees identical ones - until the budget was gone and no answer came. */
+const SELF_INFO_TOOLS: ReadonlySet<string> = new Set(['nova_capabilities', 'nova_introspect', 'environment_inventory', 'mesh_capabilities'])
+/** Self-description calls per run; the next one gets a note to act or to say what is missing, the one after ends the run. */
+const MAX_SELF_INFO_CALLS = 3
+export const SELF_INFO_NOTE = 'Selbstauskunft liegt schon vor — keine weitere Abfrage. Rufe jetzt das Werkzeug auf, das die Aufgabe erledigt, oder sag dem Nutzer in einem Satz, was nicht geht und warum (mit dem Beleg aus den bisherigen Ergebnissen).'
 
 export interface AgentResponse {
     /** 2.89.3: the run ended at a limit or kept to makeshift tools - a part of the request has no matching tool. */
@@ -1100,6 +1107,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
         // 2.89.3 Werkzeuglücke: the model reaches for makeshift tools (shell, web search, scripts) that the router did not
         // offer for this request. Repeated, that is a missing tool, not a reason to keep trying until the budget is gone.
         let behelfCalls = 0
+        let selfInfoCalls = 0
         let capabilityGap = false
         let toolEvidenceSequence = 0
         const nextToolEvidenceId = (call: { id?: string; name: string }) =>
@@ -1235,6 +1243,17 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                             console.warn(`[Nova Agent] ${realGap ? 'Capability gap' : 'Makeshift loop'} after ${behelfCalls - 1} makeshift calls (${call.name})`)
                             throw gap
                         }
+                    }
+                    if (SELF_INFO_TOOLS.has(call.name) && ++selfInfoCalls > MAX_SELF_INFO_CALLS) {
+                        if (selfInfoCalls > MAX_SELF_INFO_CALLS + 1) {
+                            const stop = new Error('Run stopped: the run kept asking about itself instead of acting')
+                            runLimitError ??= stop
+                            console.warn(`[Nova Agent] Self-description loop after ${selfInfoCalls - 1} calls (${call.name})`)
+                            throw stop
+                        }
+                        console.log(`[Nova Agent] Self-description budget reached, ${call.name} not run`)
+                        toolResults.push(`⚠️ ${call.name}: ${SELF_INFO_NOTE}`)
+                        continue
                     }
                     console.log(`[Nova Agent] Tool call: ${call.name}`)
                     // 2.89: a sign of life at EVERY tool start (side channel), not only in batches.

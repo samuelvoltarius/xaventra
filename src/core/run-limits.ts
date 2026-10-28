@@ -87,6 +87,9 @@ export function limitStopNotice(error: unknown, limits: RunLimits = runLimits())
     if (/Capability gap/i.test(text)) {
         return 'Für einen Teil dieser Aufgabe habe ich kein passendes Werkzeug — ich habe ihn nicht weiter mit Behelfen versucht.'
     }
+    if (/kept asking about itself/i.test(text)) {
+        return 'Ich habe mehrmals nur nachgesehen, was ich kann, statt die Aufgabe zu erledigen, und habe aufgehört — sie ist noch nicht fertig.'
+    }
     if (/kept repeating makeshift/i.test(text)) {
         return 'Ich bin in einer Wiederholung von Behelfswegen gelandet und habe aufgehört — die Aufgabe ist noch nicht fertig.'
     }
