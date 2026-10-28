@@ -38,9 +38,22 @@ function captureLine(row: any): string {
 
 /** Preserve the verified inventory half of a mixed request, never catalog-only
  * output or the model's unsupported claim that captures were delivered. */
-export function nodeScreenshotResponse(executions: ResponseToolExecution[]): string {
+export function nodeScreenshotResponse(executions: ResponseToolExecution[], options: { request?: string } = {}): string {
     // 2.89.12 (Telegram 28.10.): the node inventory the model looked up (mesh_nodes/mesh_status/mesh_services)
-    // is not the answer — it was delivered as a raw dump in front of the receipts. Only the receipts are.
+    // was delivered as a raw dump in front of the receipts of "Nimm einen deiner Knoten mit Desktop …".
+    // It belongs to the answer only when the request asks about the nodes ("was können deine nodes?").
+    const inventory = asksAboutNodes(options.request) ? executions.filter(item => item.success === true
+        && ['mesh_nodes', 'mesh_status', 'mesh_services'].includes(item.toolName || item.name || '')) : []
+    const details = inventory.length ? verifiedToolEvidenceResponse(inventory) : ''
+    const body = nodeCaptureReceipts(executions)
+    return details ? `${details}\n\n${body}` : body
+}
+
+const NODE_QUESTION = /\b(?:was|welche[nrs]?|wie\s*viele)\b.{0,40}\b(?:nodes?|knoten)\b|\b(?:nodes?|knoten)\b.{0,30}\b(?:können|kann|haben|hast|gibt|laufen|sind)\b/i
+/** The request itself asks what/which nodes there are. Without a request text: no inventory. */
+export const asksAboutNodes = (request?: string): boolean => NODE_QUESTION.test(String(request || ''))
+
+function nodeCaptureReceipts(executions: ResponseToolExecution[]): string {
     const capture = [...executions].reverse().find(item => (item.toolName || item.name) === 'mesh_screenshot')
     let result = capture?.result
     if (typeof result === 'string') {
@@ -220,8 +233,8 @@ const SCREENSHOT_HALF_TOOLS = new Set(['mesh_nodes', 'mesh_status', 'mesh_servic
  * 2.89.3: a node-screenshot request with a second task. The screenshot half is answered from the receipts;
  * the second half from its own verified tool result - or with an honest note that it was not done. Never silent.
  */
-export function compoundNodeScreenshotResponse(executions: ResponseToolExecution[], remainder: string, modelText: string): string {
-    const screenshotPart = nodeScreenshotResponse(executions)
+export function compoundNodeScreenshotResponse(executions: ResponseToolExecution[], remainder: string, modelText: string, request?: string): string {
+    const screenshotPart = nodeScreenshotResponse(executions, { request })
     // 2.89.12: self-description (kg_search, nova_capabilities …) is no result of the second task either.
     const restDone = executions.filter(item => item.success === true && !SCREENSHOT_HALF_TOOLS.has(item.toolName || item.name || '')
         && !META_TOOL_NAMES.has(item.toolName || item.name || ''))

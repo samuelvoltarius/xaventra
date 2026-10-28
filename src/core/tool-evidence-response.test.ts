@@ -19,10 +19,15 @@ describe('screenshot failure evidence', () => {
                 { nodeId: 'xaventra-k8s-worker-01', captured: false, delivered: false, error: 'headless' },
                 { nodeId: 'xaventra-lab', captured: false, delivered: false, error: 'capture bridge timeout' },
             ] } },
-        ])
+        ], { request: 'Computer-Use-Test: Nimm einen deiner Knoten mit Desktop, öffne dort im Browser greenchili.at und sag mir, was du siehst' })
         expect(text).toContain('xaventra-k8s-worker-01')
         expect(text).toContain('xaventra-lab')
         expect(text).not.toMatch(/Transport: direct|KI-Laufzeiten|llama\.cpp|12 facts/)
+    })
+    it('keeps the node inventory when the request asks about the nodes', () => {
+        const text = nodeScreenshotResponse([{ toolName: 'mesh_nodes', success: true, result: 'fixture-node: online' }],
+            { request: 'was können deine nodes? send mir einen screenshot von jeden' })
+        expect(text).toContain('fixture-node: online')
     })
     it('a self-description result is not the second half of a screenshot task', () => {
         const text = compoundNodeScreenshotResponse([

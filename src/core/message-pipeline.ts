@@ -279,7 +279,7 @@ async function nodeScreenshotAnswer(content: string, executions: any[], modelTex
     const { nodeScreenshotResponse, compoundNodeScreenshotResponse } = await import('./tool-evidence-response.js')
     const { compoundRemainder } = await import('./request-capabilities.js')
     const rest = compoundRemainder(content)
-    return rest ? compoundNodeScreenshotResponse(executions, rest, modelText) : nodeScreenshotResponse(executions)
+    return rest ? compoundNodeScreenshotResponse(executions, rest, modelText, content) : nodeScreenshotResponse(executions, { request: content })
 }
 
 /**
