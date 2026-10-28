@@ -409,14 +409,34 @@ export function getSoftwareScoutSettings(): SoftwareScoutSettings { return setti
 export const SCOUT_INTERVAL_MS = 7 * 24 * 60 * 60_000
 /** A profile change triggers a run, but not more often than this (flapping profiles). */
 export const PROFILE_CHANGE_MIN_GAP_MS = 30 * 60_000
-/** The same proposal again at most once per week; after "Nein" not for 30 days. */
+/** The same proposal again at most once per week; after "Nein" not until the reason changes (B6). */
 export const PROPOSAL_DEDUPE_MS = 7 * 24 * 60 * 60_000
 export const REJECT_MUTE_MS = 30 * 24 * 60 * 60_000
 
+/**
+ * B6 (28.10.2026): a Nein mutes the candidate's capability (card AND quiet idea) until the
+ * reason changes — a need key that was not there at the Nein. No expiry. Old numeric entries
+ * (until-time) are read as such.
+ */
+interface ScoutMute { capability: string; candidateId: string; since: number; anlass: string[] }
+
 interface ScoutState {
-    version: 1; lastRunAt?: number; fingerprint?: string; proposed: Record<string, number>; muted: Record<string, number>
+    version: 1; lastRunAt?: number; fingerprint?: string; proposed: Record<string, number>; muted: Record<string, number | ScoutMute>
+    /** B6: the need keys a card was proposed with (copied into the mute at the Nein). */
+    anlass?: Record<string, string[]>
     /** 2.86 Punkt 2: capability → time of the run that found it missing in the whole mesh (read by `classifyNeed`). */
     missing?: Record<string, number>
+}
+/** B6: a still running old 30-day Nein (number) becomes a mute until the reason changes; expired ones are gone. */
+function migrateMutes(raw: Record<string, unknown>, now = Date.now()): Record<string, number | ScoutMute> {
+    const out: Record<string, number | ScoutMute> = {}
+    for (const [key, entry] of Object.entries(raw)) {
+        if (entry && typeof entry === 'object' && !Array.isArray(entry)) { out[key] = entry as ScoutMute; continue }
+        const until = Number(entry)
+        const [, capability, candidateId] = key.split(':')
+        if (until > now && capability && candidateId && capability !== 'idee') out[key] = { capability, candidateId, since: until - REJECT_MUTE_MS, anlass: [] }
+    }
+    return out
 }
 const statePath = (path?: string) => path || getNovaDataDir('software-scout', 'state.json')
 function loadState(path?: string): ScoutState {
@@ -425,23 +445,42 @@ function loadState(path?: string): ScoutState {
         if (!existsSync(file)) return { version: 1, proposed: {}, muted: {} }
         const raw = JSON.parse(readFileSync(file, 'utf8'))
         return { version: 1, lastRunAt: Number(raw.lastRunAt) || undefined, fingerprint: typeof raw.fingerprint === 'string' ? raw.fingerprint : undefined,
-            proposed: raw.proposed && typeof raw.proposed === 'object' ? raw.proposed : {}, muted: raw.muted && typeof raw.muted === 'object' ? raw.muted : {},
-            ...(raw.missing && typeof raw.missing === 'object' && !Array.isArray(raw.missing) ? { missing: raw.missing } : {}) }
+            proposed: raw.proposed && typeof raw.proposed === 'object' ? raw.proposed : {}, muted: raw.muted && typeof raw.muted === 'object' ? migrateMutes(raw.muted) : {},
+            ...(raw.missing && typeof raw.missing === 'object' && !Array.isArray(raw.missing) ? { missing: raw.missing } : {}),
+            ...(raw.anlass && typeof raw.anlass === 'object' && !Array.isArray(raw.anlass) ? { anlass: raw.anlass } : {}) }
     } catch { return { version: 1, proposed: {}, muted: {} } }
 }
 function saveState(state: ScoutState, path?: string, now = Date.now()): void {
     const prune = (map: Record<string, number>, keep: number) => Object.fromEntries(Object.entries(map).filter(([, at]) => Number(at) > now - keep).slice(-500))
     const file = statePath(path)
     mkdirSync(dirname(file), { recursive: true })
-    atomicWriteJsonSync(file, { ...state, proposed: prune(state.proposed, PROPOSAL_DEDUPE_MS), muted: Object.fromEntries(Object.entries(state.muted).filter(([, until]) => Number(until) > now).slice(-500)) })
+    const anlass = state.anlass ? Object.fromEntries(Object.entries(state.anlass).filter(([key]) => key in state.proposed || key in state.muted).slice(-500)) : undefined
+    atomicWriteJsonSync(file, { ...state, proposed: prune(state.proposed, PROPOSAL_DEDUPE_MS),
+        muted: Object.fromEntries(Object.entries(state.muted).filter(([, entry]) => typeof entry === 'object' ? Boolean(entry) : Number(entry) > now).slice(-500)),
+        ...(anlass ? { anlass } : {}) })
 }
 
-/** Called by the Gedanken-Hub after a button press: "Nein" mutes the same proposal for 30 days. */
+/** Need evidence without the counts („3× Sprachnachricht …“ → „Sprachnachricht …“): the reason, not its frequency. */
+const anlassKeys = (evidence: readonly string[] = []) => [...new Set(evidence.map(item => String(item).replace(/^Bedarf:\s*/, '').replace(/^\d+×\s*/, '').trim()).filter(Boolean))].sort()
+
+/** B6: is this proposal (card or idea of the capability) muted by a Nein whose reason still holds? */
+function isMuted(state: ScoutState, thought: Pick<SoftwareScoutThought, 'dedupeKey' | 'capability' | 'kind'>, need: readonly string[], now: number): boolean {
+    const own = state.muted[thought.dedupeKey]
+    if (typeof own === 'number' && own > now) return true
+    const current = anlassKeys(need)
+    return Object.values(state.muted).some(entry => typeof entry === 'object' && entry && entry.capability === thought.capability
+        && !current.some(key => !entry.anlass.includes(key)))
+}
+
+/** Called by the Gedanken-Hub after a button press: "Nein" mutes the capability (card and idea) until the reason changes. */
 export function recordSoftwareScoutAnswer(dedupeKey: string, answer: 'ja' | 'nein', options: { statePath?: string; now?: number } = {}): void {
     if (!/^software-scout:[a-z]+:[a-z0-9.-]{2,61}:[A-Za-z0-9._-]{1,80}$/.test(String(dedupeKey))) return
     const now = options.now ?? Date.now()
     const state = loadState(options.statePath)
-    if (answer === 'nein') state.muted[dedupeKey] = now + REJECT_MUTE_MS
+    if (answer === 'nein') {
+        const [, capability, candidateId] = String(dedupeKey).split(':')
+        state.muted[dedupeKey] = { capability, candidateId, since: now, anlass: state.anlass?.[dedupeKey] ?? [] }
+    }
     try { saveState(state, options.statePath, now) } catch { /* next run */ }
 }
 
@@ -491,11 +530,12 @@ export async function runSoftwareScoutTick(deps: SoftwareScoutTickDeps): Promise
     const emitted: SoftwareScoutThought[] = []
     const queue: Array<{ thought: SoftwareScoutThought; careModel?: string }> = []
     let cards = 0
-    const due = (key: string) => (state.muted[key] ?? 0) <= now && now - (state.proposed[key] ?? 0) >= PROPOSAL_DEDUPE_MS
+    const needOf = (capability: SoftwareCapability) => demand.get(capability)?.evidence ?? []
+    const due = (thought: SoftwareScoutThought) => !isMuted(state, thought, needOf(thought.capability), now) && now - (state.proposed[thought.dedupeKey] ?? 0) >= PROPOSAL_DEDUPE_MS
     for (let thought of gapThoughts(analysis, Number.POSITIVE_INFINITY, { demand })) {
         let careModel: string | undefined
         if (thought.permission === 'fragen') {
-            if (cards >= MAX_THOUGHTS_PER_RUN || !due(thought.dedupeKey)) continue
+            if (cards >= MAX_THOUGHTS_PER_RUN || !due(thought)) continue
             const candidate = catalog.entries.find(entry => entry.id === thought.candidateId)
             if (candidate?.kind === 'model') {
                 // Aktualität: catalog date + governed web search before any model becomes a question.
@@ -513,7 +553,7 @@ export async function runSoftwareScoutTick(deps: SoftwareScoutTickDeps): Promise
             }
         }
         if (thought.permission === 'fragen') cards++
-        else if (!due(thought.dedupeKey)) continue
+        else if (!due(thought)) continue
         queue.push({ thought, careModel })
     }
     await flushCare()
@@ -521,6 +561,7 @@ export async function runSoftwareScoutTick(deps: SoftwareScoutTickDeps): Promise
         const thought = careModel ? { ...queued, text: `${queued.text} Stand: ${catalogCareNote(careModel, { path: deps.catalogCare?.path })}.` } : queued
         await sink.emit(thought)
         state.proposed[thought.dedupeKey] = now
+        if (thought.permission === 'fragen') (state.anlass ||= {})[thought.dedupeKey] = anlassKeys(needOf(thought.capability))
         emitted.push(thought)
     }
     state.lastRunAt = now

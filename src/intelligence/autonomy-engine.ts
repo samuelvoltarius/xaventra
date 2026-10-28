@@ -58,6 +58,37 @@ export function isSafeSelfGoal(goal: string, reason = ''): { safe: boolean; reas
     return { safe: true }
 }
 
+/** B6: package tools per family — a self-goal must not use another system's tools (rpm on Ubuntu). */
+const PACKAGE_TOOLS: Record<string, RegExp> = {
+    apt: /\b(?:apt(?:-get|-cache)?|dpkg(?:-query)?)\b/i,
+    rpm: /\b(?:rpm|dnf|yum|zypper)\b/i,
+    pacman: /\bpacman\b/i,
+    apk: /\bapk (?:add|info|list)\b/i,
+    brew: /\bbrew\b/i,
+    windows: /\b(?:choco|winget)\b/i,
+}
+
+/** Package family of this node from the platform and /etc/os-release (ID, ID_LIKE); null = unknown. */
+export function nodePackageFamily(platform: string = process.platform, osRelease?: string): string | null {
+    if (platform === 'darwin') return 'brew'
+    if (platform === 'win32') return 'windows'
+    let text = osRelease
+    if (text === undefined) { try { text = readFileSync('/etc/os-release', 'utf8') } catch { text = '' } }
+    const ids = [...String(text).matchAll(/^(?:ID|ID_LIKE)=("?)([^"\n]*)\1$/gm)].flatMap(match => match[2].toLowerCase().split(/\s+/))
+    if (ids.some(id => ['debian', 'ubuntu'].includes(id))) return 'apt'
+    if (ids.some(id => ['fedora', 'rhel', 'centos', 'suse', 'opensuse', 'sles'].includes(id))) return 'rpm'
+    if (ids.includes('arch')) return 'pacman'
+    if (ids.includes('alpine')) return 'apk'
+    return null
+}
+
+/** B6: a goal that names another family's package tool does not fit this node. */
+export function fitsNodePackages(text: string, family: string | null): { fits: boolean; foreign?: string } {
+    if (!family) return { fits: true }
+    const foreign = Object.entries(PACKAGE_TOOLS).find(([name, pattern]) => name !== family && pattern.test(text))
+    return foreign ? { fits: false, foreign: foreign[0] } : { fits: true }
+}
+
 interface Insight {
     id: string
     type: 'observation' | 'suggestion' | 'warning' | 'learning'
@@ -216,6 +247,7 @@ class SelfGoalEngine {
                 .slice(-5)
                 .map(g => g.goal)
 
+            const packages = nodePackageFamily()
             const response = await this.llm.complete([
                 {
                     role: 'system',
@@ -228,7 +260,7 @@ Regeln:
 - Praktisch und nützlich (System-Checks, Wissensaufbau, Optimierungen)
 - Max 3 neue Ziele pro Runde
 - Format: JSON Array mit {goal, reason}
-- KEINE Ziele, die schon erledigt wurden`
+- KEINE Ziele, die schon erledigt wurden${packages ? `\n- Dieser Knoten: ${process.platform}, Paketverwaltung ${packages}. Nur Befehle dieses Systems nennen, keine anderer Systeme.` : ''}`
                 },
                 {
                     role: 'user',
@@ -251,7 +283,9 @@ Antworte NUR mit einem JSON-Array.`
                 .filter((g: any) => {
                     const decision = isSafeSelfGoal(String(g.goal || ''), String(g.reason || ''))
                     if (!decision.safe) console.log(`[Autonomy] Self-goal rejected: "${String(g.goal || '').slice(0, 80)}" (${decision.reason})`)
-                    return decision.safe && String(g.goal || '').trim().length > 0
+                    const fit = fitsNodePackages(`${g.goal || ''}\n${g.reason || ''}`, packages)
+                    if (decision.safe && !fit.fits) console.log(`[Autonomy] Self-goal rejected: "${String(g.goal || '').slice(0, 80)}" (passt nicht zu diesem Knoten: ${fit.foreign} statt ${packages})`)
+                    return decision.safe && fit.fits && String(g.goal || '').trim().length > 0
                 })
                 .map((g: any) => toSelfGoal(manager.create({
                     userId: SELF_GOAL_OWNER, title: String(g.goal).slice(0, 300), dependencies: [], priority: SELF_GOAL_PRIORITY,
