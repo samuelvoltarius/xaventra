@@ -12,6 +12,17 @@
   helpers on nodes with a screen, maps and routes, music, a maker helper for
   boards and sensors.
 
+## [2.89.11] — 2026-10-28
+
+### Fixed
+
+- **MiniMax answers after a tool result again.** The OpenAI-compatible MiniMax
+  request dropped the link between a tool call and its result (`tool_calls` /
+  `tool_call_id`); MiniMax rejected every second round with HTTP 400
+  ("tool result's tool id() not found"), so searches and Home Assistant
+  questions fell back to the slow local model and timed out. Tool rounds keep
+  their ids now; a result without a known call is sent as plain context.
+
 ## [2.89.10] — 2026-10-28
 
 Reliability only, no new features.

@@ -262,6 +262,7 @@ async complete(
             builtMessages.push({ role: 'system', content: options.systemPrompt })
         }
         let hasVision = false
+        const answeredIds = new Set<string>()
         for (const m of messages) {
             if (m.image?.data) {
                 // OpenAI-style multimodal content: text + image_url (data URL)
@@ -277,7 +278,23 @@ async complete(
                     ],
                 })
             } else {
-                builtMessages.push({ role: m.role, content: m.content })
+                // Prüfstand 2.89.10: a tool round must keep its linkage (assistant tool_calls ↔ tool tool_call_id);
+                // dropping it made MiniMax answer 400 after every tool result.
+                const message: any = m
+                if (m.role === 'assistant' && Array.isArray(message.toolCalls) && message.toolCalls.length) {
+                    const calls = message.toolCalls.filter((call: any) => call?.id && call?.name)
+                    for (const call of calls) answeredIds.add(String(call.id))
+                    builtMessages.push({
+                        role: 'assistant', content: m.content || '',
+                        ...(calls.length ? { tool_calls: calls.map((call: any) => ({ id: String(call.id), type: 'function', function: { name: String(call.name), arguments: JSON.stringify(call.arguments ?? {}) } })) } : {}),
+                    } as any)
+                } else if ((m.role as string) === 'tool') {
+                    // A result without its call (id unknown) goes along as plain context, never as an orphan tool message.
+                    if (message.toolCallId && answeredIds.has(String(message.toolCallId))) builtMessages.push({ role: 'tool', tool_call_id: String(message.toolCallId), content: m.content } as any)
+                    else builtMessages.push({ role: 'user', content: `Werkzeug-Ergebnis:\n${m.content}` })
+                } else {
+                    builtMessages.push({ role: m.role, content: m.content })
+                }
             }
         }
         if (hasVision) {
@@ -377,7 +394,7 @@ async complete(
         }
     }
 
-    private extractToolCalls(data: any): Array<{ name: string; arguments: Record<string, unknown> }> | undefined {
+    private extractToolCalls(data: any): Array<{ id?: string; name: string; arguments: Record<string, unknown> }> | undefined {
         const raw = data.choices?.[0]?.message?.tool_calls
         if (!raw || !Array.isArray(raw)) return undefined
         return raw.map((tc: any) => {
@@ -397,6 +414,7 @@ async complete(
                 args = rawArgs || tc.arguments || {}
             }
             return {
+                ...(tc.id ? { id: String(tc.id) } : {}),
                 name: tc.function?.name || tc.name || '',
                 arguments: args,
             }
