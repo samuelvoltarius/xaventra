@@ -135,8 +135,14 @@ export function entitiesMentioned(profile: OwnerProfile, text: string): ProfileE
 }
 
 /** Deterministic answers from the profile; null = not a profile question. */
+/** 2.89.13 (live 29.10., Quiet-Hub relay): only the question itself - the first line without a trailing
+ * "(Antworte knapp …)" style instruction - is matched against the anchored profile patterns. */
+export function profileQuestionPart(input: string): string {
+    return String(input || '').split(/\r?\n/).map(line => line.trim()).find(Boolean)?.replace(/\s*\([^()]*\)\s*$/, '') || ''
+}
+
 export function answerProfileQuestion(profile: OwnerProfile, input: string): string | null {
-    const text = norm(input)
+    const text = norm(profileQuestionPart(input))
     if (/^(?:wer bin ich(?: eigentlich| denn| noch)?|wie hei(?:ß|ss)e ich(?: eigentlich| denn| noch)?|weißt du (?:noch )?wer ich bin|weisst du (?:noch )?wer ich bin)$/.test(text)) {
         const { name, nicknames, company, website } = profile.owner
         if (!name) return null

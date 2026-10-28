@@ -60,6 +60,19 @@ describe('2.89.8 U4: owner profile', () => {
         }
     }, T)
 
+    // 2.89.13 (live 29.10. 00:52:34, Quiet-Hub relay): the relay appends "(Antworte knapp auf Deutsch, ohne Markdown.)";
+    // the profile patterns are anchored at the end, so the fast path listed old contradicting graph facts instead.
+    it('a question with an appended style instruction still answers from the profile (Desktop/Hub)', async () => {
+        h = await createE2EHarness({ seed: seedProfile })
+        const { getMemoryGovernanceCoordinator } = await h.module('memory/memory-governance.js')
+        getMemoryGovernanceCoordinator().propose({ content: 'Bello ist ein Labrador-Mischling mit grauem Halsband.', kind: 'fact', scope: `user:${OWNER_TELEGRAM_ID}`, source: 'test', evidence: 'manual', confidence: 1, verified: true })
+        const result = await h.desktop('Wie heißen meine Hunde?\n(Antworte knapp auf Deutsch, ohne Markdown.)', [])
+        expect(result.error).toBeUndefined()
+        expect(result.final).toContain('Beagle')
+        expect(result.final).toContain('Collie')
+        expect(result.final).not.toMatch(/Labrador|Das weiß ich dazu noch/)
+    }, T)
+
     it('the profile is injected as Tier-0 into the owner prompt and wins over learned text', async () => {
         h = await createE2EHarness({ seed: seedProfile })
         const result = await h.telegram('Erzähl mir etwas Schönes über meinen Garten im Herbst und was ich dafür brauche.', [call => {
