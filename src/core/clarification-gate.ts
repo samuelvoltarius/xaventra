@@ -36,7 +36,8 @@ const REPORT_TO_REQUESTER = /\b(?:send(?:e(?:n|r|st)?)?|schick\w*)\s+(?:mir|uns)
 // "schick mir das", "google nach X" - goes to the model, which can ask itself.
 const DESTRUCTIVE = /\b(?:installier\w*|deinstallier\w*|deploy\w*|rollout|neustart\w*|restart\w*|lösch\w*|loesch\w*|entfern\w*|service\s+(?:start|stop|restart))\b/i
 const THIRD_PARTY_SEND = /\b(?:send(?:e(?:n|r|st)?)?|schick\w*)\b.{0,40}\b(?:ihm|ihr|ihnen)\b/i
-const EXPLICIT_TARGET = /\b(?:auf|an|nach|zu|von|node|host|server|main|spark|pi5?|ns[12]|home|localhost|telegram|datei|ordner)\b/i
+// 2.89.12: a Kubernetes cluster/namespace is the target itself (live: "… Pods in deinem k3s-Cluster … lösche ihn" asked for a node).
+const EXPLICIT_TARGET = /\b(?:auf|an|nach|zu|von|node|host|server|main|spark|pi5?|ns[12]|home|localhost|telegram|datei|ordner|k3s|k8s|kube\w*|kubectl|cluster|namespace)\b/i
 /** Several machines that could each run the action — only then a target question helps. */
 function hasSeveralCandidateTargets(): boolean {
     try {

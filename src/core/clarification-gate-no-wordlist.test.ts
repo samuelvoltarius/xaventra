@@ -34,6 +34,12 @@ describe('ClarificationGate without word-list questions (2.89.8)', () => {
         expect(evaluateClarification('user:u1', text)).toMatchObject({ action: 'continue', content: text })
     })
 
+    // 2.89.12 (Telegram 28.10., Langtest C): asked "Auf welchem Node…" in 0.4 s although the cluster is the target.
+    it('a Kubernetes order names its target (cluster/namespace): no node question', () => {
+        const text = 'Kubernetes-Test: Zeig mir die Knoten und Pods in deinem k3s-Cluster. Dann starte im Namespace xaventra-test einen nginx-Testpod, prüfe ob er läuft, und lösche ihn danach wieder.'
+        expect(evaluateClarification('user:u1', text)).toMatchObject({ action: 'continue' })
+    })
+
     it('still asks for a target when a destructive action meets several candidates', () => {
         const decision = evaluateClarification('user:u1', 'lösch den Container')
         expect(decision.action).toBe('ask')
