@@ -12,6 +12,32 @@
   helpers on nodes with a screen, maps and routes, music, a maker helper for
   boards and sensors.
 
+## [2.89.10] — 2026-10-28
+
+Reliability only, no new features.
+
+### Fixed
+
+- **An unreachable connection no longer floods the log.** When a Home Assistant
+  (or any MCP server) did not answer, the gateway raised an EventEmitter error
+  without a listener and restarted its reconnect counter on every attempt:
+  about 17 unhandled rejections per minute, 13,256 in 13 hours. Reconnects now
+  wait 5 s, growing to 10 min, the outage is reported once and the return once.
+- **"Not reachable" is not "login expired".** A network error or timeout while
+  refreshing the Home Assistant login marked the login expired and asked for a
+  new sign-in. Only a refusal (HTTP 400/401/403) ends a login now; otherwise
+  the connection shows the new state "nicht erreichbar (address)" and becomes
+  connected again by itself.
+- **Self-repair is not triggered by network errors.** Reachability failures no
+  longer go to the Doctor; any other identical error is diagnosed and logged at
+  most once per hour (with the count of silent repeats).
+- **A Nein stays a Nein.** A rejected software proposal no longer returns as a
+  weekly "idea" or after 30 days; it comes back only when a new reason (need)
+  appears. Self-goals that name another system's package tool (rpm on Ubuntu)
+  are rejected.
+- **No GPU backend warning on every scan.** A backend whose binding package is
+  not installed is not loaded, and a loaded backend is checked once per start.
+
 ## [2.89.9] — 2026-10-21
 
 ### Fixed

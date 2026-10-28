@@ -1295,6 +1295,7 @@
         "../core/approval-cards.js",
         "../core/atomic-storage.js",
         "../core/data-root.js",
+        "../core/infrastructure-failure.js",
         "./connection-state.js",
         "./connection-store.js",
         "./connector-catalog.js",
@@ -1407,6 +1408,7 @@
       "imports": [
         "../core/atomic-storage.js",
         "../core/data-root.js",
+        "../core/infrastructure-failure.js",
         "./connection-store.js",
         "./connector-catalog.js",
         "@modelcontextprotocol/sdk/client/auth.js",
@@ -4406,6 +4408,7 @@
     {
       "module": "src/layers/L0-self-repair.ts",
       "imports": [
+        "../core/infrastructure-failure.js",
         "node:fs",
         "node:path"
       ]
@@ -5056,6 +5059,7 @@
       "module": "src/mcp/mcp-client.ts",
       "imports": [
         "../connections/connector-policy.js",
+        "../core/infrastructure-failure.js",
         "../tools/complete-registry.js",
         "@modelcontextprotocol/sdk/client/auth.js",
         "@modelcontextprotocol/sdk/client/index.js",
@@ -5071,6 +5075,7 @@
         "../connections/connection-store.js",
         "../connections/connector-login.js",
         "../core/config.js",
+        "../core/infrastructure-failure.js",
         "../tools/complete-registry.js",
         "./mcp-client.js"
       ]
