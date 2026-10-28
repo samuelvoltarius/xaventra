@@ -6315,10 +6315,21 @@
       ]
     },
     {
+      "module": "src/runtime/autonomous-client.ts",
+      "imports": [
+        "./autonomous-endpoint.js",
+        "./cloud-service-model.js"
+      ]
+    },
+    {
       "module": "src/runtime/autonomous-endpoint.ts",
       "imports": [
         "../llm/endpoint-trust.js"
       ]
+    },
+    {
+      "module": "src/runtime/cloud-service-model.ts",
+      "imports": []
     },
     {
       "module": "src/runtime/code-runtime.ts",

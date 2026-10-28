@@ -12,6 +12,44 @@
   helpers on nodes with a screen, maps and routes, music, a maker helper for
   boards and sensors.
 
+## [2.89.12] — 2026-10-28
+
+Reliability only: the Telegram test of 2.89.11 (9/14, long tasks 0/4).
+
+### Fixed
+
+- **Switching in Home Assistant can be approved again.** `hass_turn_on`,
+  `hass_turn_off`, `hass_toggle`, `hass_service` and `send_telegram_message`
+  checked the owner's one-time code but did not offer the `confirm` parameter,
+  so the code from `/freigabe` never reached the tool. A test now checks every
+  tool with an owner approval.
+- **A failed turn is not answered by the next message.** After a timeout the
+  question and "Versuch es bitte gleich noch einmal" stayed in the history;
+  the next "test" was answered with the old question. Failed turns are no
+  longer part of the conversation.
+- **"Welche Lichter sind an?" ends with an answer.** `hass_list` showed five
+  entities per domain and carried all attributes, which the output compression
+  cut, so the lights that were on never reached the model and it kept listing
+  until its budget ran out. Every entity now has one line (name, id, state,
+  unit); a new `state` filter answers "which are on" in one call.
+- **No more circling in self-description.** Asking what she can do
+  (`nova_capabilities`, `nova_introspect`, `environment_inventory`,
+  `mesh_capabilities`) is limited to three calls per task; then she acts or
+  says honestly what is missing.
+- **`mesh_delegate` waits for the node's result** (default 90 s, at most
+  240 s) and returns it, a failure as failure, or says that none came in time.
+- **Kubernetes orders are not asked "Auf welchem Node?"** — a cluster or
+  namespace in the request is the target.
+- **Screenshot answers show the capture result only,** not the node inventory
+  or self-description output the model looked at.
+
+### Added
+
+- **Background runtimes on an owner-approved cloud model.** With
+  `autonomy.cloudServiceModel = { "enabled": true, "provider": "minimax" }`
+  learning, repair and the internal LLM use MiniMax when no local model is
+  reachable. Off by default; local models stay first.
+
 ## [2.89.11] — 2026-10-28
 
 ### Fixed

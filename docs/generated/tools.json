@@ -1376,6 +1376,11 @@
           "name": "match",
           "type": "string",
           "required": false
+        },
+        {
+          "name": "state",
+          "type": "string",
+          "required": false
         }
       ]
     },
@@ -1403,6 +1408,11 @@
           "name": "data",
           "type": "object",
           "required": false
+        },
+        {
+          "name": "confirm",
+          "type": "string",
+          "required": false
         }
       ]
     },
@@ -1421,6 +1431,11 @@
           "name": "entity_id",
           "type": "string",
           "required": true
+        },
+        {
+          "name": "confirm",
+          "type": "string",
+          "required": false
         }
       ]
     },
@@ -1433,6 +1448,11 @@
           "name": "entity_id",
           "type": "string",
           "required": true
+        },
+        {
+          "name": "confirm",
+          "type": "string",
+          "required": false
         }
       ]
     },
@@ -1454,6 +1474,11 @@
         {
           "name": "color_temp",
           "type": "number",
+          "required": false
+        },
+        {
+          "name": "confirm",
+          "type": "string",
           "required": false
         }
       ]
@@ -1816,6 +1841,11 @@
           "name": "task",
           "type": "string",
           "required": true
+        },
+        {
+          "name": "wait_seconds",
+          "type": "number",
+          "required": false
         }
       ]
     },
@@ -3176,6 +3206,11 @@
           "name": "message",
           "type": "string",
           "required": true
+        },
+        {
+          "name": "confirm",
+          "type": "string",
+          "required": false
         }
       ]
     },
