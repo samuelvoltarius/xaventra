@@ -2733,12 +2733,26 @@ const meshTools: NovaTool[] = [
         parameters: [
             { name: 'node_id', type: 'string', description: 'ID des Ziel-Nodes (z.B. nova-a1b2c3d4)', required: true },
             { name: 'task', type: 'string', description: 'Die Aufgabe die der Node erledigen soll', required: true },
+            { name: 'wait_seconds', type: 'number', description: 'Wie lange auf das Ergebnis des Knotens gewartet wird (Standard 90, höchstens 240; 0 = nur übergeben)', required: false },
         ],
         handler: async (params) => {
-            const { delegateTask } = await import('../mesh/mesh-registry.js')
+            const { delegateTask, getTaskResult } = await import('../mesh/mesh-registry.js')
             const result = await delegateTask(String(params.node_id), String(params.task))
             if (!result) return '❌ Nicht an den Knoten übergeben: Knoten nicht erreichbar.'
-            return `An Knoten übergeben.\nID: ${result.id}\nKnoten: ${result.to_node}\nStatus: ${result.status}\nTransport: ${result.transport || 'legacy'}`
+            const handedOver = `An Knoten übergeben.\nID: ${result.id}\nKnoten: ${result.to_node}\nStatus: ${result.status}\nTransport: ${result.transport || 'legacy'}`
+            // 2.89.12 (Telegram 28.10., ns2: uptime + df): the tool returned "pending" and the run went on
+            // locally on the Main. Wait for the node's own result (direct runtime or task queue).
+            const requested = Number(params.wait_seconds)
+            const waitMs = Math.min(240, Number.isFinite(requested) && requested >= 0 ? requested : 90) * 1000
+            if (!waitMs) return handedOver
+            const deadline = Date.now() + waitMs
+            while (Date.now() < deadline) {
+                await new Promise(resolve => setTimeout(resolve, 2_000))
+                const state = await getTaskResult(result.id)
+                if (state?.status === 'done') return `Ergebnis von ${result.to_node}:\n${String(state.result ?? '').slice(0, 6000)}`
+                if (state?.status === 'failed') return { success: false, error: `Knoten ${result.to_node} meldet Fehler: ${String(state.result ?? 'ohne Angabe').slice(0, 1000)}` }
+            }
+            return `${handedOver}\n\nNach ${Math.round(waitMs / 1000)} s kam noch kein Ergebnis von ${result.to_node} (ID ${result.id}). Die Aufgabe läuft dort eventuell weiter; das Ergebnis ist nicht bestätigt.`
         },
     },
     {
