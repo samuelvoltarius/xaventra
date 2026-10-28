@@ -18,7 +18,7 @@
 
   const statusLabel = {
     verbunden: ['good', 'verbunden'], 'wartet-auf-anmeldung': ['warn', 'Anmeldung fehlt'], 'wartet-auf-zugang': ['warn', 'Zugang fehlt'],
-    abgelaufen: ['warn', 'Anmeldung abgelaufen'], fehler: ['bad', 'Fehler'], getrennt: ['', 'getrennt'],
+    abgelaufen: ['warn', 'Anmeldung abgelaufen'], 'nicht-erreichbar': ['warn', 'nicht erreichbar'], fehler: ['bad', 'Fehler'], getrennt: ['', 'getrennt'],
   }
   const img = (h, src, label) => src ? `<img src="${h.attr(src)}" width="28" height="28" alt="" aria-hidden="true">` : `<span class="pill" aria-hidden="true">${h.esc(String(label || '?').slice(0, 2))}</span>`
   const where = (h, klasse) => klasse === 'cloud' ? '<span class="pill info">Cloud · nichts Privates</span>' : klasse === 'lokal' ? '<span class="pill good">lokal</span>' : ''
@@ -97,7 +97,9 @@
   function connectedSection(h, data) {
     const items = data.verbunden || []
     const rows = items.map(item => {
-      const [tone, label] = statusLabel[item.status] || ['', item.status]
+      const [tone, baseLabel] = statusLabel[item.status] || ['', item.status]
+      // B3: the address the owner can check; the login is fine.
+      const label = item.status === 'nicht-erreichbar' && item.nichtErreichbar?.adresse ? `${baseLabel} (${item.nichtErreichbar.adresse})` : baseLabel
       const darf = item.darf || {}
       const test = item.letzterTest ? ` · getestet: ${item.letzterTest.werkzeuge} Werkzeuge` : ''
       return `<div class="row"><div>${img(h, item.icon, item.title)}<div class="row-title">${h.esc(item.title)} ${item.trust === 'community' ? '<span class="pill warn">nicht geprüft</span>' : ''}</div>

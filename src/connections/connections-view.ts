@@ -81,6 +81,8 @@ export interface ConnectedItem {
     datenklasse: 'lokal' | 'cloud'
     darf: { lesen: string[]; fragt: string[]; nie: string[]; sonst: string }
     letzterTest?: ConnectionRecord['letzterTest']
+    /** B3: since when / under which address the service does not answer. */
+    nichtErreichbar?: ConnectionRecord['nichtErreichbar']
     icon: string | null
     aktion: 'anmelden' | 'zugang' | 'keine'
     /** token connectors: the fields the owner enters once (names only, never values). */
@@ -313,7 +315,7 @@ export async function collectConnections(deps: ViewDeps = {}): Promise<Connectio
     const verbunden: ConnectedItem[] = [...connections.filter(record => record.herkunft !== 'konfiguriert' || connectionState(dataDir, { verbindung: record }, kontext).zustand === 'verbunden').map(record => {
         const manifest = record.trust === 'geprueft' ? manifestOf(record.connectorId) : undefined
         return {
-            id: record.id, connectorId: record.connectorId, title: record.title, status: record.status, trust: record.trust, datenklasse: record.datenklasse,
+            id: record.id, connectorId: record.connectorId, title: record.title, status: record.status, ...(record.nichtErreichbar ? { nichtErreichbar: record.nichtErreichbar } : {}), trust: record.trust, datenklasse: record.datenklasse,
             darf: darfText(record, manifest), ...(record.letzterTest ? { letzterTest: record.letzterTest } : {}),
             icon: manifest ? resolveConnectorIcon(manifest) : null,
             ...(record.auth === 'token' && manifest?.zugang ? { felder: manifest.zugang.map(field => ({ ...field })) } : {}),
@@ -355,7 +357,7 @@ export async function formatConnectionsText(deps: ViewDeps = {}): Promise<string
     const connected = view.verbunden.filter(item => item.status === 'verbunden')
     lines.push(connected.length ? `Verbunden: ${connected.map(item => item.title).join(', ')}` : 'Verbunden: noch nichts')
     const waiting = view.verbunden.filter(item => item.status !== 'verbunden')
-    if (waiting.length) lines.push(`Wartet: ${waiting.map(item => `${item.title} (${item.status === 'abgelaufen' ? 'Anmeldung abgelaufen' : item.status === 'wartet-auf-zugang' ? 'Zugang fehlt' : item.status === 'fehler' ? 'Fehler' : 'Anmeldung fehlt'})`).join(', ')}`)
+    if (waiting.length) lines.push(`Wartet: ${waiting.map(item => `${item.title} (${item.status === 'abgelaufen' ? 'Anmeldung abgelaufen' : item.status === 'wartet-auf-zugang' ? 'Zugang fehlt' : item.status === 'fehler' ? 'Fehler' : item.status === 'nicht-erreichbar' ? `nicht erreichbar${item.nichtErreichbar?.adresse ? ` unter ${item.nichtErreichbar.adresse}` : ''}` : 'Anmeldung fehlt'})`).join(', ')}`)
     const inUse = view.gefunden.filter(item => item.verbunden && item.datenklasse === 'lokal' && !item.connectorId)
     if (inUse.length) lines.push(`Lokal in Nutzung: ${inUse.slice(0, 6).map(item => item.title).join(', ')}`)
     const found = view.gefunden.filter(item => !item.verbunden)

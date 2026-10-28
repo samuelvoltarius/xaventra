@@ -69,8 +69,12 @@ const SMART_CONNECTORS: ReadonlySet<string> = new Set(['hue-readonly', 'tasmota-
 
 const STATUS_GRUND: Record<ConnectionStatus, string> = {
     verbunden: 'verbunden', 'wartet-auf-anmeldung': 'Anmeldung fehlt noch', 'wartet-auf-zugang': 'Zugang fehlt noch',
-    abgelaufen: 'Anmeldung abgelaufen', fehler: 'letzter Test fehlgeschlagen', getrennt: 'getrennt',
+    abgelaufen: 'Anmeldung abgelaufen', 'nicht-erreichbar': 'nicht erreichbar', fehler: 'letzter Test fehlgeschlagen', getrennt: 'getrennt',
 }
+
+/** B3: „nicht erreichbar (http://…)“ — the address the owner can check, never a login request. */
+const statusGrund = (record: Pick<ConnectionRecord, 'status' | 'nichtErreichbar'>): string =>
+    record.status === 'nicht-erreichbar' && record.nichtErreichbar?.adresse ? `nicht erreichbar (${record.nichtErreichbar.adresse})` : STATUS_GRUND[record.status] || 'wartet'
 
 function safe<T>(fn: () => T, fallback: T): T { try { return fn() } catch { return fallback } }
 
@@ -157,7 +161,7 @@ function recordState(record: ConnectionRecord, ctx: StandKontext): Verbindungsst
     }
     if (record.status === 'verbunden') return { zustand: 'verbunden', grund: record.letzterTest?.ok ? `verbunden, ${record.letzterTest.werkzeuge} Werkzeuge getestet` : 'verbunden' }
     if (record.status === 'getrennt') return { zustand: 'gefunden', grund: 'getrennt' }
-    return { zustand: 'wartet', grund: STATUS_GRUND[record.status] || 'wartet' }
+    return { zustand: 'wartet', grund: statusGrund(record) }
 }
 
 function connectorState(connectorId: string, ctx: StandKontext): Verbindungsstand {
@@ -197,7 +201,7 @@ function haState(adressen: readonly string[], ctx: StandKontext): Verbindungssta
     const config = configuredHa(ctx)
     if (config && haConnectedFor([{ connectorId: HA_CONNECTOR, status: 'verbunden', basis: config }], adressen, instanzen, ctx.aliase)) return { zustand: 'verbunden', grund: 'über die Konfiguration' }
     const waiting = ha.find(c => !['verbunden', 'getrennt'].includes(c.status) && haConnectedFor([{ ...c, status: 'verbunden' }], adressen, instanzen, ctx.aliase))
-    if (waiting) return { zustand: 'wartet', grund: STATUS_GRUND[waiting.status] }
+    if (waiting) return { zustand: 'wartet', grund: statusGrund(waiting) }
     return { zustand: 'gefunden', grund: 'nicht verbunden' }
 }
 

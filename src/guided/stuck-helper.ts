@@ -58,9 +58,11 @@ export function findeLoesung(q: HilfeQuellen): HilfeAntwort | null {
     const mapped = (severity: DoctorIssue['severity']) => issues.filter(issue => issue.severity === severity).map(issue => HILFE_DIAGNOSE[issue.code]).find(Boolean)
     const error = mapped('error')
     if (error) return { ...error, quelle: 'diagnose' }
-    const login = (q.verbindungen || []).find(item => ['abgelaufen', 'wartet-auf-anmeldung', 'fehler', 'wartet-auf-zugang'].includes(item.status))
+    const login = (q.verbindungen || []).find(item => ['abgelaufen', 'wartet-auf-anmeldung', 'fehler', 'nicht-erreichbar', 'wartet-auf-zugang'].includes(item.status))
     if (login) {
-        const satz = login.status === 'fehler'
+        const satz = login.status === 'nicht-erreichbar'
+            ? `${login.title} ist gerade nicht erreichbar; die Anmeldung ist in Ordnung und ich versuche es selbst wieder.`
+            : login.status === 'fehler'
             ? `${login.title} antwortet gerade nicht; unter „Verbindungen“ kannst du die Verbindung einmal neu herstellen.`
             : login.status === 'wartet-auf-zugang'
                 ? `Für ${login.title} fehlt noch der Zugang; unter „Verbindungen“ trägst du ihn einmal ein.`

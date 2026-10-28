@@ -18,7 +18,8 @@ import { atomicWriteJsonSync } from '../core/atomic-storage.js'
 import { getNovaDataDir } from '../core/data-root.js'
 import type { ConnectorCapability, ConnectorKategorie, Datenklasse } from './connector-catalog.js'
 
-export type ConnectionStatus = 'wartet-auf-anmeldung' | 'wartet-auf-zugang' | 'verbunden' | 'abgelaufen' | 'fehler' | 'getrennt'
+/** `nicht-erreichbar` (B3): the address does not answer (network/timeout) — the login is fine, nobody is asked to sign in. */
+export type ConnectionStatus = 'wartet-auf-anmeldung' | 'wartet-auf-zugang' | 'verbunden' | 'abgelaufen' | 'nicht-erreichbar' | 'fehler' | 'getrennt'
 export type ConnectionTransport = { art: 'http'; url: string } | { art: 'stdio'; command: 'npx' | 'uvx'; args: string[]; env?: Record<string, string> }
 
 export interface ConnectionTestResult { ok: boolean; at: string; werkzeuge: number; lesend: number; fragend: number; gesperrt: number; fehler?: string }
@@ -45,6 +46,8 @@ export interface ConnectionRecord {
     letzterTest?: ConnectionTestResult
     /** Set once when the owner was asked to log in again (exactly one request per expiry). */
     loginAskedAt?: string
+    /** B3: since when and under which address the service does not answer (status `nicht-erreichbar`). */
+    nichtErreichbar?: { adresse: string; seit: string; fehler?: string }
     /**
      * 2.86.1: how the connection is used. `rest` = Home Assistant without its MCP
      * server integration (POST /api/mcp → 404): the same login reads through the

@@ -9,3 +9,18 @@
 export function isInfrastructureFailure(error: string): boolean {
     return /\[Timeout\]|timed? ?out|exceeded \d+ ?ms|budget exhausted|outside task contract|AbortError|aborted|fetch failed|ECONN(?:REFUSED|RESET)|ETIMEDOUT|EAI_AGAIN|socket hang up/i.test(String(error || ''))
 }
+
+/** A login that is really rejected (HTTP 401/403, OAuth) — the only reason to ask the owner to sign in again. */
+export function isAuthFailure(error: string): boolean {
+    return /UnauthorizedError|\b40[13]\b|invalid_grant|unauthori[sz]ed|forbidden/i.test(String(error || ''))
+}
+
+/**
+ * B2/B3 (28.10.2026): the address cannot be reached (network, DNS, timeout). Never a
+ * reason for a new login, a self-repair diagnosis or a fast reconnect loop.
+ */
+export function isUnreachable(error: string): boolean {
+    const text = String(error || '')
+    if (isAuthFailure(text)) return false
+    return isInfrastructureFailure(text) || /EHOSTUNREACH|ENETUNREACH|ENOTFOUND|getaddrinfo|network ?error/i.test(text)
+}

@@ -34,7 +34,8 @@ import {
     connectionIdFor, deleteConnectionSecrets, getConnection, loadConnections, saveConnection, updateConnection, updateConnectionSecrets,
     type ConnectionRecord, type ConnectionTestResult,
 } from './connection-store.js'
-import { haBearerFetch, isAuthFailure, markLoginExpired, startLogin, type LoginDeps } from './connector-login.js'
+import { connectionAddress, haBearerFetch, isAuthFailure, markLoginExpired, markUnreachable, startLogin, type LoginDeps } from './connector-login.js'
+import { isUnreachable } from '../core/infrastructure-failure.js'
 import { connectionState } from './connection-state.js'
 
 export const CONNECT_CARD_KIND = 'verbindung-herstellen'
@@ -298,9 +299,19 @@ async function haRestTest(record: ConnectionRecord, deps: ConnectDeps): Promise<
         return { ok: false, message: HA_NICHT_ERREICHBAR }
     } catch (error) {
         if (isAuthFailure(error)) return { ok: false, message: `${record.title}: Anmeldung fehlt oder ist abgelaufen — bitte einmal neu anmelden.` }
+        const fehler = String(error instanceof Error ? error.message : error).slice(0, 160)
+        if (isUnreachable(fehler) || /nicht erreichbar/.test(fehler)) return notReachable(record, deps, fehler)
         updateConnection(record.id, { status: 'fehler', letzterTest: { ok: false, at, werkzeuge: 0, lesend: 0, fragend: 0, gesperrt: 0, fehler: 'HA-Schnittstelle nicht erreichbar' } }, deps)
         return { ok: false, message: HA_NICHT_ERREICHBAR }
     }
+}
+
+/** B3: status `nicht-erreichbar` with the address; one plain sentence for the owner, no login request. */
+function notReachable(record: ConnectionRecord, deps: ConnectDeps, fehler: string): { ok: false; message: string } {
+    markUnreachable(record.id, deps, fehler)
+    const at = new Date((deps.now || Date.now)()).toISOString()
+    updateConnection(record.id, { letzterTest: { ok: false, at, werkzeuge: 0, lesend: 0, fragend: 0, gesperrt: 0, fehler } }, deps)
+    return { ok: false, message: `${record.title} ist unter ${connectionAddress(record)} gerade nicht erreichbar. Die Anmeldung ist in Ordnung; ich habe nichts verändert und versuche es selbst wieder.` }
 }
 
 /** Connect through the MCP runtime and test (tools listed). Expired login → exactly one request. */
@@ -315,7 +326,7 @@ export async function connectAndTest(connectionId: string, deps: ConnectDeps = d
     const gateway = deps.gateway || await defaultGateway(deps)
     try {
         const test = await gateway.connect(record)
-        updateConnection(record.id, { status: test.ok ? 'verbunden' : 'fehler', letzterTest: test, ...(test.ok ? { loginAskedAt: undefined } : {}) }, deps)
+        updateConnection(record.id, { status: test.ok ? 'verbunden' : 'fehler', letzterTest: test, ...(test.ok ? { loginAskedAt: undefined, nichtErreichbar: undefined } : {}) }, deps)
         return test.ok
             ? { ok: true, message: `${record.title} verbunden und getestet: ${test.werkzeuge} Werkzeuge (${test.lesend} lesend selbst, ${test.fragend} fragen dich${test.gesperrt ? `, ${test.gesperrt} gesperrt` : ''}).` }
             : { ok: false, message: `${record.title}: Test fehlgeschlagen (${test.fehler || 'keine Werkzeuge'}).` }
@@ -327,6 +338,8 @@ export async function connectAndTest(connectionId: string, deps: ConnectDeps = d
         // 2.86.1 (d): HA without the MCP server integration → the same login over the normal HA interface.
         if (haLogin && isMcpEndpointMissing(error)) return haRestTest(record, deps)
         const fehler = String(error instanceof Error ? error.message : error).replace(/(bearer|token|code)\s*[=:]\s*\S+/gi, '$1=[redacted]').slice(0, 160)
+        // B3: the address does not answer — the login is fine; say where, ask nothing.
+        if (isUnreachable(fehler)) return notReachable(record, deps, fehler)
         updateConnection(record.id, { status: 'fehler', letzterTest: { ok: false, at: new Date((deps.now || Date.now)()).toISOString(), werkzeuge: 0, lesend: 0, fragend: 0, gesperrt: 0, fehler } }, deps)
         // 2.86 Paket N: a blocked address (SSRF guard) never reaches the owner as raw text.
         if (/ssrf|private address|blocked/i.test(fehler)) return { ok: false, message: `${record.title} ist von hier aus gerade nicht erreichbar. Ich habe nichts verändert.` }

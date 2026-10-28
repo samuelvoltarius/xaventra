@@ -1,6 +1,7 @@
 import { getNovaConfig } from '../core/config.js'
 import { getToolRegistry } from '../tools/complete-registry.js'
 import { getMCPClient, type MCPServerConfig } from './mcp-client.js'
+import { isUnreachable } from '../core/infrastructure-failure.js'
 import type { ConnectionRecord, ConnectionTestResult } from '../connections/connection-store.js'
 import type { LoginDeps } from '../connections/connector-login.js'
 
@@ -30,8 +31,20 @@ function ensureListeners(): void {
     gateway.on('disconnected', syncTools)
     // 2.85: an expired connector login becomes exactly one request to the owner.
     gateway.on('authFailure', ({ server }: { server: string }) => { void onAuthFailure(server) })
+    // B2: transport errors are expected (network); one log line per server and change, never an unhandled error.
+    gateway.on('error', ({ server, error }: { server: string; error: string }) => {
+        const key = `${server}:${String(error).slice(0, 80)}`
+        if (lastLoggedError.get(server) === key) return
+        lastLoggedError.set(server, key)
+        console.warn(`[MCP] ${server}: ${String(error).slice(0, 200)}`)
+    })
+    // B2/B3: one owner notice per outage, the connection shows „nicht erreichbar (Adresse)“.
+    gateway.on('unreachable', ({ server, address, error }: { server: string; address: string; error: string }) => { void onUnreachable(server, address, error) })
+    gateway.on('recovered', ({ server }: { server: string }) => { lastLoggedError.delete(server); void onRecovered(server) })
     initialized = true
 }
+
+const lastLoggedError = new Map<string, string>()
 
 /**
  * Without an explicit list (the daemon): `mcp.servers` of the main config plus the
@@ -48,7 +61,10 @@ export async function initializeMCPRuntime(configs?: MCPServerConfig[]): Promise
             await gateway.connectServer(config)
             connected.push(config.name)
         } catch (error) {
-            failed.push({ name: config.name, error: error instanceof Error ? error.message : String(error) })
+            const message = error instanceof Error ? error.message : String(error)
+            failed.push({ name: config.name, error: message })
+            // B2: unreachable at start → reconnect with growing pauses instead of staying dead until restart.
+            if (isUnreachable(message)) gateway.scheduleReconnect(config.name, config)
         }
     }
     if (withConnections) {
@@ -58,12 +74,17 @@ export async function initializeMCPRuntime(configs?: MCPServerConfig[]): Promise
             const { connectionState } = await import('../connections/connection-state.js')
             const { getNovaDataDir } = await import('../core/data-root.js')
             // 2.89: the one connection truth decides what is connected (a configured HA is REST, never MCP).
-            for (const record of loadConnections().filter(item => usesMcpRuntime(item) && connectionState(getNovaDataDir(), { verbindung: item }).zustand === 'verbunden')) {
+            // B3: a connection that was only unreachable is tried again at start (the login is valid).
+            for (const record of loadConnections().filter(item => usesMcpRuntime(item) && (item.status === 'nicht-erreichbar' || connectionState(getNovaDataDir(), { verbindung: item }).zustand === 'verbunden'))) {
                 try {
                     await connectConnectionRecord(record, defaultDeps())
                     connected.push(serverNameFor(record))
                 } catch (error) {
-                    failed.push({ name: serverNameFor(record), error: error instanceof Error ? error.message : String(error) })
+                    const message = error instanceof Error ? error.message : String(error)
+                    failed.push({ name: serverNameFor(record), error: message })
+                    if (isUnreachable(message)) {
+                        try { gateway.scheduleReconnect(serverNameFor(record), await connectionServerConfig(record, defaultDeps())) } catch { /* reported in failed */ }
+                    }
                 }
             }
         } catch { /* no connections */ }
@@ -158,6 +179,38 @@ export async function connectConnectionRecord(record: ConnectionRecord, deps: Lo
 export function disconnectConnectionRecord(record: Pick<ConnectionRecord, 'id'>): void {
     getMCPClient().disconnect(serverNameFor(record))
     syncTools()
+}
+
+async function onUnreachable(server: string, address: string, error: string): Promise<void> {
+    try {
+        const { loadConnections } = await import('../connections/connection-store.js')
+        const record = loadConnections().find(item => serverNameFor(item) === server)
+        const title = record?.title || server
+        if (record) {
+            const { markUnreachable } = await import('../connections/connector-login.js')
+            const { defaultDeps } = await import('../connections/connect-flow.js')
+            markUnreachable(record.id, defaultDeps(), error)
+        }
+        const { addThought } = await import('../planner/index.js')
+        addThought({
+            source: 'verbindungen', kind: 'ereignis', severity: 'warning', permission: 'selbst',
+            title: `${title} ist nicht erreichbar`,
+            evidence: `Adresse ${address} antwortet nicht (${String(error).slice(0, 120)}). Die Anmeldung ist in Ordnung; ich versuche es selbst wieder, zuletzt alle 10 Minuten, und melde mich, sobald es wieder geht.`,
+            signature: `verbindung:nicht-erreichbar:${server}`,
+        })
+    } catch { /* the view shows the state either way */ }
+}
+
+async function onRecovered(server: string): Promise<void> {
+    try {
+        const { loadConnections } = await import('../connections/connection-store.js')
+        const record = loadConnections().find(item => serverNameFor(item) === server)
+        if (!record) return
+        const { markReachable } = await import('../connections/connector-login.js')
+        const { defaultDeps } = await import('../connections/connect-flow.js')
+        markReachable(record.id, defaultDeps())
+        console.log(`[MCP] ${server}: wieder erreichbar`)
+    } catch { /* the view shows the state either way */ }
 }
 
 async function onAuthFailure(server: string): Promise<void> {

@@ -36,6 +36,7 @@ import type { OAuthClientInformationMixed, OAuthClientMetadata, OAuthTokens } fr
 import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { atomicWriteJsonSync } from '../core/atomic-storage.js'
 import { getNovaDataDir } from '../core/data-root.js'
+import { isUnreachable } from '../core/infrastructure-failure.js'
 import { findConnector } from './connector-catalog.js'
 import {
     getConnection, readConnectionSecrets, updateConnection, updateConnectionSecrets, type ConnectionRecord, type StoreOptions,
@@ -313,6 +314,33 @@ export async function markLoginExpired(connectionId: string, deps: LoginDeps): P
     return first
 }
 
+/** Address of a connection the owner can check (origin only). */
+export function connectionAddress(record: Pick<ConnectionRecord, 'basis' | 'transport'>): string {
+    const raw = record.basis || (record.transport.art === 'http' ? record.transport.url : '')
+    try { return new URL(String(raw)).origin } catch { return String(raw || '') }
+}
+
+/**
+ * B3: the service does not answer (network, timeout). Status `nicht-erreichbar` with the
+ * address — the login stays valid, nobody is asked to sign in. Expired/disconnected stay as they are.
+ */
+export function markUnreachable(connectionId: string, deps: LoginDeps, fehler?: string): boolean {
+    const record = getConnection(connectionId, deps)
+    if (!record || !['verbunden', 'nicht-erreichbar', 'fehler'].includes(record.status)) return false
+    const first = record.status !== 'nicht-erreichbar'
+    const seit = first ? new Date((deps.now || Date.now)()).toISOString() : record.nichtErreichbar?.seit || new Date((deps.now || Date.now)()).toISOString()
+    updateConnection(record.id, { status: 'nicht-erreichbar', nichtErreichbar: { adresse: connectionAddress(record), seit, ...(fehler ? { fehler: String(fehler).slice(0, 160) } : {}) } }, deps)
+    return first
+}
+
+/** B3: the service answers again — back to connected (no login involved). */
+export function markReachable(connectionId: string, deps: LoginDeps): boolean {
+    const record = getConnection(connectionId, deps)
+    if (record?.status !== 'nicht-erreichbar') return false
+    updateConnection(record.id, { status: 'verbunden', nichtErreichbar: undefined }, deps)
+    return true
+}
+
 export function isAuthFailure(error: unknown): boolean {
     const text = String((error as any)?.name || '') + ' ' + String((error as any)?.message || error || '')
     return /UnauthorizedError|invalid_grant|\b401\b|unauthori[sz]ed|abgelaufen/i.test(text) || (error as any)?.status === 401
@@ -337,14 +365,28 @@ export function haBearerFetch(connectionId: string, deps: LoginDeps): FetchLike 
                 access = token.accessToken
                 updateConnectionSecrets(connectionId, current => ({ ...current, ha: { ...secrets, accessToken: token.accessToken, expiresAt: now + token.expiresIn * 1000 } }), deps)
             } catch (error) {
+                // B3: only a refusal by HA (400 invalid_grant, 401, 403) ends the login. Network/timeout/5xx = not reachable.
+                const status = Number((error as any)?.status)
+                if (![400, 401, 403].includes(status)) {
+                    markUnreachable(connectionId, deps, safe(error))
+                    throw new Error(`Home Assistant nicht erreichbar (${connectionAddress(record)})`, { cause: safe(error) })
+                }
                 await markLoginExpired(connectionId, deps)
                 throw Object.assign(new Error('Home Assistant: Anmeldung abgelaufen'), { status: 401, cause: safe(error) })
             }
         }
         const headers = new Headers((init as RequestInit | undefined)?.headers)
         headers.set('Authorization', `Bearer ${access}`)
-        const res = await fetchFn(url, { ...(init as RequestInit), headers })
+        let res: Response
+        try {
+            res = await fetchFn(url, { ...(init as RequestInit), headers }) as Response
+        } catch (error) {
+            // A cancel by the caller is no network problem; a timeout (TimeoutError) is.
+            if ((error as any)?.name !== 'AbortError' && isUnreachable(`${(error as any)?.message || error} ${(error as any)?.cause?.code || ''}`)) markUnreachable(connectionId, deps, safe(error))
+            throw error
+        }
         if (res.status === 401) await markLoginExpired(connectionId, deps)
+        else if (record.status === 'nicht-erreichbar') markReachable(connectionId, deps)
         return res
     }
 }

@@ -16,6 +16,11 @@ import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport.js'
 import type { NovaTool } from '../tools/complete-registry.js'
 import type { ConnectorBinding, ToolAnnotations } from '../connections/connector-policy.js'
+import { isAuthFailure, isUnreachable } from '../core/infrastructure-failure.js'
+
+/** B2: pauses between reconnects grow from 5 s up to 10 min; the loop never spins. */
+const RETRY_INITIAL_MS = 5_000
+const RETRY_MAX_MS = 10 * 60_000
 
 export interface MCPTool {
     name: string
@@ -85,11 +90,26 @@ interface Session {
     client: Client
     transport: Transport
     state: MCPServer
-    reconnectAttempts: number
-    reconnectTimer?: ReturnType<typeof setTimeout>
     closing: boolean
     /** Connector servers: tools whose calls ask the owner (L2), and refused ones (L3) with the reason. */
     policy?: { ask: Set<string>; never: Map<string, string> }
+}
+
+/** Reconnect state per server name — it survives the sessions each attempt creates (B2: the old per-session counter restarted at 0). */
+interface Retry {
+    config: MCPServerConfig
+    attempts: number
+    timer?: ReturnType<typeof setTimeout>
+    /** The outage was reported once; the next report is the recovery. */
+    reported: boolean
+}
+
+/** Address of a server for the owner (origin only, never path or credentials). */
+export function mcpServerAddress(config: Pick<MCPServerConfig, 'transport' | 'url' | 'command'>): string {
+    if (config.transport === 'http') {
+        try { return new URL(config.url || '').origin } catch { return String(config.url || '') }
+    }
+    return String(config.command || '')
 }
 
 function safeName(value: string): string {
@@ -152,6 +172,7 @@ function parameterType(schema: Record<string, unknown>): 'string' | 'number' | '
 export class MCPClient extends EventEmitter {
     private readonly sessions = new Map<string, Session>()
     private readonly oauthProviders = new Map<string, OAuthClientProvider>()
+    private readonly retries = new Map<string, Retry>()
 
     registerOAuthProvider(serverName: string, provider: OAuthClientProvider): void {
         this.oauthProviders.set(serverName, provider)
@@ -165,6 +186,8 @@ export class MCPClient extends EventEmitter {
     async connectServer(config: MCPServerConfig): Promise<MCPServer> {
         if (config.enabled === false) throw new Error(`MCP server ${config.name} is disabled`)
         if (this.sessions.has(config.name)) await this.disconnect(config.name)
+        const pending = this.retries.get(config.name)
+        if (pending?.timer) { clearTimeout(pending.timer); pending.timer = undefined }
 
         let session: Session
         const client = new Client({ name: 'nova', version: process.env.npm_package_version || '2' }, {
@@ -180,7 +203,6 @@ export class MCPClient extends EventEmitter {
             config: { ...config },
             client,
             transport,
-            reconnectAttempts: 0,
             closing: false,
             state: { name: config.name, transport: config.transport, tools: [], resources: [], prompts: [], connected: false },
         }
@@ -194,13 +216,17 @@ export class MCPClient extends EventEmitter {
             session.state.protocolVersion = (transport as StreamableHTTPClientTransport).protocolVersion
             const version = client.getServerVersion()
             session.state.serverVersion = version ? `${version.name}/${version.version}` : undefined
-            session.reconnectAttempts = 0
             await this.refresh(config.name)
+            const recovered = this.retries.get(config.name)
+            this.retries.delete(config.name)
+            if (recovered?.reported) this.emit('recovered', { server: config.name, address: mcpServerAddress(config) })
             this.emit('connected', this.snapshot(session.state))
             return this.snapshot(session.state)
         } catch (error) {
             session.state.lastError = redactError(error)
-            if (/UnauthorizedError|\b401\b|invalid_grant|unauthori[sz]ed/i.test(`${(error as any)?.name || ''} ${session.state.lastError}`)) this.emit('authFailure', { server: config.name })
+            // B2: a failed attempt is no "close" of a live connection — it must not schedule its own reconnect.
+            session.closing = true
+            if (isAuthFailure(`${(error as any)?.name || ''} ${session.state.lastError}`)) this.emit('authFailure', { server: config.name })
             this.sessions.delete(config.name)
             await transport.close().catch(() => undefined)
             throw new Error(`MCP ${config.name} connection failed: ${session.state.lastError}`)
@@ -308,7 +334,7 @@ export class MCPClient extends EventEmitter {
             result = await session.client.callTool({ name: toolName, arguments: callArgs })
         } catch (error) {
             // 2.85: an expired login is reported once per failure; the connection layer asks the owner exactly once.
-            if (/UnauthorizedError|\b401\b|invalid_grant|unauthori[sz]ed/i.test(`${(error as any)?.name || ''} ${(error as any)?.message || error}`)) this.emit('authFailure', { server: serverName })
+            if (isAuthFailure(`${(error as any)?.name || ''} ${(error as any)?.message || error}`)) this.emit('authFailure', { server: serverName })
             throw new Error(redactError(error))
         }
         return { ...result, mcp: { server: serverName, tool: toolName, verifiedTransport: true } }
@@ -360,10 +386,12 @@ export class MCPClient extends EventEmitter {
     }
 
     disconnect(serverName: string): void {
+        const retry = this.retries.get(serverName)
+        if (retry?.timer) clearTimeout(retry.timer)
+        this.retries.delete(serverName)
         const session = this.sessions.get(serverName)
         if (!session) return
         session.closing = true
-        if (session.reconnectTimer) clearTimeout(session.reconnectTimer)
         this.sessions.delete(serverName)
         void session.transport.close().catch(() => undefined)
         session.state.connected = false
@@ -371,32 +399,70 @@ export class MCPClient extends EventEmitter {
     }
 
     disconnectAll(): void {
-        for (const name of [...this.sessions.keys()]) this.disconnect(name)
+        for (const name of new Set([...this.sessions.keys(), ...this.retries.keys()])) this.disconnect(name)
+    }
+
+    /**
+     * B2: `'error'` without a listener makes EventEmitter throw (ERR_UNHANDLED_ERROR) — inside
+     * the SDK transport that replaced the real cause and ended as an unhandled rejection.
+     */
+    private reportError(server: string, error: string): void {
+        if (this.listenerCount('error') > 0) this.emit('error', { server, error })
     }
 
     private onTransportError(name: string, error: Error): void {
         const session = this.sessions.get(name)
         if (!session) return
         session.state.lastError = redactError(error)
-        this.emit('error', { server: name, error: session.state.lastError })
+        this.reportError(name, session.state.lastError)
     }
 
     private onClosed(name: string): void {
         const session = this.sessions.get(name)
         if (!session || session.closing) return
+        session.closing = true
         session.state.connected = false
         this.emit('disconnected', this.snapshot(session.state))
-        const max = session.config.reconnect?.maxRetries ?? 4
-        if (session.reconnectAttempts >= max) return
-        const base = session.config.reconnect?.initialDelayMs ?? 500
-        const cap = session.config.reconnect?.maxDelayMs ?? 30_000
-        const delay = Math.min(cap, base * (2 ** session.reconnectAttempts++))
-        session.reconnectTimer = setTimeout(() => {
-            const config = { ...session.config }
+        this.sessions.delete(name)
+        this.scheduleReconnect(name, session.config)
+    }
+
+    /**
+     * Reconnect a server that is gone (closed, or unreachable at start). One timer per
+     * server; pauses grow 5 s → 10 min and the outage is reported exactly once
+     * (`unreachable`), the return once (`recovered`). A rejected login is not retried.
+     */
+    scheduleReconnect(name: string, config?: MCPServerConfig): void {
+        const retry = this.retries.get(name) ?? (config ? { config: { ...config }, attempts: 0, reported: false } : undefined)
+        if (!retry || retry.timer) return
+        this.retries.set(name, retry)
+        const max = retry.config.reconnect?.maxRetries
+        if (max !== undefined && retry.attempts >= max) return
+        const base = retry.config.reconnect?.initialDelayMs ?? RETRY_INITIAL_MS
+        const cap = retry.config.reconnect?.maxDelayMs ?? RETRY_MAX_MS
+        const delay = Math.min(cap, base * (2 ** Math.min(retry.attempts++, 20)))
+        retry.timer = setTimeout(() => {
+            retry.timer = undefined
+            if (this.retries.get(name) !== retry) return
             this.sessions.delete(name)
-            void this.connectServer(config).catch(error => this.emit('error', { server: name, error: redactError(error) }))
+            void this.connectServer(retry.config).catch(error => {
+                if (this.retries.get(name) !== retry) return
+                const message = redactError(error)
+                this.reportError(name, message)
+                if (isAuthFailure(message)) { this.retries.delete(name); return }
+                if (!retry.reported) {
+                    retry.reported = true
+                    this.emit('unreachable', { server: name, address: mcpServerAddress(retry.config), error: message })
+                }
+                this.scheduleReconnect(name)
+            })
         }, delay)
-        if (session.reconnectTimer.unref) session.reconnectTimer.unref()
+        if (retry.timer.unref) retry.timer.unref()
+    }
+
+    /** Servers waiting for a reconnect (name → address), e.g. for the connection view. */
+    pendingReconnects(): Array<{ server: string; address: string; attempts: number }> {
+        return [...this.retries.entries()].map(([server, retry]) => ({ server, address: mcpServerAddress(retry.config), attempts: retry.attempts }))
     }
 
     private requireSession(name: string): Session {
