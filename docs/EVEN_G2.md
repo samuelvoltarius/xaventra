@@ -90,6 +90,15 @@ Verdrahtung `src/channels/even-g2-runtime.ts`).
    `network`-Whitelist eintragen, per `evenhub qr` aufs Telefon laden, in der App Adresse +
    Token speichern.
 
+   **Ohne Token im Tailnet (optional, ab 2.89.13):** `NOVA_EVEN_G2_TAILSCALE_USERS` in die
+   `service.env` (Tailscale-Login(s) des Owners, durch Komma getrennt). Dann reicht der
+   HUD-App die Adresse: Anfragen über `tailscale serve` tragen den Header
+   `Tailscale-User-Login`, den `serve` selbst setzt (vom Client mitgeschickte Werte löscht es).
+   Angenommen wird er nur von Loopback und nur für Logins aus der Liste. Geräte mit Tag und
+   Funnel bekommen keinen Login-Header → weiter Token. Grenze: Jeder Prozess auf dem Main
+   selbst kann den Header setzen — nur auf einem Main einschalten, dessen lokale Prozesse
+   dem Owner gehören. Ohne Variable gilt nur der Token.
+
 8. **Sprache** (optional): `/hud/voice` nutzt dieselbe Spracherkennung wie Telegram-
    Sprachnachrichten, keine neue Abhängigkeit: zuerst der eigene Sprachdienst
    (`xaventra-voice`), dann `whisper-gpu` im eigenen Netz, zuletzt lokales `whisper` auf dem
