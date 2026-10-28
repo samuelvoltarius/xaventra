@@ -91,6 +91,11 @@ describe('internal LLM plan (private data never goes to the cloud)', () => {
         expect(resolveInternalLlmPlan(null, null)).toEqual({ kind: 'none' })
     })
 
+    it('names an owner-approved cloud learning runtime as cloud, not as local', () => {
+        expect(resolveInternalLlmPlan('auto', { model: 'MiniMax-M3.1-Flash', provider: 'minimax', localOnly: false }))
+            .toEqual({ kind: 'local-runtime', label: 'MiniMax-M3.1-Flash via minimax (Cloud, vom Owner freigegeben)' })
+    })
+
     it('keeps an explicitly named Ollama internal model', () => {
         expect(resolveInternalLlmPlan('llama3', { model: 'qwen', provider: 'local' })).toEqual({ kind: 'ollama', model: 'llama3' })
     })
@@ -100,7 +105,10 @@ describe('daemon wiring', () => {
     it('builds the learning/repair runtimes from the shared resolver and never points the internal LLM at the main client', async () => {
         const { readFileSync } = await import('node:fs')
         const source = readFileSync(new URL('../daemon.ts', import.meta.url), 'utf8')
-        expect(source).toContain('resolveAutonomousEndpoint(config, requested)')
+        // 2.89.12: the choice lives in runtime/autonomous-client (local endpoint first, then the owner-approved cloud model).
+        expect(source).toContain('createAutonomousClient(config, learningRequested')
+        const client = readFileSync(new URL('./autonomous-client.ts', import.meta.url), 'utf8')
+        expect(client).toContain('resolveAutonomousEndpoint(config, requested, deps)')
         expect(source).toContain('resolveInternalLlmPlan(')
         expect(source).not.toContain('state.internalLlm = state.llm')
         expect(source).not.toContain("Internal LLM: Cloud (auto)')")

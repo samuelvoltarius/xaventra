@@ -597,38 +597,24 @@ async function startDaemon() {
     // Create distinct provider clients for the autonomous services. Even when
     // both roles use the same Ollama daemon/model, they no longer share a
     // mutable client instance or the main agent's failover chain.
-    const createAutonomousClient = async (requested: string) => {
-        // Search order and local-only rule live in runtime/autonomous-endpoint
-        // (nodes vLLM -> configured local provider -> Ollama). Live 2.82.0 the
-        // Spark ran vLLM only via providers.local and both runtimes were offline.
-        const { resolveAutonomousEndpoint } = await import('./runtime/autonomous-endpoint.js')
-        const endpoint = await resolveAutonomousEndpoint(config, requested)
-        if (!endpoint) return null
-        if (endpoint.provider === 'ollama') {
-            const { createOllamaLLM } = await import('./llm/custom.js')
-            return { client: createOllamaLLM(endpoint.baseUrl, endpoint.model), model: endpoint.model, provider: 'ollama' }
-        }
-        const { createLocalLLM } = await import('./llm/local-llm.js')
-        return {
-            // Autonomous runtimes need native function/tool calling;
-            // CustomLLM's legacy signature treats the tools argument
-            // as options and silently drops tool definitions.
-            client: createLocalLLM({ baseUrl: endpoint.baseUrl, model: endpoint.model, apiKey: endpoint.apiKey, name: 'Nova autonomous vLLM', requestTimeoutMs: 45_000 }),
-            model: endpoint.model,
-            provider: endpoint.provider,
-        }
-    }
+    // Search order (local endpoint -> owner-approved cloud model -> none) lives in
+    // runtime/autonomous-client. Live 2.82.0 the Spark ran vLLM only via providers.local
+    // and both runtimes were offline; live 2.89.11 VM 130 had no local model at all.
+    const { createAutonomousClient } = await import('./runtime/autonomous-client.js')
     const learningRequested = String((config as any).learningModel || 'auto')
     const repairRequested = String((config as any).repairModel || 'auto')
-    const learningRuntime = await createAutonomousClient(learningRequested)
-    const repairRuntime = await createAutonomousClient(repairRequested)
+    const learningRuntime = await createAutonomousClient(config, learningRequested, 45_000)
+    const repairRuntime = await createAutonomousClient(config, repairRequested, 45_000)
+    const cloudNote = (runtime: { localOnly: boolean } | null) => runtime && !runtime.localOnly ? ' (Cloud, vom Owner freigegeben: autonomy.cloudServiceModel)' : ''
     if (learningRuntime) {
-        serviceRuntime.register({ role: 'learning', model: learningRuntime.model, provider: learningRuntime.provider, timeoutMs: 45_000, dailyTokenBudget: 250_000, localOnly: true }, learningRuntime.client)
+        serviceRuntime.register({ role: 'learning', model: learningRuntime.model, provider: learningRuntime.provider, timeoutMs: 45_000, dailyTokenBudget: 250_000, localOnly: learningRuntime.localOnly }, learningRuntime.client)
+        console.log(`[Nova] ✓ Learning Runtime: ${learningRuntime.model} via ${learningRuntime.provider}${cloudNote(learningRuntime)}`)
     } else {
         console.log('[Nova] ⚠ Learning Runtime offline — kein eigenes lokales Modell erreichbar')
     }
     if (repairRuntime) {
-        serviceRuntime.register({ role: 'repair', model: repairRuntime.model, provider: repairRuntime.provider, timeoutMs: 30_000, dailyTokenBudget: 100_000, localOnly: true }, repairRuntime.client)
+        serviceRuntime.register({ role: 'repair', model: repairRuntime.model, provider: repairRuntime.provider, timeoutMs: 30_000, dailyTokenBudget: 100_000, localOnly: repairRuntime.localOnly }, repairRuntime.client)
+        console.log(`[Nova] ✓ Repair Runtime: ${repairRuntime.model} via ${repairRuntime.provider}${cloudNote(repairRuntime)}`)
     } else {
         console.log('[Nova] ⚠ Repair Runtime offline — kein eigenes lokales Modell erreichbar')
     }
@@ -643,7 +629,7 @@ async function startDaemon() {
         const plan = resolveInternalLlmPlan((config as any).internalModel, learningRuntime)
         if (plan.kind === 'local-runtime') {
             state.internalLlm = serviceRuntime.getClient('learning')
-            console.log(`[Nova] ✓ Internal LLM: ${plan.label} — Privates bleibt lokal`)
+            console.log(`[Nova] ✓ Internal LLM: ${plan.label}${learningRuntime?.localOnly === false ? '' : ' — Privates bleibt lokal'}`)
         } else if (plan.kind === 'ollama') {
             const testRes = await fetch('http://localhost:11434/api/tags', { signal: AbortSignal.timeout(2_000) }).catch(() => null)
             const payload: any = testRes?.ok ? await testRes.json().catch(() => ({ models: [] })) : { models: [] }

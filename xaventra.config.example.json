@@ -176,7 +176,8 @@
         "briefing": { "morning": "07:30", "evening": "20:00", "timeZone": "Europe/Vienna" },
         "sensing": { "discovery": { "firstRunDelaySec": 120, "intervalHours": 24, "tailnetHosts": [] } },
         "selfHeal": { "enabled": false },
-        "selfUpdate": { "enabled": false }
+        "selfUpdate": { "enabled": false },
+        "cloudServiceModel": { "enabled": false, "provider": "minimax" }
     },
     "infra": {
         "proxmox": {

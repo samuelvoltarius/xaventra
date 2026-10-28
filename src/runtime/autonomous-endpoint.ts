@@ -131,10 +131,11 @@ export type InternalLlmPlan =
  */
 export function resolveInternalLlmPlan(
     internalModel: string | null | undefined,
-    localRuntime: { model: string; provider: string } | null,
+    localRuntime: { model: string; provider: string; localOnly?: boolean } | null,
 ): InternalLlmPlan {
     const configured = String(internalModel || 'auto')
     if (configured !== 'auto') return { kind: 'ollama', model: configured }
-    if (localRuntime) return { kind: 'local-runtime', label: `${localRuntime.model} via ${localRuntime.provider} (lokal)` }
+    // 2.89.12: the learning runtime may be the owner-approved cloud model (cloud-service-model.ts).
+    if (localRuntime) return { kind: 'local-runtime', label: `${localRuntime.model} via ${localRuntime.provider} (${localRuntime.localOnly === false ? 'Cloud, vom Owner freigegeben' : 'lokal'})` }
     return { kind: 'none' }
 }
