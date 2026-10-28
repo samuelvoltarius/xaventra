@@ -40,6 +40,8 @@ Reliability only, no new features.
   field, called MiniMax "keyless" and sent every turn to the slow local
   fallback (90 s timeouts). The key is now resolved from the vault reference,
   the provider's vault profile or `MINIMAX_API_KEY` (likewise OpenAI/Anthropic).
+- **Security updates:** body-parser, undici and zod (denial-of-service advisories
+  published 28.10.) updated within their version ranges; runtime audit 0.
 - **No GPU backend warning on every scan.** A backend whose binding package is
   not installed is not loaded, and a loaded backend is checked once per start.
 
