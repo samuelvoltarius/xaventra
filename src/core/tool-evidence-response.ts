@@ -39,10 +39,8 @@ function captureLine(row: any): string {
 /** Preserve the verified inventory half of a mixed request, never catalog-only
  * output or the model's unsupported claim that captures were delivered. */
 export function nodeScreenshotResponse(executions: ResponseToolExecution[]): string {
-    const inventory = executions.filter(item => item.success === true
-        && ['mesh_nodes', 'mesh_status', 'mesh_services'].includes(item.toolName || item.name || ''))
-    // 2.87.1: a screenshot request is not a capability question — no "not verified" line without inventory.
-    const details = inventory.length ? verifiedToolEvidenceResponse(inventory) : ''
+    // 2.89.12 (Telegram 28.10.): the node inventory the model looked up (mesh_nodes/mesh_status/mesh_services)
+    // is not the answer — it was delivered as a raw dump in front of the receipts. Only the receipts are.
     const capture = [...executions].reverse().find(item => (item.toolName || item.name) === 'mesh_screenshot')
     let result = capture?.result
     if (typeof result === 'string') {
@@ -53,8 +51,7 @@ export function nodeScreenshotResponse(executions: ResponseToolExecution[]): str
     }
     const rows = result && typeof result === 'object' && Array.isArray((result as any).captures) ? (result as any).captures.slice(0, 16) : []
     const receipts = [...rows].sort((a: any, b: any) => captureRank(a) - captureRank(b)).map((row: any) => captureLine(row)).join(String.fromCharCode(10))
-    const body = receipts || (capture ? `${NODE_SCREENSHOT_LIMITATION}\n${safeResult(result, 600)}` : NODE_SCREENSHOT_LIMITATION)
-    return details ? `${details}\n\n${body}` : body
+    return receipts || (capture ? `${NODE_SCREENSHOT_LIMITATION}\n${safeResult(result, 600)}` : NODE_SCREENSHOT_LIMITATION)
 }
 
 const AUTHORITATIVE_DIAGNOSTIC_TOOLS = new Set([
@@ -225,7 +222,9 @@ const SCREENSHOT_HALF_TOOLS = new Set(['mesh_nodes', 'mesh_status', 'mesh_servic
  */
 export function compoundNodeScreenshotResponse(executions: ResponseToolExecution[], remainder: string, modelText: string): string {
     const screenshotPart = nodeScreenshotResponse(executions)
-    const restDone = executions.filter(item => item.success === true && !SCREENSHOT_HALF_TOOLS.has(item.toolName || item.name || ''))
+    // 2.89.12: self-description (kg_search, nova_capabilities …) is no result of the second task either.
+    const restDone = executions.filter(item => item.success === true && !SCREENSHOT_HALF_TOOLS.has(item.toolName || item.name || '')
+        && !META_TOOL_NAMES.has(item.toolName || item.name || ''))
     const topic = remainder.replace(/\s+/g, ' ').trim().replace(/[.!?]+$/, '').slice(0, 80)
     if (restDone.length === 0) {
         return `${screenshotPart}

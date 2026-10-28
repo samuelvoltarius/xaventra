@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { authoritativeDiagnosticResponse, verifiedToolEvidenceResponse, incompleteToolResponse, screenshotFailureResponse, nodeScreenshotResponse, environmentOverviewResponse } from './tool-evidence-response.js'
+import { authoritativeDiagnosticResponse, verifiedToolEvidenceResponse, incompleteToolResponse, screenshotFailureResponse, nodeScreenshotResponse, compoundNodeScreenshotResponse, environmentOverviewResponse } from './tool-evidence-response.js'
 
 describe('screenshot failure evidence', () => {
     it('retains per-node capture/delivery truth even when the overall tool reports a partial failure', () => {
@@ -9,6 +9,29 @@ describe('screenshot failure evidence', () => {
         expect(text).toContain('spark: Bild gesendet')
         expect(text).toContain('worker: Server ohne Bildschirm – kein Bild möglich')
         expect(text).not.toContain('In diesem Lauf wurde keine Bilddatei')
+    })
+    // 2.89.12 (Telegram 28.10., Langtest D): the answer to a screenshot task was the raw mesh_nodes/mesh_services output.
+    it('answers with the capture receipts, not with the node inventory the model looked at', () => {
+        const text = nodeScreenshotResponse([
+            { toolName: 'mesh_nodes', success: true, result: '• xaventra-k8s-worker-01 — kubernetes, docker · 12 facts\n• xaventra-lab — desktop, browser · 40 facts' },
+            { toolName: 'mesh_services', success: true, result: '🛰️ Transport: direct ok, supabase ok\n🧠 Laufende KI-Laufzeiten:\n  • xaventra-ns2: llama.cpp qwen3' },
+            { toolName: 'mesh_screenshot', success: false, result: { captures: [
+                { nodeId: 'xaventra-k8s-worker-01', captured: false, delivered: false, error: 'headless' },
+                { nodeId: 'xaventra-lab', captured: false, delivered: false, error: 'capture bridge timeout' },
+            ] } },
+        ])
+        expect(text).toContain('xaventra-k8s-worker-01')
+        expect(text).toContain('xaventra-lab')
+        expect(text).not.toMatch(/Transport: direct|KI-Laufzeiten|llama\.cpp|12 facts/)
+    })
+    it('a self-description result is not the second half of a screenshot task', () => {
+        const text = compoundNodeScreenshotResponse([
+            { toolName: 'mesh_screenshot', success: false, result: { captures: [{ nodeId: 'xaventra-lab', captured: false, delivered: false, error: 'timeout' }] } },
+            { toolName: 'kg_search', success: true, result: '[Graph-Suche: "Desktop"] - xaventra-lab (node): hat→browser' },
+            { toolName: 'nova_capabilities', success: true, result: '## Tools: browser_open, desktop_screenshot' },
+        ], 'öffne dort im Browser greenchili.at', 'Screenshot gesendet.')
+        expect(text).not.toMatch(/Graph-Suche|## Tools/)
+        expect(text).toMatch(/nicht geschafft/)
     })
     it('preserves the actual pre-execution policy denial', () => {
         const text = screenshotFailureResponse([{ toolName: 'desktop_screenshot', success: false,
