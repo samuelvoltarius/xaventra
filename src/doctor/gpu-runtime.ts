@@ -102,6 +102,25 @@ async function nativeBackendProbe(backend: GpuRuntimeBackend): Promise<{ ok: boo
     }
 }
 
+type NativeProbe = (backend: GpuRuntimeBackend) => Promise<{ ok: boolean; deviceNames?: string[]; error?: string }>
+
+/**
+ * B8: a backend is only loaded when its binding package is installed (otherwise
+ * node-llama-cpp looks for a prebuilt binary and warns on every scan), and at most
+ * once per process — installed bindings do not change while the daemon runs.
+ */
+export function createNativeProbe(bindings: GpuBindingPackage[], load: NativeProbe = nativeBackendProbe): NativeProbe {
+    return backend => {
+        // metal ships in the base mac package; cuda/vulkan need their own package.
+        const pkg = bindings.find(item => item.backend === (backend === 'metal' ? 'cpu' : backend))
+        if (!pkg?.installed) return Promise.resolve({ ok: false, error: `Binding ${pkg?.packageName || backend} nicht installiert` })
+        let result = nativeResults.get(backend)
+        if (!result) { result = load(backend); nativeResults.set(backend, result) }
+        return result
+    }
+}
+const nativeResults = new Map<GpuRuntimeBackend, ReturnType<NativeProbe>>()
+
 function backendPreference(vendor: DoctorGpuVendor): GpuRuntimeBackend[] {
     if (vendor === 'nvidia') return ['cuda', 'vulkan']
     if (vendor === 'amd' || vendor === 'intel') return ['vulkan']
@@ -120,7 +139,6 @@ export async function probeGpuRuntime(options: ProbeGpuRuntimeOptions = {}): Pro
     }
 
     const hardware = options.hardware || getDetectedDoctorHardware()
-    const probe = options.probeBackend || nativeBackendProbe
     const probeSkipped = !options.probeBackend && (
         process.env.NOVA_SKIP_MODEL_RESOLVER_INIT === '1'
         || process.env.NOVA_NO_SIDE_EFFECTS === '1'
@@ -128,6 +146,7 @@ export async function probeGpuRuntime(options: ProbeGpuRuntimeOptions = {}): Pro
     )
     const detected = hardware.gpuVendor !== 'none' && hardware.gpuVendor !== 'unknown'
     const bindings = expectedBindingPackages()
+    const probe = options.probeBackend || createNativeProbe(bindings)
     const errors: GpuRuntimeStatus['errors'] = {}
     const supportedBackends: GpuRuntimeBackend[] = []
     const deviceNames = new Set<string>()
@@ -176,4 +195,5 @@ export async function probeGpuRuntime(options: ProbeGpuRuntimeOptions = {}): Pro
 
 export function resetGpuRuntimeProbeCache(): void {
     cachedProbe = null
+    nativeResults.clear()
 }
