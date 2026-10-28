@@ -35,6 +35,11 @@ Reliability only, no new features.
   weekly "idea" or after 30 days; it comes back only when a new reason (need)
   appears. Self-goals that name another system's package tool (rpm on Ubuntu)
   are rejected.
+- **MiniMax as primary finds its key again.** After the start moved the key into
+  the encrypted vault, the model factory only looked at the plain `apiKey`
+  field, called MiniMax "keyless" and sent every turn to the slow local
+  fallback (90 s timeouts). The key is now resolved from the vault reference,
+  the provider's vault profile or `MINIMAX_API_KEY` (likewise OpenAI/Anthropic).
 - **No GPU backend warning on every scan.** A backend whose binding package is
   not installed is not loaded, and a loaded backend is checked once per start.
 

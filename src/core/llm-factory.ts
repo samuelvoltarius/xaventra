@@ -7,7 +7,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { resolveConfigPath } from '../config/config-path.js'
-import { providerKeyProfileId, rehydrateConfigProviderKeys, resolveProviderKey } from '../secrets/provider-keys.js'
+import { isPlaintextProviderKey, providerKeyProfileId, rehydrateConfigProviderKeys, resolveProviderKey } from '../secrets/provider-keys.js'
 import { fetchModelList } from '../llm/model-list-cache.js'
 import { readProbeResults } from '../llm/capability-probe.js'
 
@@ -474,6 +474,37 @@ export function cloudProviderCredentials(name: string): { apiKey?: string; baseU
     }
     return undefined
 }
+/** Environment variables that carry a cloud provider's key (the service.env way). */
+const PROVIDER_KEY_ENV: Record<string, string[]> = {
+    minimax: ['MINIMAX_API_KEY'], openai: ['OPENAI_API_KEY'], anthropic: ['ANTHROPIC_API_KEY'], claude: ['ANTHROPIC_API_KEY'],
+    openrouter: ['OPENROUTER_API_KEY'], groq: ['GROQ_API_KEY'],
+}
+
+/**
+ * P0 (28.10.2026): the key of a built-in cloud provider, wherever it lives. The daemon hands
+ * createLLM its loaded config, whose section carries only `apiKeyRef` after the vault move —
+ * reading `section.apiKey` alone made MiniMax "keyless" and every turn fell back to local.
+ * Order: plaintext in the section → its vault reference → the rehydrated config → the
+ * provider's vault profile → environment (MINIMAX_API_KEY, …). Never logged.
+ */
+export function cloudProviderKey(name: string, section?: any): string {
+    const lower = String(name || '').toLowerCase()
+    if (isPlaintextProviderKey(section?.apiKey)) return section.apiKey
+    const fromSection = resolveProviderKey(section)
+    if (fromSection) return fromSection
+    const rehydrated = cloudProviderCredentials(lower)?.apiKey
+    if (isPlaintextProviderKey(rehydrated)) return rehydrated
+    for (const alias of cloudProviderAliases(lower)) {
+        const fromVault = resolveProviderKey({ apiKeyRef: `auth:${providerKeyProfileId(alias)}` })
+        if (fromVault) return fromVault
+    }
+    for (const variable of PROVIDER_KEY_ENV[lower] || []) {
+        const value = process.env[variable]
+        if (isPlaintextProviderKey(value)) return value
+    }
+    return ''
+}
+
 /** Names a self-registered provider may not take over: they already have a built-in route. */
 const RESERVED_PROVIDER_NAMES = new Set([...CLOUD_CONFIG_PROVIDERS, 'openai-codex', 'local', 'ollama', 'lm-studio', 'lmstudio', 'llama-cpp', 'vllm'])
 
@@ -774,8 +805,12 @@ export async function createLLM(config: { provider?: string; model?: string; int
     let providerBaseUrl = selectedExternal?.endpoint || selectedLocal?.endpoint
     try {
         const providerSection = configuredSection
-        if (providerSection?.apiKey) {
-            providerApiKey = providerSection.apiKey   // cloud config wins
+        // P0: a cloud section after the vault move holds only a reference — resolve it (vault, env).
+        const sectionKey = CLOUD_CONFIG_PROVIDERS.has(String(config.provider || '').toLowerCase())
+            ? cloudProviderKey(String(config.provider), providerSection)
+            : providerSection?.apiKey
+        if (sectionKey) {
+            providerApiKey = sectionKey   // cloud config wins
         }
         if (providerSection?.baseUrl) {
             providerBaseUrl = providerSection.baseUrl  // cloud config wins

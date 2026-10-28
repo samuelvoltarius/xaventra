@@ -2219,16 +2219,17 @@ export async function createNovaLLMClient(config: {
             // Use the disk-backed factory config. core/config's singleton is
             // populated only by daemon startup and returns schema defaults in
             // standalone/background workers, which dropped cloud API keys.
-            const { getNovaConfig } = await import('../core/llm-factory.js')
+            const { getNovaConfig, cloudProviderKey } = await import('../core/llm-factory.js')
             const cfg: any = getNovaConfig()
             const providers = cfg?.providers || {}
+            // P0 (28.10.2026): vault reference and environment (MINIMAX_API_KEY …) count as a key, too.
             if (provider === 'minimax') {
-                resolvedApiKey = providers.minimax?.apiKey || cfg?.apis?.minimax_key
+                resolvedApiKey = providers.minimax?.apiKey || cfg?.apis?.minimax_key || cloudProviderKey('minimax', providers.minimax) || undefined
                 if (!baseUrl && providers.minimax?.baseUrl) baseUrl = providers.minimax.baseUrl
             } else if (provider === 'openai') {
-                resolvedApiKey = cfg?.auth?.openaiApiKey || providers.openai?.apiKey || cfg?.apis?.openai_key
+                resolvedApiKey = cfg?.auth?.openaiApiKey || providers.openai?.apiKey || cfg?.apis?.openai_key || cloudProviderKey('openai', providers.openai) || undefined
             } else if (provider === 'claude') {
-                resolvedApiKey = providers.anthropic?.apiKey || cfg?.apis?.anthropic_key
+                resolvedApiKey = providers.anthropic?.apiKey || cfg?.apis?.anthropic_key || cloudProviderKey('anthropic', providers.anthropic) || undefined
             }
         } catch { /* config unavailable — provider may still have env-based auth */ }
     }
