@@ -228,6 +228,26 @@ export function filterEntitiesByTerms(entities: HassEntity[], match?: string): H
     }).sort((a, b) => stamp(b) - stamp(a))
 }
 
+/** Only what a reader of the list needs: tool results go through TokenKiller (cut at 3500 chars). */
+export function slimEntity(entity: HassEntity): HassEntity {
+    const attributes: Record<string, unknown> = {}
+    for (const key of ['friendly_name', 'unit_of_measurement', 'device_class'] as const) {
+        if (entity.attributes?.[key] !== undefined && entity.attributes?.[key] !== null) attributes[key] = entity.attributes[key]
+    }
+    return { entity_id: entity.entity_id, state: entity.state, attributes, last_changed: entity.last_changed, last_updated: entity.last_updated }
+}
+
+/** One line per entity, every entity (up to `limit`): name, id, state and unit. */
+export function formatEntityLines(entities: HassEntity[], limit = 80): string {
+    if (entities.length === 0) return 'Keine Entitäten gefunden.'
+    const lines = entities.slice(0, limit).map(entity => {
+        const unit = entity.attributes?.unit_of_measurement ? ` ${entity.attributes.unit_of_measurement}` : ''
+        return `• ${(entity.attributes?.friendly_name as string) || entity.entity_id} (${entity.entity_id}): ${entity.state}${unit}`
+    })
+    const rest = entities.length > limit ? `\n… ${entities.length - limit} weitere nicht gezeigt — mit domain/match/state eingrenzen` : ''
+    return `${entities.length} Entitäten:\n${lines.join('\n')}${rest}`
+}
+
 export function formatEntityList(entities: HassEntity[], maxItems = 30): string {
     if (entities.length === 0) return 'Keine Entitäten gefunden.'
 
@@ -292,10 +312,15 @@ export const homeAssistantTools: NovaTool[] = [
         parameters: [
             { name: 'domain', type: 'string', description: 'Optional: Domain filtern (z.B. light, switch, climate)', required: false },
             { name: 'match', type: 'string', description: 'Optional: nur Entitäten, deren Name oder ID einen dieser Begriffe enthält (mehrere mit | trennen, z.B. "Dolphin|BYD")', required: false },
+            { name: 'state', type: 'string', description: 'Optional: nur Entitäten mit diesem Zustand (z.B. on — "Welche Lichter sind an?" = domain light, state on)', required: false },
         ],
         handler: async (params) => {
-            const entities = filterEntitiesByTerms(await hassListEntities(params.domain as string | undefined), params.match as string | undefined)
-            return { count: entities.length, formatted: formatEntityList(entities), entities: entities.slice(0, 50) }
+            let entities = filterEntitiesByTerms(await hassListEntities(params.domain as string | undefined), params.match as string | undefined)
+            const wanted = String(params.state ?? '').trim().toLowerCase()
+            if (wanted) entities = entities.filter(entity => String(entity.state).toLowerCase() === wanted)
+            // 2.89.12 (live 28.10.): 5 per domain + full attributes were cut by TokenKiller, the lights
+            // that were on never reached the model and it listed again until the budget ran out.
+            return { count: entities.length, formatted: formatEntityLines(entities), entities: entities.slice(0, 50).map(slimEntity) }
         },
     },
     {
