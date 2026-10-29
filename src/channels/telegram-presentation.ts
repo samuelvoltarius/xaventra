@@ -1,6 +1,8 @@
 import type { OutgoingMessage } from '../core/types.js'
 import { isToolProgressLabel } from '../core/tool-progress-label.js'
 import { LiveStatusCard } from './telegram-status-card.js'
+import { L12_UNVERIFIED_NOTE } from '../core/tool-evidence-response.js'
+import { UNVERIFIED_NOTE } from '../core/unverified-claims.js'
 
 export interface TelegramPresentationAdapter {
     send(msg: OutgoingMessage): Promise<void>
@@ -104,6 +106,8 @@ export interface TelegramPresentationOptions {
 /** A final reply that reports a failure turns the status card into ❌. */
 export function isTelegramFailureReply(text: string): boolean {
     const value = String(text || '').trim()
+    // 2.89.14: a verification note in front of a real answer is no failure (live: the L12 note closed the card as ❌ and the answer came twice).
+    if (value.startsWith(L12_UNVERIFIED_NOTE) || value.startsWith(UNVERIFIED_NOTE)) return false
     return /^(?:❌|⚠️|🚫)/u.test(value) || /^(?:Die Anfrage wurde abgebrochen|Fehler\b|Abgebrochen\b)/i.test(value)
 }
 

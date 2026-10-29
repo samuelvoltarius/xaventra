@@ -66,3 +66,17 @@ describe('Telegram presentation', () => {
         expect(adapter.editMessage.mock.calls.map(call => String(call[2])).join('\n')).not.toMatch(/Abgebrochen/)
     })
 })
+
+// 2.89.14 (Kurzabnahme 29.10. 03:29, heise): the L12 note "⚠️ Nicht vollständig belegt …" in front of a real
+// answer closed the status card as "❌ Abgebrochen · 30 s" with the answer text, and the answer came again.
+describe('a note in front of an answer is not a failure', () => {
+    it('the L12 note and the unverified note do not turn the card into ❌', async () => {
+        const { isTelegramFailureReply } = await import('./telegram-presentation.js')
+        const { L12_UNVERIFIED_NOTE } = await import('../core/tool-evidence-response.js')
+        const { UNVERIFIED_NOTE } = await import('../core/unverified-claims.js')
+        expect(isTelegramFailureReply(`${L12_UNVERIFIED_NOTE}\n\nDie erste Schlagzeile auf heise.de: „Neues LLM …“`)).toBe(false)
+        expect(isTelegramFailureReply(`${UNVERIFIED_NOTE}\n\nIch habe es getestet.`)).toBe(false)
+        expect(isTelegramFailureReply('❌ Die Aktion ist fehlgeschlagen.')).toBe(true)
+        expect(isTelegramFailureReply('⚠️ Home Assistant ist nicht erreichbar.')).toBe(true)
+    })
+})
