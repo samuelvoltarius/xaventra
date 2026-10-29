@@ -7,7 +7,7 @@ Generated from authoritative source. Do not edit by hand.
 | tools.json | 236 | `986b9c0319571d53a1fa61da438136936f185039a63c573b91d3a92e2a99234f` |
 | config.json | 0 | `f9fd035c5b0cc6f7a1fbca85337babd19c1caa5e923c68fa06995aa5b279c8cb` |
 | persistence.json | 400 | `2e1023ffd9d6fd849bf69138e492e827c90037394ee268262c7435f2374ae693` |
-| modules.json | 969 | `9989cd9b11942fc741ba32370793785c4a2b4dde65d2e428e0941904c90f5521` |
+| modules.json | 969 | `80a175290a78a7e88fae1e2d2c444b5b2dfc1a3492788854d4e81b0784c1ad8f` |
 | profiles.json | 5 | `4e5aa338bdcb4e6d67c22281c894cfc54a6c68a5535d62a8e097a8cea18d982c` |
 | install-catalog.json | 14 | `9248a1a6085920111a44f42672e5d94ab9690b2fa0ab88f74d0d4053512df059` |
 | software-candidates.json | 18 | `abe3e02f517a52d374a2378b58c3861c80942cd27abe716655121f5dd91fc0d3` |

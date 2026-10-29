@@ -1199,6 +1199,7 @@
       "module": "src/channels/telegram.ts",
       "imports": [
         "../core/outbound-content-guard.js",
+        "../core/reply-delivery-error.js",
         "../core/runtime.js",
         "../core/types.js",
         "../onboarding/telegram-pairing.js",

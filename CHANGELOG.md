@@ -12,6 +12,22 @@
   helpers on nodes with a screen, maps and routes, music, a maker helper for
   boards and sensors.
 
+## [2.89.14] — 2026-10-29
+
+Reliability after the Telegram acceptance of 2.89.13.
+
+### Fixed
+
+- **An old vehicle value is not given as current.** When Home Assistant has
+  an outdated and a fresh value of the same kind (for example two battery
+  sensors), the answer names the fresh one and says which one is outdated,
+  even if the model mentioned both.
+- **No hang when the main model fails and local models are switched off.**
+  With `providers.local.enabled = false` a failed cloud call no longer tries a
+  local model until the run deadline; it uses the configured cloud fallbacks
+  or answers at once with a clear sentence.
+- **Telegram handler failures keep their cause in the log** (redacted).
+
 ## [2.89.13] — 2026-10-29
 
 Reliability after the Telegram acceptance of 2.89.12, plus HUD sign-in in the tailnet.
