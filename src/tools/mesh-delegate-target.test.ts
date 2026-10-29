@@ -8,7 +8,7 @@ vi.mock('../mesh/mesh-registry.js', async importOriginal => ({ ...(await importO
 
 import { ALL_TOOLS } from './complete-registry.js'
 
-beforeAll(async () => { await import('../mesh/mesh-registry.js') }, 60_000)
+beforeAll(async () => { await import('../mesh/mesh-registry.js'); await import('../mesh/peer-refusal.js') }, 60_000)
 const delegate = () => ALL_TOOLS.find(tool => tool.name === 'mesh_delegate')!
 afterEach(() => { setKnownNodeNamesForTests(null); mesh.delegateTask.mockReset(); mesh.getTaskResult.mockReset() })
 

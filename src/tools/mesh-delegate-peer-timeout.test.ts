@@ -8,7 +8,7 @@ const mesh = vi.hoisted(() => ({ delegateTask: vi.fn(), getTaskResult: vi.fn() }
 vi.mock('../mesh/mesh-registry.js', async importOriginal => ({ ...(await importOriginal<object>()), ...mesh }))
 import { ALL_TOOLS } from './complete-registry.js'
 
-beforeAll(async () => { await import('../mesh/mesh-registry.js'); setKnownNodeNamesForTests([{ nodeId: 'xaventra-ns2' }]) }, 60_000)
+beforeAll(async () => { await import('../mesh/mesh-registry.js'); await import('../mesh/peer-refusal.js'); setKnownNodeNamesForTests([{ nodeId: 'xaventra-ns2' }]) }, 60_000)
 afterAll(() => setKnownNodeNamesForTests(null))
 afterEach(() => { vi.useRealTimers(); mesh.delegateTask.mockReset(); mesh.getTaskResult.mockReset() })
 

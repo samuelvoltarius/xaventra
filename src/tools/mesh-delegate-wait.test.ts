@@ -10,7 +10,7 @@ vi.mock('../mesh/mesh-registry.js', async importOriginal => ({ ...(await importO
 import { ALL_TOOLS } from './complete-registry.js'
 
 // The handler imports the mesh registry lazily; load it once on real time.
-beforeAll(async () => { await import('../mesh/mesh-registry.js'); setKnownNodeNamesForTests([{ nodeId: 'xaventra-ns2' }]) }, 60_000)
+beforeAll(async () => { await import('../mesh/mesh-registry.js'); await import('../mesh/peer-refusal.js'); setKnownNodeNamesForTests([{ nodeId: 'xaventra-ns2' }]) }, 60_000)
 afterAll(() => setKnownNodeNamesForTests(null))
 const delegate = () => ALL_TOOLS.find(tool => tool.name === 'mesh_delegate')!
 afterEach(() => { vi.useRealTimers(); mesh.delegateTask.mockReset(); mesh.getTaskResult.mockReset() })

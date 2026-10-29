@@ -548,6 +548,8 @@ export function coalesceMessage(
 
 export function getOnboardingMessage(user: UserRecord): string | null {
     if (user.onboarded) return null
+    // 2.90.1: a mesh hand-over is no person's chat; the greeting would be taken as the task's result on the Main.
+    if (String(user.channel).toLowerCase() === 'mesh-direct') return null
 
     user.onboarded = true
     saveUsers()

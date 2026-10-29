@@ -315,6 +315,11 @@ async function runMeshSubagent(
         if (abortSignal?.aborted) {
             return { id, status: 'cancelled', output: '', toolsUsed: [], durationMs: 0, mode: 'mesh', meshNode }
         }
+        const { isPeerRefusal, peerRefusedInThisRun, rememberPeerRefusal } = await import('../mesh/peer-refusal.js')
+        // 2.90.1: a node that answered as guest in this run is not asked again.
+        if (peerRefusedInThisRun(meshNode)) {
+            return { id, status: 'failed', output: '', toolsUsed: [], durationMs: 0, mode: 'mesh', meshNode, error: 'peer-refused: guest' }
+        }
         console.log(`[SubagentOrch] 🌐 Delegating to ${meshNode} through signed MeshTransport`)
         const parent = await resolveParentIdentity(task)
         const sent = await sendAgentRequest(meshNode, task.task, {
@@ -343,6 +348,10 @@ async function runMeshSubagent(
                 id, status: 'timeout', output: '', toolsUsed: [], durationMs: Date.now() - start,
                 mode: 'mesh', meshNode, error: `Mesh result timeout after ${task.timeoutMs || 60_000}ms`,
             }
+        }
+        if (remote.success && isPeerRefusal(remote.result)) {
+            rememberPeerRefusal(meshNode)
+            return { id, status: 'failed', output: '', toolsUsed: [], durationMs: Date.now() - start, mode: 'mesh', meshNode, error: 'peer-refused: guest' }
         }
         return {
             id,

@@ -2735,6 +2735,9 @@ const meshTools: NovaTool[] = [
                 return { success: false, error: `${wanted ? `Knoten „${wanted.slice(0, 60)}“ ist nicht bekannt` : 'Kein Zielknoten angegeben'} — nicht übergeben.${names ? ` Bekannte Knoten: ${names}.` : ''}` }
             }
             // The wait stays under the tool and run limit (2.90.0 handoffWaitSeconds; 90 s of a ~110 s run left no answer).
+            // 2.90.1: a node that answered as guest in this run is not asked again.
+            const { isPeerRefusal, peerRefusalSentence, peerRefusedInThisRun, rememberPeerRefusal } = await import('../mesh/peer-refusal.js')
+            if (peerRefusedInThisRun(node.nodeId)) return { success: false, error: peerRefusalSentence(node.nodeId) }
             const maxWait = handoffWaitSeconds()
             const requested = Number(params.wait_seconds)
             const waitMs = Math.min(maxWait, Number.isFinite(requested) && requested >= 0 ? requested : maxWait) * 1000
@@ -2752,6 +2755,10 @@ const meshTools: NovaTool[] = [
                 // no result of the task but a failed delegation.
                 if (state?.status === 'done' && /Das hat zu lange gedauert, ich war nicht rechtzeitig fertig/.test(String(state.result ?? ''))) {
                     return { success: false, error: `Knoten ${result.to_node} ist mit der Aufgabe nicht rechtzeitig fertig geworden (Zeitlimit des Knotens) — kein Ergebnis.` }
+                }
+                if (state?.status === 'done' && isPeerRefusal(state.result)) {
+                    rememberPeerRefusal(node.nodeId)
+                    return { success: false, error: peerRefusalSentence(result.to_node) }
                 }
                 if (state?.status === 'done') return `Ergebnis von ${result.to_node}:\n${String(state.result ?? '').slice(0, 6000)}`
                 if (state?.status === 'failed') return { success: false, error: `Knoten ${result.to_node} meldet Fehler: ${String(state.result ?? 'ohne Angabe').slice(0, 1000)}` }
@@ -3190,6 +3197,10 @@ export const ALL_TOOLS: NovaTool[] = [
                 // 2.90.0: a hand-over to a node that did not answer is one clear sentence for the owner, not a raw timeout.
                 if (result.mode === 'mesh' && result.meshNode && result.status === 'timeout') {
                     return `${placement}⚠️ Der Knoten ${result.meshNode} hat in ${Number(params.timeout_seconds) || 60} s kein Ergebnis geliefert; die Aufgabe dort ist abgebrochen. Sag das dem Nutzer in einem Satz.`
+                }
+                if (result.mode === 'mesh' && result.meshNode && result.status === 'failed' && String(result.error || '').startsWith('peer-refused')) {
+                    const { peerRefusalSentence } = await import('../mesh/peer-refusal.js')
+                    return `${placement}⛔ ${peerRefusalSentence(result.meshNode)}`
                 }
                 if (result.mode === 'mesh' && result.meshNode && result.status === 'failed' && /unreachable|rejected|no route/i.test(String(result.error || ''))) {
                     return `${placement}⚠️ Der Knoten ${result.meshNode} ist nicht erreichbar (${String(result.error).slice(0, 120)}). Sag das dem Nutzer in einem Satz.`
