@@ -1,6 +1,6 @@
 # Codekarte — der Fahrplan durch Xaventras Code
 
-Stand: 2.89.15 (`origin/main` 352b302), erhoben am 29.10.2026.
+Stand: 2.89.15 (`origin/main` 352b302), erhoben am 29.10.2026; Nachträge bis 2.90.1.
 
 Die Karte ist der Einstieg für jede Änderung. Sie zeigt je Bereich **den einen
 richtigen Weg**, die wichtigsten Dateien, die Tests und was man nicht mehr
@@ -487,6 +487,10 @@ streicht sie hier im selben Commit (oder markiert sie als erledigt mit Version).
   konfigurierte Owner ist (`mesh-transport-runtime.ts`
   `verifiedMeshOwnerRequest` → Pipeline → `multi-user-middleware.ts`
   `runAsVerifiedMeshOwner`, gilt nur für diesen einen Lauf).
+  Gast-/Ablehnungsantwort eines Knotens: `src/mesh/peer-refusal.ts`
+  (`isPeerRefusal`) macht daraus in `runMeshSubagent` und `mesh_delegate`
+  einen Fehlschlag mit einem Satz; derselbe Knoten wird im selben Lauf nicht
+  erneut gefragt. Der Empfänger schickt auf `mesh-direct` keine Begrüßung.
 - Weitere Einstiege auf denselben Weg: `spawn_subagents_parallel`,
   `continuable_subagent_start`, `mesh_repo_task` — reichen `mesh_node="auto"`
   aber roh durch bzw. routen selbst (siehe D11).

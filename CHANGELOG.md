@@ -12,6 +12,41 @@
   helpers on nodes with a screen, maps and routes, music, a maker helper for
   boards and sensors.
 
+## [2.90.1] — 2026-10-29
+
+Reliability after the Telegram acceptance of 2.89.15 and the peer test of
+29.10. (contains the planned 2.89.16).
+
+### Fixed
+
+- **A result is never pushed out by a later failure.** When a value was read
+  (e.g. a battery level from Home Assistant) and a later step failed, the
+  answer named only the failure. It now names what was read; the hint about
+  stale values lists only the asked device, at most three.
+- **The status card knows a failed answer.** "Die Aktion ist nicht gelungen",
+  "nicht hinbekommen", "nicht als abgeschlossen bestätigen", run limits and
+  timeouts close the Telegram card as failed, not as success.
+- **Short answer when a task could not be finished.** At most five short
+  sentences instead of up to twelve Telegram pages.
+- **Hand-over to another node.** `mesh_delegate` refuses a missing or unknown
+  node at once, waits only as long as the run allows, and treats a node's own
+  timeout sentence as a failed delegation. The old task-table fallback without
+  the requesting user is gone.
+- **The owner on another node.** A node treats a delegated task as the owner's
+  only when it is signed with the pinned key of a configured peer and names the
+  configured owner; unsigned, unknown or unpinned ways stay guests. A node
+  that still answers as guest is reported in one sentence and not asked again
+  in the same task (it was asked four more times until the time limit).
+- **Local models stay off when switched off.** With
+  `providers.local.enabled = false` no local server is probed.
+- **MiniMax speech, image and video find their key in the vault.**
+- **One `ssh_command`.** The registered tool now accepts the owner's approval
+  code for the SSH self-repair; the CLI's `remember`/`recall` really store and
+  recall.
+- **Owner profile:** "Luna ist ein Labrador" contradicts a profile breed
+  without the word "Rasse".
+- **Tests:** the real-helm chart check no longer times out on Windows CI.
+
 ## [2.90.0] — 2026-10-29
 
 Context per task, step 1: measure, and build the smaller prompts in shadow
