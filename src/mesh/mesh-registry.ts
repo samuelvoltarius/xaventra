@@ -933,7 +933,9 @@ export async function delegateTask(
     task: string,
     // 2.89.15: the requesting principal and budget, like spawn_subagent with mesh_node. Without a user id
     // the peer ran the task as `node:<main>` - an unknown user ("Du bist als Gast verbunden", live 29.10.).
-    options: { userId?: string; timeoutMs?: number } = {},
+    // Without allowedTools the target's reported agent tools are sent (never [] = a peer without tools);
+    // an explicit list is passed on unchanged and judged by the target.
+    options: { userId?: string; timeoutMs?: number; allowedTools?: string[] } = {},
 ): Promise<TaskDelegation | null> {
     const delegation: TaskDelegation = {
         id: randomUUID().slice(0, 8),
@@ -947,9 +949,11 @@ export async function delegateTask(
     // Preferred typed data plane: Direct -> durable Supabase -> Relay -> outbox.
     // This transports an agent contract and never a free shell string.
     try {
-        const { sendAgentRequest } = await import('./mesh-transport-runtime.js')
+        const { sendAgentRequest, reportedRemoteAgentTools } = await import('./mesh-transport-runtime.js')
+        const { agentToolsForTarget } = await import('./mesh-policy.js')
         const sent = await sendAgentRequest(targetNodeId, task, {
             idempotencyKey: `mesh-task:${delegation.id}`,
+            allowedTools: options.allowedTools?.length ? options.allowedTools : agentToolsForTarget(reportedRemoteAgentTools(targetNodeId)),
             ...(options.userId ? { userId: options.userId } : {}),
             ...(options.timeoutMs ? { budget: { timeoutMs: options.timeoutMs } } : {}),
         })

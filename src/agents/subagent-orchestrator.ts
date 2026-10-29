@@ -16,6 +16,7 @@
  *   })
  */
 
+import { agentToolsForTarget, RISKY_AGENT_TOOLS } from '../mesh/mesh-policy.js'
 import { randomUUID } from 'node:crypto'
 import { appendFileSync, mkdirSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
@@ -158,7 +159,7 @@ export async function resolveParentIdentity(task: SubagentTask): Promise<{ userI
 
 const SAFE_DEFAULT_TOOLS = new Set([
     'web_search', 'browser_search', 'fetch_url', 'read_file', 'list_directory',
-    'run_python', 'calculate', 'get_weather', 'weather', 'get_time',
+    'run_python', 'calculate', 'get_weather', 'weather', 'get_current_time',
     'memory_recall', 'memory_store',
     'mesh_scan', 'mesh_route',
     'get_system_info', 'read_url',
@@ -168,11 +169,7 @@ const SAFE_DEFAULT_TOOLS = new Set([
 // browser_open/click/type excluded — stateful, require explicit opt-in
 // Callers can explicitly include it via task.tools if truly needed
 
-const RISKY_TOOLS = new Set([
-    'run_command', 'ssh_command', 'system_executor',
-    'delete_file', 'send_telegram', 'send_email',
-    'deploy', 'docker_run',
-])
+const RISKY_TOOLS = RISKY_AGENT_TOOLS
 
 /** Tool lists arrive as arrays or, from tool calls, as comma-separated strings. */
 export function normalizeToolList(requested: unknown): string[] | undefined {
@@ -187,6 +184,15 @@ function filterTools(requestedInput: unknown): string[] | undefined {
     if (!requested || requested.length === 0) return Array.from(SAFE_DEFAULT_TOOLS)
     // Remove risky tools unless explicitly approved
     return requested.filter(t => !RISKY_TOOLS.has(t))
+}
+
+/** A mesh subagent runs with the target's tools. Without explicit tools Main sends the
+ * list the target reported (or the peer code default) — never its own local defaults,
+ * which the target refuses (Langtest B). Explicit tools are passed on and judged by the target. */
+async function meshSubagentTools(requestedInput: unknown, meshNode: string): Promise<string[] | undefined> {
+    if (normalizeToolList(requestedInput)) return filterTools(requestedInput)
+    const { reportedRemoteAgentTools } = await import('../mesh/mesh-transport-runtime.js')
+    return agentToolsForTarget(reportedRemoteAgentTools(meshNode))
 }
 
 // ============================================
@@ -325,7 +331,7 @@ async function runMeshSubagent(
         const parent = await resolveParentIdentity(task)
         const sent = await sendAgentRequest(meshNode, task.task, {
             userId: parent.userId,
-            allowedTools: filterTools(task.tools),
+            allowedTools: await meshSubagentTools(task.tools, meshNode),
             budget: { timeoutMs: task.timeoutMs || 60_000 },
             idempotencyKey: `subagent:${id}`,
         })

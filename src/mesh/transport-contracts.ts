@@ -118,6 +118,8 @@ export interface CapabilityPayload {
 export interface ToolInventoryPayload {
     tools: Array<{ name: string; description?: string; category?: string }>
     inventoryHash: string
+    /** Tools this node accepts in agent.request (see remoteAgentToolList). */
+    remoteAgentTools?: string[]
 }
 
 export interface ToolRequestPayload {

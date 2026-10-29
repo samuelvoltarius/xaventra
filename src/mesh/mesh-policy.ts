@@ -17,6 +17,27 @@ const DEFAULT_REMOTE_TOOLS = new Set([
     'find_capability', 'resolve_capability', 'get_current_time',
 ])
 
+/** Agent tools this node accepts in agent.request (configured list or code default,
+ * never-remote tools removed). Published in node.tools so Main sends a list the
+ * target accepts instead of its own local defaults (Langtest B, 2.90.0). */
+export function remoteAgentToolList(configured?: readonly string[]): string[] {
+    const base = configured?.length ? configured : [...DEFAULT_REMOTE_TOOLS]
+    return [...new Set(base.map(String))].filter(tool => !NEVER_REMOTE.has(tool)).sort()
+}
+
+/** Never sent by Main as a default, whatever a target reports. */
+export const RISKY_AGENT_TOOLS: ReadonlySet<string> = new Set([
+    'run_command', 'ssh_command', 'system_executor',
+    'delete_file', 'send_telegram', 'send_email',
+    'deploy', 'docker_run',
+])
+
+/** Default agent tools for a target: what it reported (or the peer code default), minus risky tools.
+ * Used by spawn_subagent with mesh_node and by mesh_delegate. */
+export function agentToolsForTarget(reported?: readonly string[]): string[] {
+    return remoteAgentToolList(reported).filter(tool => !RISKY_AGENT_TOOLS.has(tool))
+}
+
 /**
  * MI-6: minimum principal role per request kind (fail-closed). Observers may
  * only publish state; mission handoff and Codex access need a privileged role.

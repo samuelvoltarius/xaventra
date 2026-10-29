@@ -41,6 +41,28 @@ approvals. Contains everything of 2.90.1 (rolled back after its acceptance).
 - **The answer to an approval request keeps the asking tool.** Sending the
   detail or the one-time code after a refusal offers that tool again (it was
   missing, and the run wandered off).
+- **Subagents on another node get tools the node accepts.** A subagent sent
+  to a node without its own tool list carried Main's local defaults
+  (`run_python`, `web_search`, `fetch_url`, …), and the node refused the whole
+  request (`agent_tool_not_globally_allowed`). Each node now reports the
+  agent tools it accepts in its signed tool inventory, and Main sends exactly
+  that list (or the node default when nothing is reported yet). Explicitly
+  requested tools are passed on unchanged and stay subject to the node's own
+  policy; nothing is loosened on the node.
+- **Tasks handed to a node (`mesh_delegate`) run with tools.** They were sent
+  without any tool list, so the node worked on them without tools. They now
+  carry the same list the node reported (or its default, without risky tools).
+- The time tool is `get_current_time` in all default lists; `get_time` was
+  never a registered tool.
+- **A node screenshot that worked is reported as such.** "Hat die Aufnahme
+  geklappt?" with a successful capture was answered "nicht hinbekommen und
+  nichts verändert"; a capture is now evidence for saying so.
+
+### Security
+
+- **No automatic code fixes past PATCH_GATE.** `/supervisor auto` used to
+  switch on LLM fixes that were applied (and committed) without confirmation.
+  It now refuses; the supervisor never applies or commits code by itself.
 
 ## [2.90.1] — 2026-10-29
 

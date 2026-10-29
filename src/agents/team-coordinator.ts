@@ -72,7 +72,7 @@ export interface TeamRunOptions {
 
 /** Read-only tools a team role may use unless the role names its own (risky ones are filtered by the orchestrator). */
 const TEAM_ROLE_TOOLS: readonly string[] = Object.freeze([
-    'web_search', 'browser_search', 'fetch_url', 'read_url', 'read_file', 'list_directory', 'codebase_search', 'calculate', 'get_time', 'get_system_info',
+    'web_search', 'browser_search', 'fetch_url', 'read_url', 'read_file', 'list_directory', 'codebase_search', 'calculate', 'get_current_time', 'get_system_info',
 ])
 
 // ============================================
