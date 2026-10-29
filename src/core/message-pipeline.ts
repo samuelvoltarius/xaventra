@@ -2625,10 +2625,14 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
 
         // 2.90.3 (Abnahme 2.90.2, Langtest C): never "keine Änderung" when this run proved a change - one rule for
         // every producer of that sentence (escalation, honest no-tool reply, model text).
-        if (supervised.content && !isSystemMessage) {
-            const { guardNoChangeClaim } = await import('./tool-failure-escalation.js')
-            const { getToolRegistry } = await import('../tools/complete-registry.js')
-            supervised.content = guardNoChangeClaim(supervised.content, (result as any)?.toolExecutions || [], getToolRegistry().getAll() as any)
+        if (supervised.content && !isSystemMessage && (result as any)?.toolExecutions?.length) {
+            try {
+                const { claimsNoChange, guardNoChangeClaim } = await import('./tool-failure-escalation.js')
+                if (claimsNoChange(supervised.content)) {
+                    const { getToolRegistry } = await import('../tools/complete-registry.js')
+                    supervised.content = guardNoChangeClaim(supervised.content, (result as any).toolExecutions, getToolRegistry().getAll() as any)
+                }
+            } catch (error) { stageFailure('Änderungs-Beleg', error) }
         }
 
         // Only send if we have content

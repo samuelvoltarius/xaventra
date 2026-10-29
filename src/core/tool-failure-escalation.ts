@@ -260,6 +260,11 @@ export function completedEffects(executions: ReadonlyArray<Execution>, tools: Re
 
 const NO_CHANGE_CLAIM = /keine Änderung (?:wurde )?(?:ausgeführt|vorgenommen)|nichts verändert|es wurde nichts geändert/i
 
+/** Does a reply say that nothing was changed? (cheap check before the registry is consulted) */
+export function claimsNoChange(content: string): boolean {
+    return NO_CHANGE_CLAIM.test(String(content || ''))
+}
+
 /**
  * 2.90.3: the one guard at delivery. A reply that says nothing was changed ("keine Änderung ausgeführt",
  * "nichts verändert") while this run proved a change is replaced by the done steps and the failed step as a
