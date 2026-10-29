@@ -3238,7 +3238,6 @@
     {
       "module": "src/dev/check-owner-neutral.ts",
       "imports": [
-        "node:child_process",
         "node:fs",
         "node:path",
         "node:url",
