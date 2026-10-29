@@ -2623,6 +2623,14 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             supervised.content = honestNoToolResponse(actionIntent.kind)
         }
 
+        // 2.90.3 (Abnahme 2.90.2, Langtest C): never "keine Änderung" when this run proved a change - one rule for
+        // every producer of that sentence (escalation, honest no-tool reply, model text).
+        if (supervised.content && !isSystemMessage) {
+            const { guardNoChangeClaim } = await import('./tool-failure-escalation.js')
+            const { getToolRegistry } = await import('../tools/complete-registry.js')
+            supervised.content = guardNoChangeClaim(supervised.content, (result as any)?.toolExecutions || [], getToolRegistry().getAll() as any)
+        }
+
         // Only send if we have content
         if (supervised.content && supervised.content.trim().length > 0) {
             // L12: Fact-check response before sending

@@ -215,21 +215,59 @@ export function escalationWithCompletedEffects(
     executions: ReadonlyArray<{ toolName?: string; params?: Record<string, unknown>; success?: boolean; result?: unknown }>,
     tools: ReadonlyArray<{ name: string; parameters?: ReadonlyArray<{ name: string }> }> = [],
 ): string {
-    const effectTools = new Set(tools.filter(tool => tool.parameters?.some(parameter => parameter.name === 'confirm')).map(tool => tool.name))
-    const done = executions.filter(item => item.success === true && effectTools.has(String(item.toolName || '')))
+    const done = completedEffects(executions, tools)
     const read = readValues(executions)
     if (!done.length && !read.length) return content
-    const target = (params: Record<string, unknown> = {}) => {
-        const value = ['entity_id', 'filename', 'target', 'host', 'to', 'name'].map(key => params[key]).find(item => typeof item === 'string' && item.trim())
-        return value ? ` (${String(value).slice(0, 80)})` : ''
-    }
     // 2.90.1 (live 29.10. 14:01:39): a value read before the failure (hass_get 97.0 %) is named, not dropped.
+    // 2.90.3: each done step by its own result line (angelegt / gelöscht …), not only the tool name.
     return [
-        done.length ? `Erledigt: ${done.map(item => `${item.toolName}${target(item.params)}`).join('; ')}.` : '',
+        done.length ? `Erledigt: ${done.join('; ')}.` : '',
         read.length ? `Gelesen: ${read.join('; ')}.` : '',
     ].filter(Boolean).join('\n') + '\n\n'
         + (done.length ? 'Ein späterer Schritt ist danach nicht gelungen; die Ursache ist intern zur Prüfung vorgemerkt.'
             : 'Ein späterer Schritt ist danach nicht gelungen; die Ursache ist intern zur Prüfung vorgemerkt. Geändert wurde nichts.')
+}
+
+type EffectTool = { name: string; parameters?: ReadonlyArray<{ name: string }> }
+type Execution = { toolName?: string; params?: Record<string, unknown>; success?: boolean; result?: unknown }
+
+/**
+ * 2.90.3 (Abnahme 2.90.2, Langtest C, 23:27:52-23:28:07): THE rule for "what did this run change". An effect tool
+ * takes the owner's approval code (`confirm`); its successful calls are proven changes, named by the first line of
+ * their result (else tool + target), at most five, without repeats. Callers pass the runtime registry - before,
+ * normal runs passed no tool list and nothing was ever named.
+ */
+export function completedEffects(executions: ReadonlyArray<Execution>, tools: ReadonlyArray<EffectTool> = []): string[] {
+    const effectTools = new Set(tools.filter(tool => tool.parameters?.some(parameter => parameter.name === 'confirm')).map(tool => tool.name))
+    const target = (params: Record<string, unknown> = {}) => {
+        const value = ['entity_id', 'filename', 'target', 'host', 'to', 'name'].map(key => params[key]).find(item => typeof item === 'string' && item.trim())
+        return value ? ` (${String(value).slice(0, 80)})` : ''
+    }
+    const firstLine = (result: unknown): string => {
+        let data: any = result
+        if (typeof data === 'string') { try { data = JSON.parse(data) } catch { /* plain text */ } }
+        const text = typeof data === 'string' ? data : typeof data?.message === 'string' ? data.message : ''
+        return text.split('\n').map(line => line.replace(/[*_`]/g, '').trim()).find(Boolean)?.slice(0, 160) || ''
+    }
+    const out: string[] = []
+    for (const item of executions) {
+        if (item.success !== true || !effectTools.has(String(item.toolName || ''))) continue
+        const line = (firstLine(item.result) || `${item.toolName}${target(item.params)}`).replace(/[.:]+$/, '')
+        if (!out.includes(line)) out.push(line)
+    }
+    return out.slice(0, 5)
+}
+
+const NO_CHANGE_CLAIM = /keine Änderung (?:wurde )?(?:ausgeführt|vorgenommen)|nichts verändert|es wurde nichts geändert/i
+
+/**
+ * 2.90.3: the one guard at delivery. A reply that says nothing was changed ("keine Änderung ausgeführt",
+ * "nichts verändert") while this run proved a change is replaced by the done steps and the failed step as a
+ * side note. Replies without such a claim, and runs without a proven change, pass unchanged.
+ */
+export function guardNoChangeClaim(content: string, executions: ReadonlyArray<Execution>, tools: ReadonlyArray<EffectTool>): string {
+    if (!NO_CHANGE_CLAIM.test(String(content || '')) || !completedEffects(executions, tools).length) return content
+    return escalationWithCompletedEffects(content, executions, tools)
 }
 
 /** Values a successful hass_get returned in this run (at most 3); other reads have no safe short form. */

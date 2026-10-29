@@ -1790,7 +1790,8 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                 })
                 // 2.89.15: an action that succeeded in this run is never reported as "keine Änderung".
                 failureEscalationContent = escalation?.content
-                    ? escalationWithCompletedEffects(escalation.content, toolExecutions as any, (tools || []) as any)
+                    // 2.90.3: effect tools from the runtime registry; normal runs pass no `tools`, so nothing was ever named.
+                    ? escalationWithCompletedEffects(escalation.content, toolExecutions as any, getToolRegistry().getAll() as any)
                     : escalation?.content
                 console.log(`[Xaventra Agent] Typed failure escalation: ${escalation?.record.state || 'no-observation'}`)
             }

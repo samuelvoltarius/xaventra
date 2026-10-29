@@ -568,6 +568,12 @@ Belegte Widersprüche:
   `limitStopNotice` nicht → Karte wird als Erfolg geschlossen.
 - Zwei ⚠️-Hinweise: `L12_UNVERIFIED_NOTE` (`tool-evidence-response.ts:199`) und
   `UNVERIFIED_NOTE` (`unverified-claims.ts:9`).
+- 2.90.3: die eine Regel „was hat der Lauf geändert“ ist
+  `src/core/tool-failure-escalation.ts` `completedEffects` (Wirkungswerkzeug =
+  Parameter `confirm`, Werkzeuge aus der Laufzeit-Registry); `guardNoChangeClaim`
+  an der einen Auslieferungsstelle der Pipeline ersetzt „keine Änderung“/
+  „nichts verändert“, sobald eine Änderung belegt ist. Die Statuskarte
+  wiederholt eine Fehlschlag-Antwort nicht mehr (nur „❌ Abgebrochen · N s“).
 - **Empfehlung:** ein Ergebnis-Typ (Status + Text) aus dem Runner
   (`outcome-ledger` als Hoheit), den die Pipeline nur noch rendert. Kanäle und
   Selbstziele lesen den **Status**, nie den Text per Regex. L12-Korrektur

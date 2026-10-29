@@ -163,7 +163,9 @@ export class TelegramPresentationSession {
                 // 2.89.4: remove the progress card after the answer — "✅ Fertig" before the
                 // answer read like an empty reply. A failure keeps one ❌ line with the reason.
                 if (this.answerDelivered) await this.dismissProgress()
-                else await this.finishProgress(false, text)
+                // 2.90.3 (Abnahme 2.90.2, Langtest C): the failure answer was just delivered - the card closes as
+                // one "❌ Abgebrochen · N s" line instead of repeating the answer (it stood twice in the chat).
+                else await this.card?.finish(false)
             } catch (error) {
                 await this.finishProgress(false, String((error as Error)?.message || error))
                 throw error
