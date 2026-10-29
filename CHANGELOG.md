@@ -12,6 +12,25 @@
   helpers on nodes with a screen, maps and routes, music, a maker helper for
   boards and sensors.
 
+## [2.91.0] — 2026-10-29
+
+Topic threads, step 1 (shadow). Alfred keeps one chat; inside, every message
+gets a topic. Nothing the model sees changes with the default.
+
+### Added
+
+- **Topic threads (shadow).** Every owner message in a direct chat is
+  assigned to a thread — Haus, Auto, Hunde, Infra, Computer, Arbeit/Projekte,
+  Recherche, Pakete, Xaventra or Allgemein — from a chosen room, an open
+  question or approval (a one-time code goes to the thread that waits for it),
+  the request's own tool route, the owner profile (the car, the dogs) or a
+  short follow-up. Small talk never opens a thread. In `shadow` the
+  assignment is measured (`/kontext`: rule, how much of the recent history
+  belongs to other topics) and shown with `/themen`; the history stays shared
+  until 2.91.1. Subagents and missions record the thread they were started
+  from. Switch `context.threads` (`XAVENTRA_THREADS`). No message text is
+  stored.
+
 ## [2.90.2] — 2026-10-29
 
 Fixes from the Telegram acceptance of 2.90.0 and 2.90.1, plus remembered
