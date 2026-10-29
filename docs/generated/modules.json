@@ -3166,6 +3166,14 @@
       ]
     },
     {
+      "module": "src/dev/check-codekarte.ts",
+      "imports": [
+        "node:fs",
+        "node:path",
+        "node:url"
+      ]
+    },
+    {
       "module": "src/dev/check-layers.ts",
       "imports": [
         "node:fs",

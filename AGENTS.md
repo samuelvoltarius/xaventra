@@ -10,6 +10,17 @@
   model acceptance, OS install checks and distributed channel failover are
   separate evidence gates. Preserve failed reports; do not relax tests to pass.
 
+## Codekarte — Read Before Changing Code
+
+- Vor Änderungen `docs/CODEKARTE.md` lesen: je Bereich der eine richtige Weg,
+  wichtigste Dateien, Tests und bekannte Doppelungen.
+- Die Karte im selben Commit aktualisieren, wenn sich ein Weg, ein Bereich,
+  ein Verzeichnis unter `src/` oder ein Werkzeug ändert.
+- Neue Doppelungen in der Karte eintragen statt einen zweiten Weg zu bauen;
+  bestehende Doppelungen zusammenführen statt erweitern.
+- `npm run check:codekarte` (auch Teil von `npm run check:catalogs` in CI)
+  meldet Verzeichnisse und Werkzeuge, die in der Karte fehlen.
+
 ## Local Project Memory — Read First
 
 - If a local `PROJECT_MEMORY.md` exists, read it completely before planning,

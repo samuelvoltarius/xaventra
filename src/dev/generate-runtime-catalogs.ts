@@ -112,4 +112,11 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
         console.error(`Runtime catalogs are stale: ${result.mismatches.join(', ')}`)
         process.exitCode = 1
     } else console.log(check ? 'Runtime catalogs are current.' : `Runtime catalogs generated: ${result.changed.length} changed.`)
+    // The code map is hand-written, so it is checked (never generated): a gap fails the check and CI.
+    const { checkCodekarte, formatCodekarteGaps } = await import('./check-codekarte.js')
+    const gaps = formatCodekarteGaps(await checkCodekarte())
+    if (gaps) {
+        console.error(gaps)
+        process.exitCode = 1
+    }
 }
