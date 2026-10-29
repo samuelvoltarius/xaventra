@@ -464,13 +464,13 @@ export async function handleMessage(...args: Parameters<typeof handleMessageInSc
     // 2.89.8 (U3): every message is a potential owner turn (counted once an owner is authenticated).
     // 2.90.1: a verified mesh owner request is the owner for exactly this run (multi-user-middleware).
     const [channel, from, , , , , , execution] = args
-    const run = () => runWithLlmPrincipal(() => handleMessageInScope(...args))
+    const meshOwner = execution?.verifiedMeshOwner === true && String(channel).toLowerCase() === 'mesh-direct'
+        ? (await import('../users/multi-user-middleware.js')).runAsVerifiedMeshOwner
+        : <T>(_userId: string, fn: () => T): T => fn()
     return runAsPotentialOwnerTurn(async () => {
-        if (execution?.verifiedMeshOwner === true && String(channel).toLowerCase() === 'mesh-direct') {
-            const { runAsVerifiedMeshOwner } = await import('../users/multi-user-middleware.js')
-            return runAsVerifiedMeshOwner(from, run)
-        }
-        return run()
+        return meshOwner(from, () => {
+            return runWithLlmPrincipal(() => handleMessageInScope(...args))
+        })
     })
 }
 
