@@ -12,6 +12,31 @@
   helpers on nodes with a screen, maps and routes, music, a maker helper for
   boards and sensors.
 
+## [2.89.13] — 2026-10-29
+
+Reliability after the Telegram acceptance of 2.89.12, plus HUD sign-in in the tailnet.
+
+### Fixed
+
+- **No raw tool output as an answer.** When the fact check (L12) doubts an
+  answer, the answer stays with a short "Nicht vollständig belegt" note in
+  front; it is no longer replaced by the raw tool result (a time, a web page
+  or a Home Assistant entity as JSON).
+- **The owner profile answers even with an appended instruction.** "Wie heißen
+  meine Hunde? (Antworte knapp …)" from the Quiet-Hub relay listed old,
+  contradicting memory entries instead of the profile.
+- **`/freigabe` binds the first line only,** so a line appended by a relay
+  does not make the code useless.
+- **A failed reply delivery is logged with its cause.** Telegram bot tokens
+  inside Bot API URLs are now redacted in logs as well.
+
+### Added
+
+- **Even G2 HUD without token in the tailnet (opt-in).** With
+  `NOVA_EVEN_G2_TAILSCALE_USERS` set, a request through `tailscale serve`
+  whose `Tailscale-User-Login` is in the list is accepted from loopback. Unset
+  = token only, as before. See `docs/EVEN_G2.md`.
+
 ## [2.89.12] — 2026-10-28
 
 Reliability only: the Telegram test of 2.89.11 (9/14, long tasks 0/4).

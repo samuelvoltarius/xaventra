@@ -2411,7 +2411,9 @@
     },
     {
       "module": "src/core/reply-delivery-error.ts",
-      "imports": []
+      "imports": [
+        "../security/secret-redaction.js"
+      ]
     },
     {
       "module": "src/core/request-capabilities.ts",
