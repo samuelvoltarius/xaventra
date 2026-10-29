@@ -67,13 +67,13 @@ export interface ProxmoxActionClass {
     /** Effect vocabulary for the action policy. Card impact is always `infra`. */
     effect: 'infra:vm-snapshot' | 'infra:vm-power' | 'infra:vm-rollback' | 'infra:vm-create' | 'infra:vm-config' | 'infra:vm-destroy'
     label: string
-    /** How Alfred gets back. */
+    /** How the owner gets back. */
     rueckweg: string
 }
 
 export const PROXMOX_ACTIONS: Readonly<Record<ProxmoxWriteAction, ProxmoxActionClass>> = Object.freeze({
     snapshot: { kind: 'pve-snapshot', level: 'L1', effect: 'infra:vm-snapshot', label: 'Snapshot anlegen',
-        rueckweg: 'Der Snapshot bleibt, bis Alfred ihn in Proxmox löscht (Xaventra löscht keine Snapshots).' },
+        rueckweg: 'Der Snapshot bleibt, bis du ihn in Proxmox löschst (Xaventra löscht keine Snapshots).' },
     start: { kind: 'pve-start', level: 'L2', effect: 'infra:vm-power', label: 'Gast starten',
         rueckweg: '/vms stop <vmid> (sauberes Herunterfahren, wieder mit Karte).' },
     shutdown: { kind: 'pve-herunterfahren', level: 'L2', effect: 'infra:vm-power', label: 'Gast sauber herunterfahren (ACPI/Agent, kein Hart-Stopp)',
@@ -83,7 +83,7 @@ export const PROXMOX_ACTIONS: Readonly<Record<ProxmoxWriteAction, ProxmoxActionC
     create: { kind: 'pve-anlegen', level: 'L2', effect: 'infra:vm-create', label: 'VM anlegen',
         rueckweg: 'Neue VM trägt den Tag xaventra-created und kann per Karte wieder entfernt werden.' },
     configure: { kind: 'pve-anpassen', level: 'L2', effect: 'infra:vm-config', label: 'VM vergrößern (CPU/RAM/Disk)',
-        rueckweg: 'CPU/RAM kann Alfred in Proxmox zurückstellen; eine Disk lässt sich nicht verkleinern.' },
+        rueckweg: 'CPU/RAM kannst du in Proxmox zurückstellen; eine Disk lässt sich nicht verkleinern.' },
     destroy: { kind: 'pve-entfernen', level: 'L2', effect: 'infra:vm-destroy', label: 'Eigene VM entfernen (endgültig)',
         rueckweg: 'Keiner — die VM und ihre Snapshots sind danach weg. Nur Gäste mit Tag xaventra-created.' },
 })

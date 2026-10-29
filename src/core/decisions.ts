@@ -61,6 +61,7 @@ import { atomicWriteJsonSync } from './atomic-storage.js'
 import { getNovaDataDir } from './data-root.js'
 import { AKTIONSARTEN, isNieAktionsart, isPhysischOderExtern, isStandingExcluded, setDecisionConstraintProvider, setOwnerAllowanceProvider, type DecisionConstraint } from './action-policy.js'
 import { redactSecrets } from '../security/secret-redaction.js'
+import { ownerName, ownerNameAtStart } from '../memory/owner-profile.js'
 
 // ---------------------------------------------------------------------------
 // types
@@ -197,7 +198,7 @@ const STOPWORDS = new Set([
     'ja', 'nein', 'hier', 'dort', 'dabei', 'dazu', 'damit', 'machen', 'mache', 'mach', 'tun', 'einfach', 'automatisch', 'erlauben', 'erlaubt',
     'frag', 'frage', 'fragen', 'vorher', 'the', 'and', 'for', 'always', 'never', 'only', 'nicht', 'mehr', 'widerrufen', 'widerruf', 'vergiss',
     'gültig', 'gueltig', 'aufgehoben', 'heb', 'hebe', 'streiche', 'streich', 'tage', 'tag', 'wochen', 'woche', 'stunden', 'stunde', 'monate',
-    'monat', 'ende', 'widerrufe', 'neuere', 'aendere', 'ändere', 'ersetzt', 'ersetze', 'dieser', 'diese', 'dieses', 'alfred',
+    'monat', 'ende', 'widerrufe', 'neuere', 'aendere', 'ändere', 'ersetzt', 'ersetze', 'dieser', 'diese', 'dieses',
 ])
 
 /** Keyword stems per known action kind (only for tightening constraints). */
@@ -250,8 +251,9 @@ function stem(word: string): string {
 export function topicTokens(text: unknown): string[] {
     const words = lower(text).replace(/[^a-z0-9äöüß\s-]/g, ' ').split(/[\s-]+/)
     const out = new Set<string>()
+    const owner = ownerName().toLowerCase()
     for (const word of words) {
-        if (word.length < 4 || STOPWORDS.has(word) || STOPWORDS.has(fold(word)) || /^\d+$/.test(word)) continue
+        if (word.length < 4 || word === owner || STOPWORDS.has(word) || STOPWORDS.has(fold(word)) || /^\d+$/.test(word)) continue
         out.add(stem(word))
         if (out.size >= 16) break
     }
@@ -626,7 +628,7 @@ export function observeOwnerMessage(message: OwnerMessage, opts: DecisionOptions
         const conflict = related.find(entry => entry.item.polaritaet !== directive.polaritaet || directive.ausdruecklich)
         const base = {
             text: directive.text,
-            warum: directive.warum || `Anweisung von Alfred im Chat (${message.channel || 'Kanal ?'})`,
+            warum: directive.warum || `Anweisung von ${ownerName('dat')} im Chat (${message.channel || 'Kanal ?'})`,
             quelle: { art: 'owner-nachricht' as const, von: by, kanal: message.channel },
             bindend: true,
             gueltigBis: directive.gueltigBis,
@@ -666,8 +668,8 @@ const dateDe = (iso: string) => {
     const d = new Date(iso)
     return Number.isFinite(d.getTime()) ? `${String(d.getUTCDate()).padStart(2, '0')}.${String(d.getUTCMonth() + 1).padStart(2, '0')}.${d.getUTCFullYear()}` : '?'
 }
-const whoOf = (item: Decision) => item.quelle.art === 'owner-nachricht' || item.quelle.art === 'befehl' ? 'Alfred'
-    : item.quelle.art === 'knopf' ? 'Alfred per Knopf' : item.quelle.art === 'mission' ? 'Mission' : 'Delegation'
+const whoOf = (item: Decision) => item.quelle.art === 'owner-nachricht' || item.quelle.art === 'befehl' ? ownerNameAtStart()
+    : item.quelle.art === 'knopf' ? `${ownerNameAtStart()} per Knopf` : item.quelle.art === 'mission' ? 'Mission' : 'Delegation'
 
 export function formatDecisionLine(item: Decision): string {
     const parts = [`[${item.id}] ${item.text}`, `${whoOf(item)} ${dateDe(item.at)}`, `Grund: ${item.warum}`]
@@ -700,11 +702,11 @@ export function buildDecisionContext(query: unknown, observed?: ObserveResult | 
         for (const item of relevant) lines.push(`- ${formatDecisionLine(item)}`)
     }
     if (observed) {
-        for (const item of observed.created) lines.push(`- NEU gemerkt: ${item.text}${item.wirksam ? '' : ` (${item.nichtWirksamGrund || 'nicht wirksam: feste Grenze'} — sag Alfred das kurz)`}`)
+        for (const item of observed.created) lines.push(`- NEU gemerkt: ${item.text}${item.wirksam ? '' : ` (${item.nichtWirksamGrund || 'nicht wirksam: feste Grenze'} — sag ${ownerName('dat')} das kurz)`}`)
         for (const item of observed.replaced) lines.push(`- ERSETZT (gilt nicht mehr): ${item.text}`)
         for (const item of observed.revoked) lines.push(`- WIDERRUFEN: ${item.text}`)
         for (const conflict of observed.conflicts) {
-            lines.push(`- WIDERSPRUCH: „${conflict.neu.text}“ widerspricht „${conflict.alt.text}“ (${whoOf(conflict.alt)} ${dateDe(conflict.alt.at)}, Grund: ${conflict.alt.warum}). Frag Alfred GENAU EINMAL, welche gilt (Antwort „ja, die neue“ oder „nein, die alte“). Bis dahin gilt die alte.`)
+            lines.push(`- WIDERSPRUCH: „${conflict.neu.text}“ widerspricht „${conflict.alt.text}“ (${whoOf(conflict.alt)} ${dateDe(conflict.alt.at)}, Grund: ${conflict.alt.warum}). Frag ${ownerName('akk')} GENAU EINMAL, welche gilt (Antwort „ja, die neue“ oder „nein, die alte“). Bis dahin gilt die alte.`)
         }
         if (observed.resolved) lines.push(`- GEKLÄRT: ${observed.resolved.gewinner === 'neu' ? `gilt jetzt „${observed.resolved.decision.text}“` : 'die bisherige Entscheidung gilt weiter'}`)
     }

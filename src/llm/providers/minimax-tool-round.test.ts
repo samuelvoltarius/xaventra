@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createMiniMaxLLM } from './minimax.js'
 
-// Prüfstand 2.89.10 (28.10.2026, VM 130): a10 „google nach … photo-aigner.at“ und a12 „Wie viel Akku hat der Dolphin?“
+// Prüfstand 2.89.10 (28.10.2026, VM 130): a10 „google nach … muster-foto.example“ und a12 „Wie viel Akku hat der Dolphin?“
 // "[NovaLLM] MiniMax MiniMax-M3.1-Flash failed: Error: MiniMax API error (400): {"type":"error","error":{"type":"bad_request_err…"
 // right after the first tool result → all MiniMax models 400 → local fallback → timeout.
 // The OpenAI-compatible request sent every message as {role, content}: the assistant's tool_calls and the
@@ -18,27 +18,27 @@ describe('MiniMax OpenAI endpoint: tool rounds keep their linkage', () => {
         globalThis.fetch = vi.fn(async (_url: any, init?: any) => {
             bodies.push(JSON.parse(String(init?.body)))
             return bodies.length === 1
-                ? reply({ choices: [{ finish_reason: 'tool_calls', message: { role: 'assistant', content: '', tool_calls: [{ id: 'call_abc', type: 'function', function: { name: 'google_search', arguments: '{"query":"Alfred Aigner photo-aigner.at"}' } }] } }] })
-                : reply({ choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: 'photo-aigner.at gehört Alfred Aigner.' } }] })
+                ? reply({ choices: [{ finish_reason: 'tool_calls', message: { role: 'assistant', content: '', tool_calls: [{ id: 'call_abc', type: 'function', function: { name: 'google_search', arguments: '{"query":"Max Muster muster-foto.example"}' } }] } }] })
+                : reply({ choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: 'muster-foto.example gehört Max Muster.' } }] })
         }) as typeof fetch
         const llm = createMiniMaxLLM({ apiKey: 'fake-minimax-key-xxxxxxxx', model: 'MiniMax-M3.1-Flash' })
         const tools = [{ name: 'google_search', description: 'search', parameters: [{ name: 'query', type: 'string', description: 'q', required: true }] }]
 
-        const first = await llm.complete([{ role: 'user', content: 'google nach Alfred Aigner photo-aigner.at' }] as any, { tools })
+        const first = await llm.complete([{ role: 'user', content: 'google nach Max Muster muster-foto.example' }] as any, { tools })
         expect(first.toolCalls?.[0]).toMatchObject({ id: 'call_abc', name: 'google_search' })
 
         const second = await llm.complete([
-            { role: 'user', content: 'google nach Alfred Aigner photo-aigner.at' },
+            { role: 'user', content: 'google nach Max Muster muster-foto.example' },
             { role: 'assistant', content: '', toolCalls: first.toolCalls },
-            { role: 'tool', content: '9 Treffer: https://photo-aigner.at/ueber-mich.html', toolCallId: 'call_abc' },
+            { role: 'tool', content: '9 Treffer: https://muster-foto.example/ueber-mich.html', toolCallId: 'call_abc' },
         ] as any, { tools })
-        expect(second.content).toContain('photo-aigner')
+        expect(second.content).toContain('muster-foto')
 
         const sent = bodies[1].messages
         const assistant = sent.find((m: any) => m.role === 'assistant')
-        expect(assistant.tool_calls).toEqual([{ id: 'call_abc', type: 'function', function: { name: 'google_search', arguments: '{"query":"Alfred Aigner photo-aigner.at"}' } }])
+        expect(assistant.tool_calls).toEqual([{ id: 'call_abc', type: 'function', function: { name: 'google_search', arguments: '{"query":"Max Muster muster-foto.example"}' } }])
         const tool = sent.find((m: any) => m.role === 'tool')
-        expect(tool).toEqual({ role: 'tool', tool_call_id: 'call_abc', content: '9 Treffer: https://photo-aigner.at/ueber-mich.html' })
+        expect(tool).toEqual({ role: 'tool', tool_call_id: 'call_abc', content: '9 Treffer: https://muster-foto.example/ueber-mich.html' })
     })
 
     it('a tool message whose call id is unknown is sent as plain context, never as an orphan tool message', async () => {

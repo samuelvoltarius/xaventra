@@ -112,7 +112,7 @@ describe('responsibility runtime', () => {
         const { rt } = runtime()
         await rt.tick('test')
         const text = formatArbeit(rt.missions.list(), rt.responsibilities.list())
-        for (const section of ['In Arbeit', 'Geplant', 'Wartet auf Alfred', 'Blockiert', 'Abgeschlossen', 'Verantwortungen']) expect(text).toContain(section)
+        for (const section of ['In Arbeit', 'Geplant', 'Wartet auf dich', 'Blockiert', 'Abgeschlossen', 'Verantwortungen']) expect(text).toContain(section)
         expect(text).toContain('knoten-gesund:main-a')
         expect(text).toMatch(/verletzt|erfüllt/)
     })

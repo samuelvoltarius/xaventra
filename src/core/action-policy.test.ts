@@ -155,7 +155,7 @@ describe('trust ladder (prepared, never automatic)', () => {
         expect(trustUpgradeProposal('install-katalog', opts)).toBeNull()
         recordActionOutcome('install-katalog', { ok: true }, opts)
         const proposal = trustUpgradeProposal('install-katalog', opts)
-        expect(proposal?.text).toContain('Umstellen kann nur Alfred')
+        expect(proposal?.text).toContain('Umstellen kann nur der Owner')
         expect(trustUpgradeProposal('install-katalog', opts)).toBeNull()
         expect(evaluateAction({ kind: 'install-katalog', origin: 'mission' }).level).toBe('L2')
     })

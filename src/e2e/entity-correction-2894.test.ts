@@ -22,34 +22,34 @@ describe('entity correction across the real daemon entry', () => {
         await h.send('Telegram', OWNER_TELEGRAM_ID, 'Das ist Alpha.', [{ text: 'Alpha ist durch deine Benennung zugeordnet.' }], { image, messageContext: { chatId: OWNER_TELEGRAM_ID } })
         await h.send('Telegram', OWNER_TELEGRAM_ID, 'Ein weiteres Bild.', [{ text: 'Das ist ein neues Bild; die Identität ist noch nicht bestätigt.' }], { image, messageContext: { chatId: OWNER_TELEGRAM_ID } })
         const correction = await h.burst([
-            { channel: 'Telegram', from: OWNER_TELEGRAM_ID, text: 'Nicht ganz, er ist ein grauer Schopfhund.', messageContext: { chatId: OWNER_TELEGRAM_ID } },
+            { channel: 'Telegram', from: OWNER_TELEGRAM_ID, text: 'Nicht ganz, er ist ein grauer Dackel.', messageContext: { chatId: OWNER_TELEGRAM_ID } },
             { channel: 'Telegram', from: OWNER_TELEGRAM_ID, text: 'Und das ist nicht Alpha.', delayMs: 10, messageContext: { chatId: OWNER_TELEGRAM_ID } },
         ])
         expect(correction.error).toBeUndefined()
         expect(correction.final).toMatch(/Wie heißt|Welches Wesen/)
         const identified = await h.telegram('Das ist Beta.', [call => {
             const system = call.messages.filter(m => m.role === 'system').map(m => m.content).join('\n')
-            expect(system).toContain('Beta ist ein grauer Schopfhund')
-            return { text: 'Jetzt gespeichert: Beta ist ein grauer Schopfhund.' }
+            expect(system).toContain('Beta ist ein grauer Dackel')
+            return { text: 'Jetzt gespeichert: Beta ist ein grauer Dackel.' }
         }])
         expect(identified.error).toBeUndefined()
         const governance = await h.module('memory/memory-governance.js')
         const records = governance.getMemoryGovernanceCoordinator().list()
         const active = records.filter((r: any) => ['verified', 'canonical'].includes(r.status))
         expect(active.some((r: any) => r.subject === 'entity:alpha' && r.content.includes('braun'))).toBe(true)
-        expect(active.some((r: any) => r.subject === 'entity:alpha' && r.content.includes('Schopfhund'))).toBe(false)
-        expect(active.some((r: any) => r.subject === 'entity:beta' && r.content.includes('Schopfhund'))).toBe(true)
+        expect(active.some((r: any) => r.subject === 'entity:alpha' && r.content.includes('Dackel'))).toBe(false)
+        expect(active.some((r: any) => r.subject === 'entity:beta' && r.content.includes('Dackel'))).toBe(true)
         await h.close(); h = undefined
         h = await createE2EHarness({ reuseRoot: root })
         let recalledContext = ''
         const recalled = await h.telegram('Was weißt du über Alpha und Beta?', [call => {
             const system = call.messages.filter(m => m.role === 'system').map(m => m.content).join('\n')
             recalledContext = system
-            return { text: 'Alpha ist braun. Beta ist ein grauer Schopfhund.' }
+            return { text: 'Alpha ist braun. Beta ist ein grauer Dackel.' }
         }])
         expect(recalled.error).toBeUndefined()
         expect(recalledContext).toContain('Alpha ist braun')
-        expect(recalledContext).toContain('Beta ist ein grauer Schopfhund')
+        expect(recalledContext).toContain('Beta ist ein grauer Dackel')
         expect(recalled.final).toContain('Alpha ist braun')
     }, 90_000)
 })

@@ -207,6 +207,15 @@ Facts und Wissensgraph (bewacht von `src/memory/memory-single-writer.test.ts`).
 **Lesen in den Prompt:** `src/memory/memory-context.ts:18` `buildMemoryContext`
 (Governance) plus Owner-Profil `src/memory/owner-profile.ts` (Tier 0, Vorrang,
 `reconcileProfileWithMemory`).
+**Owner im Laufzeittext (Datenschutz, 2.91):** nur `src/memory/owner-profile.ts`
+`ownerName(kasus)` / `ownerNameAtStart()` — Vorname aus dem Owner-Profil dieser
+Installation, sonst „der/den/dem/des Owner(s)“; direkt an den Owner gerichtet:
+„du“. Nie ein fester Name: `npm run check:owner-neutral`
+(`src/dev/check-owner-neutral.ts`, AST: nur Strings/Templates/Regexe, Kommentare
+erlaubt; läuft als Test in CI). Echte persönliche Kennungen (IDs, Familie,
+Tiere, Domains) prüft `scripts/check-infra-leaks.mjs` gegen die private Liste
+(`XAVENTRA_LEAK_DENYLIST`-Secret bzw. ungetrackte `.leak-denylist`), die nie im
+Repo liegt.
 
 **Wichtige Dateien:** `memory-governance.ts`, `memory-context.ts`,
 `memory-facade.ts`, `owner-profile.ts`, `correction-memory.ts`,

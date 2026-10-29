@@ -24,33 +24,33 @@ describe('Gedanken-Hub: Phase 2/3/4 → Planer-Gedanken → Knopf → Aktion', (
         const thought = listThoughts().find(item => item.title.includes('Voron'))!
         expect(thought.permission).toBe('fragen')
         expect(thought.title).toContain('Voron')
-        const result = await dispatchThoughtAnswer(thought.id, 'ja', { userId: '1413797900' })
+        const result = await dispatchThoughtAnswer(thought.id, 'ja', { userId: '7000000001' })
         expect(result.ok).toBe(true)
-        expect(approve).toHaveBeenCalledWith('dev_voron', { principalId: '1413797900', permission: 'owner' })
+        expect(approve).toHaveBeenCalledWith('dev_voron', { principalId: '7000000001', permission: 'owner' })
     })
 
     it('Nein on a device thought approves nothing', async () => {
         approve.mockClear()
         await createSensingThoughtSink().writeThought(sensingThought({ title: 'Anderer Drucker gefunden', dedupeKey: 'device:dev_other', action: { kind: 'approveDevice', deviceId: 'dev_other' } }))
         const thought = listThoughts().find(item => item.title.includes('Anderer'))!
-        await dispatchThoughtAnswer(thought.id, 'nein', { userId: '1413797900' })
+        await dispatchThoughtAnswer(thought.id, 'nein', { userId: '7000000001' })
         expect(approve).not.toHaveBeenCalled()
-        expect(decline).toHaveBeenCalledWith('dev_other', { principalId: '1413797900', permission: 'owner' }, undefined)
+        expect(decline).toHaveBeenCalledWith('dev_other', { principalId: '7000000001', permission: 'owner' }, undefined)
     })
 
     it('preserves the concrete device fingerprint through thought storage and approval dispatch', async () => {
         const fingerprint = 'a'.repeat(64)
         createSensingThoughtSink().writeThought(sensingThought({ title: 'Identitätsgebundene Steckdose', dedupeKey: 'device:bound', action: { kind: 'approveDevice', deviceId: 'dev_bound', fingerprint } }))
         const thought = listThoughts().find(item => item.title.includes('Identitätsgebundene'))!
-        await dispatchThoughtAnswer(thought.id, 'ja', { userId: '1413797900' })
-        expect(approve).toHaveBeenCalledWith('dev_bound', { principalId: '1413797900', permission: 'owner' }, fingerprint)
+        await dispatchThoughtAnswer(thought.id, 'ja', { userId: '7000000001' })
+        expect(approve).toHaveBeenCalledWith('dev_bound', { principalId: '7000000001', permission: 'owner' }, fingerprint)
     })
 
     it('a model-chosen action never reaches a thought (only known action kinds are kept)', async () => {
         approve.mockClear()
         await createSensingThoughtSink().writeThought(sensingThought({ title: 'Böse Aktion gefunden', dedupeKey: 'device:evil', action: { kind: 'runCommand', cmd: 'rm -rf /' } }))
         const thought = listThoughts().find(item => item.title.includes('Böse'))!
-        const result = await dispatchThoughtAnswer(thought.id, 'ja', { userId: '1413797900' })
+        const result = await dispatchThoughtAnswer(thought.id, 'ja', { userId: '7000000001' })
         expect(approve).not.toHaveBeenCalled()
         expect(result.message).not.toContain('rm -rf')
     })
@@ -60,14 +60,14 @@ describe('Gedanken-Hub: Phase 2/3/4 → Planer-Gedanken → Knopf → Aktion', (
         const thought = listThoughts().find(item => item.title.includes('web_search'))!
         // 2.86 Punkt 5: an unknown action (cache-einschalten) has no executor → no question, only an idea.
         expect(thought.permission).toBe('selbst')
-        await dispatchThoughtAnswer(thought.id, 'nein', { userId: '1413797900' })
+        await dispatchThoughtAnswer(thought.id, 'nein', { userId: '7000000001' })
         expect(decisions).toHaveBeenCalledWith('idee:werkzeug-langsam', 'nein')
     })
 
     it('a self-update proposal is recorded but never activates anything from a button (no executor yet)', async () => {
         await createSelfUpdateThoughtSink().emit({ schema: 1, id: 'u1', at: new Date().toISOString(), source: 'self-update', kind: 'update-proposal', title: '2.81.0 verfügbar, geprüft', text: 'Installieren?', evidence: ['Signatur ok'], importance: 'hoch', permission: 'fragen', proposal: { action: 'self-update.activate', params: {} }, dedupeKey: 'update:2.81.0' } as any)
         const thought = listThoughts().find(item => item.title.includes('verfügbar, geprüft'))!
-        const result = await dispatchThoughtAnswer(thought.id, 'ja', { userId: '1413797900' })
+        const result = await dispatchThoughtAnswer(thought.id, 'ja', { userId: '7000000001' })
         expect(result.ok).toBe(true)
         expect(result.message).toMatch(/vermerkt/i)
     })
@@ -85,7 +85,7 @@ describe('ganze Kette: Fund → Gedanke → Karte → Owner drückt Ja → Aktio
             const thought = listThoughts().find(t => t.title === title)!
             expect(await hasThoughtAction(thought.id)).toBe(true)
             const sendApprovalCard = vi.fn(async () => 1)
-            await createPlannerTelegramPort({ hasCardAuthority: async () => true, getOwnerChatIds: () => ['1413797900'], sendApprovalCard }).deliver({
+            await createPlannerTelegramPort({ hasCardAuthority: async () => true, getOwnerChatIds: () => ['7000000001'], sendApprovalCard }).deliver({
                 id: `out-ha-${kind}`, kind: 'gedanke', title, text: thought.evidence, permission: 'fragen', thoughtId: thought.id,
                 createdAt: new Date().toISOString(), urgency: 'normal' })
             expect(listApprovalCards({ status: 'offen' }).some(c => c.aktion.ref === thought.id)).toBe(true)
@@ -98,13 +98,13 @@ describe('ganze Kette: Fund → Gedanke → Karte → Owner drückt Ja → Aktio
         const { answerApprovalCard, listApprovalCards } = await import('./approval-cards.js')
         await createSensingThoughtSink().writeThought(sensingThought({ title: 'Kette Drucker Prusa gefunden', dedupeKey: 'device:dev_prusa', action: { kind: 'approveDevice', deviceId: 'dev_prusa' } }))
         const thought = listThoughts().find(item => item.title.includes('Kette Drucker Prusa'))!
-        const tg = { hasCardAuthority: async () => true, getOwnerChatIds: () => ['1413797900'], sendApprovalCard: async () => 1 }
+        const tg = { hasCardAuthority: async () => true, getOwnerChatIds: () => ['7000000001'], sendApprovalCard: async () => 1 }
         await createPlannerTelegramPort(tg).deliver({ id: 'out-0000000000e2', kind: 'gedanke', title: thought.title, text: 'Port 7125', permission: 'fragen', thoughtId: thought.id, createdAt: new Date().toISOString(), urgency: 'normal' })
         expect(approve).not.toHaveBeenCalled()
         const card = listApprovalCards({ status: 'offen' }).find(item => item.aktion.ref === thought.id)!
-        const pressed = await answerApprovalCard(`ac:${card.buttons[0].token}`, { userId: '1413797900', ownerIds: ['1413797900'] })
+        const pressed = await answerApprovalCard(`ac:${card.buttons[0].token}`, { userId: '7000000001', ownerIds: ['7000000001'] })
         expect(pressed.ok).toBe(true)
-        expect(approve).toHaveBeenCalledWith('dev_prusa', { principalId: '1413797900', permission: 'owner' })
+        expect(approve).toHaveBeenCalledWith('dev_prusa', { principalId: '7000000001', permission: 'owner' })
         expect(getThought(thought.id)?.status).toBe('erledigt')
     })
 })

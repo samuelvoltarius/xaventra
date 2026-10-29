@@ -41,6 +41,7 @@ import { atomicWriteJsonSync } from './atomic-storage.js'
 import type { CardExecutor, NewCardInput, ApprovalCard } from './approval-cards.js'
 import type { CheckOutcome, Responsibility, ResponsibilityManager, ResponsibilitySignals, ThoughtPort } from './responsibilities.js'
 import { redactSecrets } from '../security/secret-redaction.js'
+import { ownerName, ownerNameAtStart } from '../memory/owner-profile.js'
 
 export type MissionStatus = 'geplant' | 'in-arbeit' | 'wartet-auf-alfred' | 'wartet-auf-delegation' | 'blockiert' | 'abgeschlossen' | 'fehlgeschlagen'
 export type StepStatus = 'offen' | 'laeuft' | 'erledigt' | 'fehlgeschlagen' | 'wartet' | 'abgelehnt'
@@ -304,7 +305,7 @@ export function createMissionEngine(options: MissionEngineOptions): MissionEngin
                 step.cardId = card.card.id
                 mission.status = 'wartet-auf-alfred'
                 mission.waitingStepId = step.id
-                note(mission, `wartet auf Alfred: ${step.titel}`)
+                note(mission, `wartet auf ${ownerName('akk')}: ${step.titel}`)
                 save(mission)
                 try { options.onWaiting?.({ ...mission }) } catch { /* reminders never break a mission */ }
                 return mission
@@ -459,7 +460,7 @@ export function createMissionEngine(options: MissionEngineOptions): MissionEngin
                 step.status = 'offen'
                 mission.status = 'in-arbeit'
                 mission.waitingStepId = undefined
-                note(mission, `Alfred: Ja zu „${step.titel}“`)
+                note(mission, `${ownerNameAtStart()}: Ja zu „${step.titel}“`)
                 save(mission)
                 return runSteps(mission)
             })
@@ -478,8 +479,8 @@ export function createMissionEngine(options: MissionEngineOptions): MissionEngin
                 }
                 step.status = 'abgelehnt'
                 recordOwnerAnswer(step.kind, 'nein', { dataDir: options.dataDir, now })
-                note(mission, `Alfred: Nein zu „${step.titel}“ (${clean(ctx.decidedBy, 60)})`)
-                return finish(mission, 'blockiert', `${step.titel} (Alfred hat Nein gesagt)`)
+                note(mission, `${ownerNameAtStart()}: Nein zu „${step.titel}“ (${clean(ctx.decidedBy, 60)})`)
+                return finish(mission, 'blockiert', `${step.titel} (${ownerName()} hat Nein gesagt)`)
             })
             return final ? { ok: true, message: `Verstanden, Mission blockiert. ${final.handoff || ''}`.trim() } : { ok: false, message }
         },

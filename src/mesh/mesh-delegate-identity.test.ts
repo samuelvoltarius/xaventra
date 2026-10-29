@@ -19,8 +19,8 @@ afterEach(() => { sent.calls.length = 0; setKnownNodeNamesForTests(null) })
 describe('mesh_delegate carries the requesting owner', () => {
     it('delegateTask sends the given user id and budget with the agent request', async () => {
         const { delegateTask } = await import('./mesh-registry.js')
-        await delegateTask('xaventra-nas', 'uptime', { userId: '1413797900', timeoutMs: 90_000 })
-        expect(sent.calls[0].options).toMatchObject({ userId: '1413797900', budget: { timeoutMs: 90_000 } })
+        await delegateTask('xaventra-nas', 'uptime', { userId: '7000000001', timeoutMs: 90_000 })
+        expect(sent.calls[0].options).toMatchObject({ userId: '7000000001', budget: { timeoutMs: 90_000 } })
     })
 
     it('the tool takes the owner from the execution context', async () => {
@@ -28,8 +28,8 @@ describe('mesh_delegate carries the requesting owner', () => {
         const { withExecutionPolicyContext } = await import('../core/lifecycle-policy.js')
         const { ALL_TOOLS } = await import('../tools/complete-registry.js')
         const tool = ALL_TOOLS.find(entry => entry.name === 'mesh_delegate')!
-        await withExecutionPolicyContext({ userId: '1413797900', authUserId: '1413797900', channel: 'telegram' },
+        await withExecutionPolicyContext({ userId: '7000000001', authUserId: '7000000001', channel: 'telegram' },
             () => tool.handler({ node_id: 'xaventra-nas', task: 'uptime', wait_seconds: 0, userId: 'raw-ignored' }))
-        expect(sent.calls[0].options.userId).toBe('1413797900')
+        expect(sent.calls[0].options.userId).toBe('7000000001')
     })
 })

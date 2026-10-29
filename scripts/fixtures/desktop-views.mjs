@@ -62,7 +62,7 @@ export function createFixtureViews(now = Date.now()) {
     ],
     verantwortungen: [
       { id: 'knoten-gesund:fixture-one', titel: 'fixture-one bleibt gesund', ziel: 'Platte, Speicher und Dienste im grünen Bereich', status: 'aktiv', herkunft: 'selbst abgeleitet', bisStufe: 'L1', kriterien: ['Platte < 85 %'], letztePruefung: { at: ago(now, 5), erfuellt: true, befunde: [] } },
-      { id: 'geraet-ueberwachen:labor', titel: 'Labor-VM erreichbar', ziel: 'Das Labor antwortet auf Prüfungen', status: 'aktiv', herkunft: 'von Alfred', bisStufe: 'L2', kriterien: ['Nachtwache-Prüfung ok'], letztePruefung: { at: ago(now, 12), erfuellt: false, befunde: ['Labor erreichbar: Zeitüberschreitung'] } },
+      { id: 'geraet-ueberwachen:labor', titel: 'Labor-VM erreichbar', ziel: 'Das Labor antwortet auf Prüfungen', status: 'aktiv', herkunft: 'von Max', bisStufe: 'L2', kriterien: ['Nachtwache-Prüfung ok'], letztePruefung: { at: ago(now, 12), erfuellt: false, befunde: ['Labor erreichbar: Zeitüberschreitung'] } },
       { id: 'release-aktuell', titel: 'Release aktuell', ziel: 'Alle Knoten auf der freigegebenen Version', status: 'vorgeschlagen', herkunft: 'selbst abgeleitet', bisStufe: 'L1', kriterien: [], letztePruefung: null },
     ],
     auftraege: {
@@ -114,9 +114,9 @@ export function createFixtureViews(now = Date.now()) {
   }
   const gedaechtnis = {
     entscheidungen: [
-      { id: 'd-1', text: 'Nachts keine Updates einspielen', warum: 'Alfred: „nachts nichts neu starten“', status: 'aktiv', bindend: true, wirksam: true, nichtWirksamGrund: '', quelle: 'owner-nachricht', at: ago(now, 600), gueltigBis: null, themen: ['update', 'nacht'], konflikt: null },
+      { id: 'd-1', text: 'Nachts keine Updates einspielen', warum: 'Max: „nachts nichts neu starten“', status: 'aktiv', bindend: true, wirksam: true, nichtWirksamGrund: '', quelle: 'owner-nachricht', at: ago(now, 600), gueltigBis: null, themen: ['update', 'nacht'], konflikt: null },
       { id: 'd-2', text: 'Drucken nur nach Rückfrage', warum: 'Karte „Wochenplan drucken“: Nein', status: 'aktiv', bindend: true, wirksam: true, nichtWirksamGrund: '', quelle: 'knopf', at: ago(now, 860), gueltigBis: null, themen: ['drucken'], konflikt: null },
-      { id: 'd-3', text: 'Bis Sonntag keine neuen VMs', warum: 'Alfred: „diese Woche keine neuen Maschinen“', status: 'abgelaufen', bindend: true, wirksam: false, nichtWirksamGrund: 'Frist vorbei', quelle: 'owner-nachricht', at: ago(now, 12000), gueltigBis: ago(now, 3000), themen: ['vm'], konflikt: null },
+      { id: 'd-3', text: 'Bis Sonntag keine neuen VMs', warum: 'Max: „diese Woche keine neuen Maschinen“', status: 'abgelaufen', bindend: true, wirksam: false, nichtWirksamGrund: 'Frist vorbei', quelle: 'owner-nachricht', at: ago(now, 12000), gueltigBis: ago(now, 3000), themen: ['vm'], konflikt: null },
     ],
     werkzeuge: [
       { id: 'sp-1', name: 'foto_datum', beschreibung: 'Liest das Aufnahmedatum aus Bilddateien.', warum: 'Fotos nach Datum ordnen', status: 'active', version: 2, herkunft: 'bedarf', wirkung: 'lesen', tests: { bestanden: 6, gesamt: 6, at: ago(now, 3000) }, aufrufe: { gesamt: 412, ok: 410, fehler: 2, zuletzt: ago(now, 5) }, gesperrt: '', karte: null, createdAt: ago(now, 5000) },

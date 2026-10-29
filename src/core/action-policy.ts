@@ -60,6 +60,7 @@ import { join } from 'node:path'
 import { neverListViolation, NEVER_LIST } from '../install/never-list.js'
 import { atomicWriteJsonSync } from './atomic-storage.js'
 import { getNovaDataDir } from './data-root.js'
+import { ownerName } from '../memory/owner-profile.js'
 
 export type ActionLevel = 'L0' | 'L1' | 'L2' | 'L3'
 export type ActionDecision = 'auto' | 'ask' | 'handoff' | 'never'
@@ -794,7 +795,7 @@ export function trustUpgradeProposal(kindName: string, opts: TrustOptions = {}):
     return {
         kind: key,
         titel: `Vertrauen: „${key}“ künftig ohne Rückfrage?`,
-        text: `${stats.successes}× in Folge erfolgreich ohne Rückweg (${stats.total} Ausführungen gesamt). Vorschlag: von L2 (fragen) auf L1 (selbst). Umstellen kann nur Alfred im Code; bis dahin frage ich weiter.`,
+        text: `${stats.successes}× in Folge erfolgreich ohne Rückweg (${stats.total} Ausführungen gesamt). Vorschlag: von L2 (fragen) auf L1 (selbst). Umstellen kann nur ${ownerName()} im Code; bis dahin frage ich weiter.`,
     }
 }
 

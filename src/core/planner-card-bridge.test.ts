@@ -8,7 +8,7 @@ import { collectGedanken } from './now-view.js'
 function fakeTelegram(authority = true) {
     return {
         hasCardAuthority: vi.fn(async () => authority),
-        getOwnerChatIds: vi.fn(() => ['1413797900']),
+        getOwnerChatIds: vi.fn(() => ['7000000001']),
         sendApprovalCard: vi.fn(async () => 42),
     }
 }
@@ -34,7 +34,7 @@ describe('planner → Telegram/Knopf-Karten (Integration Phase 1)', () => {
         const tg = fakeTelegram()
         const receipt = await createPlannerTelegramPort(tg).deliver({ id: 'out-000000000002', kind: 'briefing', title: 'Morgenbericht', text: 'Alles ruhig.', ...base })
         expect(receipt?.status).toBe('zugestellt')
-        expect(tg.sendApprovalCard).toHaveBeenCalledWith('1413797900', expect.stringContaining('Morgenbericht'), [])
+        expect(tg.sendApprovalCard).toHaveBeenCalledWith('7000000001', expect.stringContaining('Morgenbericht'), [])
     })
 
     it('without live Main/Telegram authority the delivery is fenced (stays pending, nothing sent)', async () => {
@@ -52,13 +52,13 @@ describe('planner → Telegram/Knopf-Karten (Integration Phase 1)', () => {
 
     it('Ja closes the thought as erledigt, Nein as verworfen — only the owner can press', async () => {
         registerThoughtCardExecutor()
-        const owner = { userId: '1413797900', ownerIds: ['1413797900'] }
+        const owner = { userId: '7000000001', ownerIds: ['7000000001'] }
         for (const [answerIndex, expected] of [[0, 'erledigt'], [1, 'verworfen']] as const) {
             const { thought } = addThought({ source: 'test', title: `Idee ${expected}`, severity: 'warning', proposal: 'p', permission: 'fragen', signature: `bridge-press-${expected}` })
             rememberAutoReminderAction(thought.id, `ar-00000000000${answerIndex}`)
             await createPlannerTelegramPort(fakeTelegram()).deliver({ id: `out-00000000001${answerIndex}`, kind: 'gedanke', title: thought.title, text: 'b', permission: 'fragen', thoughtId: thought.id, ...base })
             const card = listApprovalCards({ status: 'offen' }).find(item => item.aktion.ref === thought.id)!
-            const stranger = await answerApprovalCard(`ac:${card.buttons[answerIndex].token}`, { userId: '999', ownerIds: ['1413797900'] })
+            const stranger = await answerApprovalCard(`ac:${card.buttons[answerIndex].token}`, { userId: '999', ownerIds: ['7000000001'] })
             expect(stranger.ok).toBe(false)
             expect(getThought(thought.id)?.status).toBe('wartet-auf-knopf')
             const pressed = await answerApprovalCard(`ac:${card.buttons[answerIndex].token}`, owner)

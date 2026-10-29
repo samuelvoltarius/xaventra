@@ -268,7 +268,7 @@ function homeAssistantDefinition(): Omit<RoutineSkill, 'enabled' | 'uses' | 'suc
         id: HOME_ASSISTANT_SKILL_ID,
         version: 1,
         name: 'Home Assistant ansehen',
-        trigger: 'Alfred sagt „guck mal bei Home Assistant“, „wie schaut’s im HA aus“, „HA-Status“, „was ist los im Smart Home“ o. ä.',
+        trigger: 'Der Owner sagt „guck mal bei Home Assistant“, „wie schaut’s im HA aus“, „HA-Status“, „was ist los im Smart Home“ o. ä.',
         intent: 'homeassistant-lesen',
         keywords: topicTokens('homeassistant smarthome hausautomation'),
         steps: [

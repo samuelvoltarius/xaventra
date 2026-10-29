@@ -53,13 +53,13 @@ describe('2.86.1 Punkt 1: keine 32 Seiten', () => {
 
     it('Telegram: die Geräte-Antwort hat höchstens 3 Seiten', () => {
         const dataDir = mkdtempSync(join(tmpdir(), 'p17-pages-'))
-        const view = pagedView('1413797900', environmentOverviewResponse(executions), { dataDir })
+        const view = pagedView('7000000001', environmentOverviewResponse(executions), { dataDir })
         const mehr = view.keyboard.flat().map(button => button.text).find(label => label.startsWith('Mehr'))
         expect(mehr).toMatch(/\(1\/[1-3]\)/)
     })
 
     it('Owner-Systemnachrichten haben in Telegram nie mehr als 3 Seiten', async () => {
-        const tg = { hasCardAuthority: vi.fn(async () => true), getOwnerChatIds: vi.fn(() => ['1413797900']), sendApprovalCard: vi.fn(async (_chat: string, _text: string, _keyboard: unknown) => 42) }
+        const tg = { hasCardAuthority: vi.fn(async () => true), getOwnerChatIds: vi.fn(() => ['7000000001']), sendApprovalCard: vi.fn(async (_chat: string, _text: string, _keyboard: unknown) => 42) }
         await createPlannerTelegramPort(tg).deliver({ id: 'out-0000000000p17', kind: 'job', title: 'Nachtlauf', text: TECHNIK, createdAt: new Date().toISOString(), urgency: 'normal' } as any)
         const keyboard = tg.sendApprovalCard.mock.calls[0][2] as Array<Array<{ text: string }>>
         const mehr = keyboard.flat().map(button => button.text).find(label => label.startsWith('Mehr'))

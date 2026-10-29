@@ -15,6 +15,8 @@ import { join } from 'node:path'
 import { redactSecrets } from '../security/secret-redaction.js'
 import { getNovaDataDir } from '../core/data-root.js'
 import { answerApprovalCard, isCardOwner, listApprovalCards, type ApprovalCard, type CardAnswer, type CardStoreOptions } from '../core/approval-cards.js'
+import { ownerName } from '../memory/owner-profile.js'
+
 
 export interface ViewOptions extends CardStoreOptions { dataDir?: string; now?: () => number }
 
@@ -231,7 +233,7 @@ export async function collectArbeit(): Promise<Record<string, unknown>> {
     }))
     const responsibilities = (state?.responsibilities || []).filter(item => item.status !== 'abgelehnt').map(item => ({
         id: clean(item.id, 80), titel: clean(item.titel, 200), ziel: clean(item.ziel, 300), status: clean(item.status, 20),
-        herkunft: item.herkunft === 'owner' ? 'von Alfred' : 'selbst abgeleitet', bisStufe: clean(item.maxLevel, 8),
+        herkunft: item.herkunft === 'owner' ? `von ${ownerName('dat')}` : 'selbst abgeleitet', bisStufe: clean(item.maxLevel, 8),
         kriterien: (item.kriterien || []).slice(0, 6).map(criterion => clean(criterion.text, 200)),
         letztePruefung: item.lastCheck ? { at: iso(item.lastCheck.at), erfuellt: item.lastCheck.erfuellt, befunde: (item.lastCheck.befunde || []).slice(0, 5).map(text => clean(text, 200)) } : null,
     }))
