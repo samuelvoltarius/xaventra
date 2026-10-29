@@ -175,6 +175,13 @@ export async function hassGetApiStatus(): Promise<{ message: string }> {
 // Smart Formatters
 // ============================================
 
+/** "29.10.2026, 03:32:03" in the system time zone (TZ), or '' for a missing/invalid timestamp. */
+export function localTimeLabel(iso: unknown): string {
+    const at = Date.parse(String(iso ?? ''))
+    if (!Number.isFinite(at)) return ''
+    return new Date(at).toLocaleString('de-AT', { timeZone: process.env.TZ || undefined, day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+}
+
 export function formatEntityState(entity: HassEntity): string {
     const id = entity.entity_id
     const domain = id.split('.')[0]
@@ -189,6 +196,9 @@ export function formatEntityState(entity: HassEntity): string {
     const icon = icons[domain] || '🏠'
 
     let out = `${icon} **${name}** (${id}): ${state}`
+    // 2.89.14 (live 29.10.): HA timestamps are UTC; the answer said "02:32 Uhr" for 03:32 local time.
+    const changed = localTimeLabel(entity.last_changed)
+    if (changed) out += ` (zuletzt geändert ${changed} Ortszeit)`
 
     // Extra attributes per domain
     if (domain === 'light' && state === 'on') {

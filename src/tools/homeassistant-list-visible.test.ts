@@ -72,3 +72,22 @@ describe('hass_list: every entity reaches the model', () => {
         })
     })
 })
+
+// 2.89.14 (Kurzabnahme 29.10. 03:36): hass_get carried last_changed in UTC ("2026-10-29T02:32:03Z") and the
+// answer said "Bestätigung um 02:32 Uhr" although it was 03:32 local time.
+describe('Home Assistant times are given in local time', () => {
+    it('hass_get names the last change in the system time zone', async () => {
+        const previous = process.env.TZ
+        process.env.TZ = 'Europe/Vienna'
+        try {
+            const entity = { entity_id: 'switch.k1_max_steckdose', state: 'on', attributes: { friendly_name: 'K1 Max Steckdose' }, last_changed: '2026-10-29T02:32:03.123Z', last_updated: '2026-10-29T02:32:03.123Z' }
+            vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(entity), { status: 200, headers: { 'content-type': 'application/json' } })))
+            const tool = hass.homeAssistantTools.find(entry => entry.name === 'hass_get')!
+            const result: any = await tool.handler({ entity_id: 'switch.k1_max_steckdose' })
+            expect(result.formatted).toContain('03:32')
+            expect(result.formatted).not.toContain('02:32')
+        } finally {
+            if (previous === undefined) delete process.env.TZ; else process.env.TZ = previous
+        }
+    })
+})
