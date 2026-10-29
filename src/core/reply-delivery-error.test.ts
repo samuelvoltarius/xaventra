@@ -3,11 +3,17 @@ import { describe, expect, it, vi } from 'vitest'
 import { deliveryFailureText, protectReplyDelivery, ReplyDeliveryError } from './reply-delivery-error.js'
 
 describe('reply delivery is not an inference failure', () => {
-    it('retains the transport cause and does not resend an ambiguous delivery', async () => {
+    // Abnahme 2.90.0: an ambiguous network failure IS resent now (rather twice than never), but only
+    // once, in the channel (telegram.ts deliverMessage: two bounded retries, never on a 4xx). This
+    // wrapper must not add a second retry loop on top, or one lost answer would be sent up to 9 times.
+    it('retains the transport cause and leaves the bounded resend to the channel', async () => {
         const cause = new Error('EFATAL: fetch failed')
         const send = vi.fn().mockRejectedValue(cause)
         await expect(protectReplyDelivery(send)('verified results')).rejects.toMatchObject({ name: 'ReplyDeliveryError', cause })
         expect(send).toHaveBeenCalledTimes(1)
+        const channel = readFileSync(new URL('../channels/telegram.ts', import.meta.url), 'utf8')
+        expect(channel).toContain('private async deliverMessage(')
+        expect(channel).toContain('isTransientTransportFailure(err)')
     })
     it('propagates the delivery failure before any pipeline model fallback', () => {
         const source = readFileSync(new URL('./message-pipeline.ts', import.meta.url), 'utf8')

@@ -13,6 +13,8 @@ import { formatTelegramMessage } from './telegram-presentation.js'
 import type { PrincipalContext } from '../users/principal-id.js'
 import { claimTelegramPairing, isTelegramPairingMessage } from '../onboarding/telegram-pairing.js'
 import { deliveryFailureText } from '../core/reply-delivery-error.js'
+import { isTransientTransportFailure } from '../core/infrastructure-failure.js'
+import { resolveOwnerTimeZone } from '../core/clock-answer.js'
 
 // ============================================
 // Types
@@ -120,6 +122,10 @@ export class TelegramAdapter implements ChannelAdapter {
     private latestUserMessageId = new Map<string, number>()
     /** 2.89.4: message_id currently being answered — the reply anchor when the chat has already moved on. */
     private answeringMessageId = new Map<string, number>()
+    /** Abnahme 2.90.0: waits before the two retries of a send that failed in the network. */
+    private deliveryRetryDelaysMs = [2000, 6000]
+    /** Abnahme 2.90.0: time of the first reply per chat that stayed undelivered after the retries. */
+    private lostReplies = new Map<string, Date>()
 
     constructor(config: TelegramConfig) {
         this.config = {
@@ -1360,19 +1366,55 @@ export class TelegramAdapter implements ChannelAdapter {
         // 2.89.4: same reply anchor as send() — a queued answer must not look shifted.
         const reply_to_message_id = this.replyAnchorFor(chatId)
         try {
-            await this.bot.sendMessage(chatId, text, {
+            await this.deliverMessage(chatId, text, {
                 parse_mode: 'Markdown',
                 reply_markup: { inline_keyboard: buttons },
                 reply_to_message_id,
             })
         } catch (err: any) {
             // Markdown failed → try plain text
-            if (err.message?.includes("can't parse entities")) {
-                await this.bot.sendMessage(chatId, text.replace(/[*_`\[\]]/g, ''), {
-                    reply_markup: { inline_keyboard: buttons },
-                    reply_to_message_id,
-                })
+            if (!err.message?.includes("can't parse entities")) return
+            await this.deliverMessage(chatId, text.replace(/[*_`\[\]]/g, ''), {
+                reply_markup: { inline_keyboard: buttons },
+                reply_to_message_id,
+            })
+        }
+        await this.announceLostReply(chatId)
+    }
+
+    /**
+     * Abnahme 2.90.0 (17:11:10, "FatalError: EFATAL: fetch failed"): one Bot API send with two
+     * bounded retries (~2 s, ~6 s) for a network failure only — never for a Telegram API answer
+     * (400 parse error, 403 blocked, chat not found, 429). Whether Telegram already has the
+     * message is unknown then; a duplicate reply is accepted (rather twice than never).
+     * A reply still undelivered is announced once with the next successful send to that chat.
+     */
+    private async deliverMessage(chatId: string, text: string, options?: any): Promise<any> {
+        for (let attempt = 0; ; attempt++) {
+            try {
+                return await this.bot.sendMessage(chatId, text, options)
+            } catch (err) {
+                if (!isTransientTransportFailure(err)) throw err
+                if (attempt >= this.deliveryRetryDelaysMs.length) {
+                    if (!this.lostReplies.has(chatId)) this.lostReplies.set(chatId, new Date())
+                    throw err
+                }
+                console.warn(`[Nova Telegram] Delivery failed in the network (${deliveryFailureText(err).slice(0, 160)}), retry ${attempt + 1}/${this.deliveryRetryDelaysMs.length}`)
+                await new Promise(resolve => setTimeout(resolve, this.deliveryRetryDelaysMs[attempt]))
             }
+        }
+    }
+
+    /** Abnahme 2.90.0: after a successful send, tell the chat once that an earlier reply was lost. */
+    private async announceLostReply(chatId: string): Promise<void> {
+        const lostAt = this.lostReplies.get(chatId)
+        if (!lostAt) return
+        this.lostReplies.delete(chatId)
+        const time = new Intl.DateTimeFormat('de-AT', { timeZone: resolveOwnerTimeZone(this.config), hour: '2-digit', minute: '2-digit', hour12: false }).format(lostAt)
+        try {
+            await this.bot.sendMessage(chatId, `Eine Antwort von ${time} konnte nicht zugestellt werden — bitte Frage wiederholen.`)
+        } catch {
+            this.lostReplies.set(chatId, lostAt)
         }
     }
 
@@ -1629,12 +1671,13 @@ export class TelegramAdapter implements ChannelAdapter {
             const view = pagedView(String(msg.to), cleanContent)
             const options = { reply_markup: { inline_keyboard: view.keyboard }, reply_to_message_id: replyTo }
             try {
-                await this.bot.sendMessage(msg.to, view.text, { parse_mode: 'Markdown', ...options })
+                await this.deliverMessage(String(msg.to), view.text, { parse_mode: 'Markdown', ...options })
             } catch (err: any) {
                 if (!err?.message?.includes("can't parse entities")) throw err
-                await this.bot.sendMessage(msg.to, view.text.replace(/\\([_*`\[\]])/g, '$1'), options)
+                await this.deliverMessage(String(msg.to), view.text.replace(/\\([_*`\[\]])/g, '$1'), options)
             }
             this.stopTyping(msg.to)
+            await this.announceLostReply(String(msg.to))
             return
         }
 
@@ -1659,7 +1702,7 @@ export class TelegramAdapter implements ChannelAdapter {
         for (let i = 0; i < chunks.length; i++) {
             const chunk = chunks[i]
             try {
-                await this.bot.sendMessage(msg.to, chunk, {
+                await this.deliverMessage(String(msg.to), chunk, {
                     parse_mode: 'Markdown',
                     reply_to_message_id: i === 0 ? replyTo : undefined,
                 })
@@ -1669,7 +1712,7 @@ export class TelegramAdapter implements ChannelAdapter {
                     console.log('[Nova Telegram] Markdown failed, sending as plain text')
                     // No parse_mode: retain identifiers and code exactly. Removing
                     // underscores corrupted tool names in the October 3 report.
-                    await this.bot.sendMessage(msg.to, chunk.replace(/\\([_*`\[\]])/g, '$1'), {
+                    await this.deliverMessage(String(msg.to), chunk.replace(/\\([_*`\[\]])/g, '$1'), {
                         reply_to_message_id: i === 0 ? replyTo : undefined,
                     })
                 } else {
@@ -1685,6 +1728,7 @@ export class TelegramAdapter implements ChannelAdapter {
 
         // Stop typing indicator after sending
         this.stopTyping(msg.to)
+        await this.announceLostReply(String(msg.to))
     }
 
     /**

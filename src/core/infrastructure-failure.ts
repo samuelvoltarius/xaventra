@@ -24,3 +24,15 @@ export function isUnreachable(error: string): boolean {
     if (isAuthFailure(text)) return false
     return isInfrastructureFailure(text) || /EHOSTUNREACH|ENETUNREACH|ENOTFOUND|getaddrinfo|network ?error/i.test(text)
 }
+
+/**
+ * Abnahme 2.90.0 (29.10.2026): a send that failed in the network (EFATAL, fetch failed, reset,
+ * refused, timeout, DNS, hang-up) — the only failure a channel may resend. An error that carries an
+ * API answer (e.g. Telegram 400/403/429) is never one: the service has seen the request.
+ */
+export function isTransientTransportFailure(error: unknown): boolean {
+    const failure = error as { code?: unknown; response?: { statusCode?: unknown } } | undefined
+    if (!failure) return false
+    if (failure.response?.statusCode !== undefined || failure.code === 'ETELEGRAM') return false
+    return /\bEFATAL\b|fetch failed|ECONN(?:RESET|REFUSED)|ETIMEDOUT|EAI_AGAIN|socket hang up/i.test(`${String(failure.code ?? '')} ${String(error)}`)
+}
