@@ -64,3 +64,23 @@ describe('profile Home Assistant binding', () => {
         expect(plan?.calls).toEqual([{ name: 'hass_get', arguments: { entity_id: 'sensor.example_123_state_of_charge' } }])
     })
 })
+
+// 2.89.15 (Abnahme 2.89.14, 29.10. 11:28:04): the reply cited a stale BYD km range; the guard replaced it with the
+// freshest entity of any kind - sensor.pv_surplus_km ("Strom & PV Ueberschuss als Reichweite: 14.8 km") - and listed
+// every stale entity (5220 chars). A replacement must belong to the asked vehicle (profile terms) and be of the same
+// kind; the list of stale values stays short.
+describe('a replacement value belongs to the asked entity', () => {
+    const at = (iso: string) => ({ last_changed: iso, last_updated: iso })
+    const get = (entity: unknown) => ({ toolName: 'hass_get', success: true, result: JSON.stringify({ entity }) })
+    const now = Date.parse('2026-10-29T10:28:00Z')
+    const staleRange = { entity_id: 'sensor.byd_dolphin_surf_seagull_comfort_design_echte_reichweite', state: '180', attributes: { friendly_name: 'BYD Dolphin Surf Echte Reichweite', unit_of_measurement: 'km' }, ...at('2026-10-28T16:44:00Z') }
+    const pvSurplus = { entity_id: 'sensor.pv_surplus_km', state: '14.8', attributes: { friendly_name: 'Strom & PV Ueberschuss als Reichweite', unit_of_measurement: 'km' }, ...at('2026-10-29T10:27:00Z') }
+    const staleMany = Array.from({ length: 12 }, (_, i) => ({ entity_id: `sensor.byd_dolphin_old_${i}`, state: 'unavailable', attributes: { friendly_name: `BYD Dolphin Surf Alt ${i}` }, ...at('2026-10-28T16:44:00Z') }))
+
+    it('never presents an unrelated fresh sensor as the vehicle value', () => {
+        const out = guardLiveValueReply({ question, reply: 'Der Dolphin hat noch 180 km Reichweite.', executions: [get(staleRange), get(pvSurplus), ...staleMany.map(get)], now })
+        expect(out ?? '').not.toMatch(/PV Ueberschuss|14\.8/)
+        expect(String(out).length).toBeLessThan(600)
+        expect(out).toMatch(/Stand vor|nicht aktuell/)
+    })
+})
