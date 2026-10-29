@@ -188,9 +188,17 @@ export function toolProvidesActionEvidence(toolName: string, kind?: ActionIntent
     return true
 }
 
+/** 2.90.2 (Abnahme 2.90.1, 18:22:48): statements about Xaventra's own restart or update ("ich wurde gerade neu
+ * gestartet", "das Update wurde eingespielt") are self-state, not a claimed action of the owner's request. */
+const SELF_LIFECYCLE = [
+    /\b(?:ich|xaventra|nova)\s+(?:wurde|bin|war)\b[^.!?\n]{0,60}?\b(?:neu ?gestartet|gestartet|aktualisiert|installiert|hochgefahren|eingespielt)\b/gi,
+    /\b(?:update|neustart|aktualisierung|neue version)\b[^.!?\n]{0,40}?\bwurde\b[^.!?\n]{0,40}?\b(?:eingespielt|installiert|ausgef[uü]hrt|abgeschlossen|aktiviert)\b/gi,
+]
+
 export function responseClaimsCompletedAction(response: string): boolean {
-    return /\b(?:ich habe|hab ich|wurde|ist jetzt|soeben|gerade)\b.{0,100}\b(?:gesendet|geschickt|ge[oö]ffnet|gestartet|beendet|geklickt|ausgef[uü]hrt|erstellt|geschrieben|gel[oö]scht|installiert|aktualisiert|konfiguriert|erledigt|fertig)\b/i.test(response)
-        || /\b(?:screenshot|datei|foto)\b.{0,60}\b(?:gesendet|geschickt|hochgeladen|erstellt)\b/i.test(response)
+    const text = SELF_LIFECYCLE.reduce((value, pattern) => value.replace(pattern, ' '), String(response || ''))
+    return /\b(?:ich habe|hab ich|wurde|ist jetzt|soeben|gerade)\b.{0,100}\b(?:gesendet|geschickt|ge[oö]ffnet|gestartet|beendet|geklickt|ausgef[uü]hrt|erstellt|geschrieben|gel[oö]scht|installiert|aktualisiert|konfiguriert|erledigt|fertig)\b/i.test(text)
+        || /\b(?:screenshot|datei|foto)\b.{0,60}\b(?:gesendet|geschickt|hochgeladen|erstellt)\b/i.test(text)
 }
 
 export function honestNoToolResponse(kind: ActionIntent['kind']): string {
