@@ -1872,6 +1872,28 @@
       ]
     },
     {
+      "name": "mesh_desktop_input",
+      "category": "mesh",
+      "description": "Bediene den freigegebenen Arbeitsplatz eines Mesh-Nodes (z. B. eigener Labor-Computer): eine Aktion move/click/type/key/scroll oder open_url (öffentliche Webseite im Browser des Arbeitsplatzes, nur erlaubte Hosts). Danach liefert der Node eine frische Aufnahme; ob die Aktion gewirkt hat, prüfst du nur mit analyze_image auf capture.path. Erst mesh_screenshot zur Orientierung. Bei unsicherem Ergebnis nicht blind wiederholen.",
+      "parameters": [
+        {
+          "name": "node_id",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "action",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "step",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
       "name": "mesh_download_file",
       "category": "system",
       "description": "Lädt eine Datei von einem Remote-Mesh-Node (Jetson, Pi, Server) via SSH herunter und speichert sie lokal. Nutze das um Dateien von anderen Geräten zu holen bevor du sie mit send_file weiterschickst.",

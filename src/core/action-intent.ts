@@ -20,7 +20,7 @@ const OPEN_VERB = `${W_START}(?:[oö]ffne(?:n)?|oeffne(?:n)?)${W_END}`
  * „mach es auf“, „öffne … auf deinem Arbeitsplatz“, „versuch es im Browser auf
  * deinem Rechner“, „klick“, „tipp ein“, „Computer-Use“.
  */
-export const WORKSTATION_ACTION = /(^|[^\p{L}\p{N}_])(mach\w*\s+(?:es|das|den|die|sie|ihn|ein\w*)\b.{0,25}\bauf|aufmach\w*|(?:[oö]ffne(?:n)?|oeffne(?:n)?)\s.{0,50}(?:arbeitsplatz|arbeitsdesktop|desktop|rechner|browser|firefox|chrome)|(?:versuch\w*|probier\w*)\s.{0,50}(?:im\s+browser|auf\s+(?:deinem\s+)?(?:desktop|arbeitsplatz|arbeitsdesktop|rechner|computer))|computer[\s-]?use|tipp\w*\s+(?:ein|auf|in)|tipp\w*\s.{0,40}\sein)([^\p{L}\p{N}_]|$)/iu
+export const WORKSTATION_ACTION = /(^|[^\p{L}\p{N}_])(mach\w*\s+(?:es|das|den|die|sie|ihn|ein\w*)\b.{0,25}\bauf|aufmach\w*|(?:[oö]ffne(?:n)?|oeffne(?:n)?)\s.{0,50}(?:arbeitsplatz|arbeitsdesktop|desktop|rechner|computer|browser|firefox|chrome)|(?:versuch\w*|probier\w*)\s.{0,50}(?:im\s+browser|auf\s+(?:deinem\s+)?(?:desktop|arbeitsplatz|arbeitsdesktop|rechner|computer))|computer[\s-]?use|tipp\w*\s+(?:ein|auf|in)|tipp\w*\s.{0,40}\sein)([^\p{L}\p{N}_]|$)/iu
 
 export function isWorkstationAction(text: string): boolean {
     return WORKSTATION_ACTION.test(String(text || ''))

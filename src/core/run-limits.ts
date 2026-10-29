@@ -58,7 +58,7 @@ const SLOW_TOOLS = new Set([
     'research_all_capabilities', 'self_doctor', 'docker_control', 'spawn_subagent', 'spawn_subagents_parallel',
     'continuable_subagent_start', 'continuable_subagent_followup', 'start_mission', 'printer_slice', 'cad_generate', 'build_skill',
 ])
-const CAPTURE_TOOLS = new Set(['desktop_screenshot', 'screenshot', 'check_ui', 'browse_url', 'mesh_screenshot', 'webcam_capture', 'screen_capture', 'screen_analyze', 'analyze_image'])
+const CAPTURE_TOOLS = new Set(['desktop_screenshot', 'screenshot', 'check_ui', 'browse_url', 'mesh_screenshot', 'mesh_desktop_input', 'webcam_capture', 'screen_capture', 'screen_analyze', 'analyze_image'])
 const MEDIA_TOOLS = new Set(['generate_image', 'minimax_image_gen', 'minimax_video_start', 'transcribe_audio', 'analyze_video', 'minimax_tts', 'speak'])
 
 export function toolTimeoutClass(name: string): ToolTimeoutClass {

@@ -28,6 +28,7 @@ import { scanNowTool } from './scan-now-tool.js'
 import { meshInspectUrlTool } from './mesh-inspect-url.js'
 import { meshExchangeTools } from './mesh-exchange-tools.js'
 import { meshScreenshotTool } from './mesh-screenshot-tool.js'
+import { meshDesktopInputTool } from './mesh-desktop-input-tool.js'
 import { environmentInventoryTool } from './environment-inventory-tool.js'
 import { parcelTrackTool } from './parcel-track-tool.js'
 import { weatherTool } from './weather.js'
@@ -3059,6 +3060,7 @@ export const ALL_TOOLS: NovaTool[] = [
     meshInspectUrlTool,
     ...meshExchangeTools,
     meshScreenshotTool,
+    meshDesktopInputTool,
     environmentInventoryTool,
     parcelTrackTool,
     // 2.89.3: Wetter ohne Schluessel (Open-Meteo), damit kein Behelf ueber Websuche/Shell noetig ist.

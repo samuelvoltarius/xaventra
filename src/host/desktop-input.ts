@@ -20,6 +20,28 @@ export function desktopInputArgs(value: any): string[] {
     return ['click','--repeat',String(value.amount),'--delay','50',value.direction==='up'?'4':'5']
 }
 
+/** Hosts that are never public web pages: local names, tailnet, IP literals.
+ * The workstation firewall blocks private networks too; this is the first fence. */
+const NON_PUBLIC_HOST=/^(?:localhost|.*\.(?:localhost|local|internal|lan|home|arpa|ts\.net))$/i
+/** Workstation plan: every xdotool action plus open_url (a public http(s) page
+ * in the workstation browser). Only the dedicated workstation passes this plan. */
+export function desktopActionArgs(value: any): string[] {
+    if (value?.action!=='open_url') return desktopInputArgs(value)
+    if (Object.keys(value).some(k=>!['action','url'].includes(k))||typeof value.url!=='string'||!value.url.length||value.url.length>2000) throw Error('Invalid open_url')
+    let url: URL
+    try { url=new URL(value.url) } catch { throw Error('Invalid open_url') }
+    const host=url.hostname
+    if (!['https:','http:'].includes(url.protocol)||url.username||url.password||!host||host.includes(':')||host.startsWith('[')
+        ||/^[0-9.]+$/.test(host)||NON_PUBLIC_HOST.test(host)||!host.includes('.')) throw Error('open_url only for public http(s) host names')
+    return ['open_url',url.href]
+}
+/** Operator allowlist (comma-separated host names; a name also covers its subdomains). Empty = nothing allowed. */
+export function assertOpenUrlAllowed(href: string, allowList: string|undefined): void {
+    const host=new URL(href).hostname.toLowerCase()
+    const allowed=String(allowList||'').split(',').map(s=>s.trim().toLowerCase()).filter(Boolean)
+    if (!allowed.some(entry=>host===entry||host.endsWith('.'+entry))) throw Error(`open_url host not on the workstation allowlist: ${host}`)
+}
+
 /** Combos that end, lock or switch away from the X session (server zap,
  * three-finger salute, screen lock, VT switch). alt+F4 stays allowed. */
 function isSessionCriticalKey(key:string):boolean {
@@ -29,9 +51,9 @@ function isSessionCriticalKey(key:string):boolean {
 }
 
 /** Intent is durable BEFORE input. An uncertain effect is never repeated. */
-export async function executeDesktopInputOnce(root:string,requestId:string,action:unknown,execute:(args:string[])=>Promise<void>) {
+export async function executeDesktopInputOnce(root:string,requestId:string,action:unknown,execute:(args:string[])=>Promise<void>,plan:(action:any)=>string[]=desktopInputArgs) {
     if(!/^[a-f0-9-]{36}$/.test(requestId))throw Error('Invalid input request ID')
-    const args=desktopInputArgs(action), hash=createHash('sha256').update(JSON.stringify(action)).digest('hex')
+    const args=plan(action), hash=createHash('sha256').update(JSON.stringify(action)).digest('hex')
     mkdirSync(root,{recursive:true,mode:0o700})
     const file=join(root,requestId+'.json')
     if(existsSync(file)) { const prior=JSON.parse(readFileSync(file,'utf8'));if(prior.hash!==hash||prior.status!=='completed')throw Error('Desktop input uncertain or request conflict; no replay');return {...prior,replayed:true} }
@@ -45,5 +67,6 @@ export async function executeDesktopInputOnce(root:string,requestId:string,actio
 }
 export async function runDesktopInput(args:string[]) {
     if(process.platform!=='linux'||!process.env.DISPLAY||process.env.XDG_SESSION_TYPE!=='x11')throw Error('Enrolled X11 session required')
+    if(args[0]==='open_url')throw Error('open_url needs the workstation browser, not xdotool')
     await promisify(execFile)('/usr/bin/xdotool',args,{timeout:10000,maxBuffer:4096})
 }

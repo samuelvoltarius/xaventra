@@ -18,6 +18,13 @@ describe('bounded capability recovery', () => {
         expect(names).not.toContain('send_file')
         expect(names).not.toContain('ssh_command')
     })
+    it('routes "open a page on your computer" to the node workstation (Langtest D)', () => {
+        const names = getRelevantTools('Öffne example.org auf deinem Computer und sag mir die Überschrift').map(t => t.name)
+        expect(names).toContain('mesh_desktop_input')
+        expect(names).toContain('mesh_screenshot')
+        expect(names).toContain('analyze_image')
+        expect(names).not.toContain('send_file')
+    })
     it('exposes actual computer-use tools for the requested capability', () => {
         const names=getRelevantTools('Kannst du computer use nutzen und mit der Maus klicken?').map(t=>t.name)
         expect(names).toContain('desktop_input')

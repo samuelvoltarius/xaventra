@@ -12,6 +12,18 @@
   helpers on nodes with a screen, maps and routes, music, a maker helper for
   boards and sensors.
 
+### Added (next patch, version set at release)
+
+- **Her own computer on the lab node.** New tool `mesh_desktop_input`: Main
+  clicks, types, presses keys, scrolls or opens an allowed public web page on
+  the dedicated workstation of an enrolled node. Every action comes back with
+  a fresh capture of that node, and the effect is judged only from that image.
+  The same step is never typed twice. Off by default
+  (`NOVA_MESH_DESKTOP_INPUT_ENABLED` on Main, input enrollment on the node,
+  host allowlist and a non-snap browser on the workstation); see
+  `docs/COMPUTER_USE.md`.
+- "Öffne … auf deinem Computer" now reaches the computer-use tools.
+
 ## [2.89.15] — 2026-10-29
 
 Reliability after the Telegram acceptance of 2.89.14.

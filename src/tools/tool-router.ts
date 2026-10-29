@@ -195,8 +195,9 @@ const SKILL_PACKS: SkillPack[] = [
         // die direkte URL mit Sendungsnummer.
         name: 'computer-use', description: 'Freigegebenen Arbeitsplatz/Desktop bedienen: Programme öffnen (Firefox/Chrome), klicken, tippen, Webseiten aufrufen. Ablauf: Browser öffnen, URL, Laden per Screenshot prüfen, Feld anklicken, tippen, Enter, Ergebnis-Screenshot. Tracking-Seiten zuerst die direkte URL mit Sendungsnummer.',
         keywords: ['computer use', 'computer-use', 'maus', 'tastatur', 'klicken', 'klick', 'tippe', 'tipp*', 'scroll',
-            'arbeitsplatz', 'arbeitsdesktop', 'firefox', 'auf deinem desktop', 'auf deinem rechner', 'im browser', WORKSTATION_ACTION],
-        tools: ['desktop_control', 'desktop_workspace', 'desktop_status', 'desktop_screenshot', 'desktop_input', 'analyze_image'],
+            'arbeitsplatz', 'arbeitsdesktop', 'firefox', 'auf deinem desktop', 'auf deinem rechner', 'auf deinem computer', 'im browser', WORKSTATION_ACTION],
+        // 2.89.16: the own computer is the lab workstation node — mesh_screenshot + mesh_desktop_input.
+        tools: ['desktop_control', 'desktop_workspace', 'desktop_status', 'desktop_screenshot', 'desktop_input', 'mesh_screenshot', 'mesh_desktop_input', 'analyze_image'],
     },
     {
         name: 'nova-desktop-control', description: 'Nova Desktop sicher navigieren, fokussieren und aktualisieren',
@@ -208,7 +209,7 @@ const SKILL_PACKS: SkillPack[] = [
         description: 'Edge-Nodes verwalten, deployen, delegieren, Dateien übertragen',
         keywords: ['mesh', 'node', 'nodes', 'knoten*', 'edge', 'deploy*', 'jetson', 'pi5', 'raspberry', 'delegate'],
         tools: ['mesh_status', 'mesh_nodes', 'mesh_services', 'mesh_strengths', 'mesh_capabilities', 'mesh_route', 'mesh_repo_task', 'mesh_deploy', 'mesh_delegate',
-            'mesh_update', 'mesh_download_file', 'mesh_exchange_list', 'mesh_exchange_write', 'mesh_exchange_send', 'mesh_screenshot',
+            'mesh_update', 'mesh_download_file', 'mesh_exchange_list', 'mesh_exchange_write', 'mesh_exchange_send', 'mesh_screenshot', 'mesh_desktop_input',
             'mesh_scan', 'mesh_recommendations', 'mesh_transport_status', 'mesh_inspect_url'],
     },
     {
