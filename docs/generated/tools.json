@@ -3462,7 +3462,7 @@
     {
       "name": "ssh_command",
       "category": "system",
-      "description": "Führt einen Befehl auf einem Remote-Gerät via SSH aus (Pi, NAS, Server etc.). WICHTIG: Nutze dieses Tool für ALLE Befehle die auf einem anderen Gerät laufen sollen — NICHT run_command! Gespeicherte Hosts/Passwörter werden automatisch verwendet. Anführungszeichen im Befehl werden automatisch escaped.",
+      "description": "Führt einen Befehl auf einem Remote-Gerät via SSH aus (Pi, NAS, Server etc.). WICHTIG: Nutze dieses Tool für ALLE Befehle, die auf einem anderen Gerät laufen sollen — NICHT run_command! user, port, password als SEPARATE Parameter; gespeicherte Hosts/Passwörter werden automatisch verwendet. Fehlende SSH-Werkzeuge/Keys richtet es nach Owner-Freigabe (confirm) selbst ein.",
       "parameters": [
         {
           "name": "host",
@@ -3486,6 +3486,11 @@
         },
         {
           "name": "password",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "confirm",
           "type": "string",
           "required": false
         }

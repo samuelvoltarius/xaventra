@@ -5694,6 +5694,7 @@
         "../core/data-root.js",
         "../core/node-profile.js",
         "../doctor/self-heal.js",
+        "../users/multi-user-middleware.js",
         "./capability-graph.js",
         "./direct-mesh-transport.js",
         "./fence-highwater.js",
@@ -5772,6 +5773,12 @@
       "imports": [
         "../core/node-profile.js",
         "./mesh-node-lifecycle.js"
+      ]
+    },
+    {
+      "module": "src/mesh/peer-refusal.ts",
+      "imports": [
+        "../core/lifecycle-policy.js"
       ]
     },
     {
@@ -7822,6 +7829,7 @@
       "module": "src/tools/minimax-tools.ts",
       "imports": [
         "../config/config-path.js",
+        "../core/llm-factory.js",
         "./complete-registry.js",
         "node:fs",
         "node:path"
@@ -7889,7 +7897,8 @@
       "module": "src/tools/registry.ts",
       "imports": [
         "../mesh/fence.js",
-        "../resilience/security.js"
+        "../resilience/security.js",
+        "./ssh-tool.js"
       ]
     },
     {
@@ -8097,6 +8106,7 @@
       "module": "src/users/multi-user-middleware.ts",
       "imports": [
         "../config/config-path.js",
+        "node:async_hooks",
         "node:fs",
         "node:path"
       ]
