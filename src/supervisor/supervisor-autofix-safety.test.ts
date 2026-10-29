@@ -48,15 +48,18 @@ describe('MI-9 supervisor auto-fix safety', () => {
         expect(existsSync(join(workDir, '..', 'escape.ts'))).toBe(false)
     })
 
-    it('passes the commit message as one argument, never through a shell', async () => {
+    // 2.90.2 (Codekarte D14-16): the tester never commits or merges, even when autoCommit is requested -
+    // code is applied only through PATCH_GATE. The description still never reaches a shell.
+    it('never commits or merges, and the description never reaches a shell', async () => {
         const workDir = mkdtempSync(join(tmpdir(), 'nova-mi9-'))
         const tester = new AutoTester({ workDir, buildCommand: 'build-cmd', autoCommit: true })
         const description = 'x"; touch /tmp/pwned; echo "'
         const result = await tester.testFix(proposal({ description, changes: [{ filePath: 'fixed.ts', action: 'create', newContent: 'export {}' }] }))
         expect(result.success).toBe(true)
         expect(childProcess.execSync.mock.calls.some(call => String(call[0]).includes('touch /tmp/pwned'))).toBe(false)
-        const commit = childProcess.execFileSync.mock.calls.find(call => call[0] === 'git' && (call[1] as string[])[0] === 'commit')
-        expect(commit?.[1]).toEqual(['commit', '-m', `fix: ${description} (auto-fix by Supervisor)`])
+        const git = [...childProcess.execFileSync.mock.calls.filter(call => call[0] === 'git').map(call => (call[1] as string[])[0]),
+            ...childProcess.execSync.mock.calls.map(call => String(call[0])).filter(cmd => cmd.startsWith('git '))]
+        expect(git.some(command => /commit|merge/.test(command))).toBe(false)
     })
 
     it('does not trip the repair-loop breaker on successful attempts', () => {

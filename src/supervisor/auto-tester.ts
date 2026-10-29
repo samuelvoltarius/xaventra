@@ -47,7 +47,8 @@ export class AutoTester {
             buildCommand: config.buildCommand || 'npm run build',
             testCommand: config.testCommand,
             timeout: config.timeout || 60000,  // 60s default
-            autoCommit: config.autoCommit ?? false,
+            // 2.90.2: never commits/merges by itself (PATCH_GATE is the only way to apply code).
+            autoCommit: false,
         }
         console.log(`[AutoTester] Initialized in: ${this.config.workDir}`)
     }

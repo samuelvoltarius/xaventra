@@ -66,14 +66,17 @@ export class SupervisorManager extends EventEmitter {
     constructor(config: Partial<SupervisorConfig> = {}) {
         super()
 
-        this.config = {
+        // 2.90.2 (Codekarte D14-16): automatic code fixes run only through PATCH_GATE. autoFix is fixed to false
+        // and the config is frozen, so neither an option nor `/supervisor auto` can apply LLM fixes or commit.
+        if (config.autoFix) console.warn('[Supervisor] autoFix ignored: automatic code fixes run only through PATCH_GATE')
+        this.config = Object.freeze({
             enabled: config.enabled ?? true,
-            autoFix: config.autoFix ?? false,  // Default: manual approval
+            autoFix: false,
             minConfidence: config.minConfidence ?? 0.7,
             notifyOnFix: config.notifyOnFix ?? true,
             provider: config.provider || 'openai',
             workDir: config.workDir || process.cwd(),
-        }
+        })
 
         // Initialize components
         this.collector = getLogCollector()
@@ -81,7 +84,7 @@ export class SupervisorManager extends EventEmitter {
         this.generator = getFixGenerator({ provider: this.config.provider })
         this.tester = getAutoTester({
             workDir: this.config.workDir,
-            autoCommit: this.config.autoFix,
+            autoCommit: false,
         })
         this.circuitBreaker = getCircuitBreaker({
             notifyTelegram: true,

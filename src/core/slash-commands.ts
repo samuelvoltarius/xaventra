@@ -745,15 +745,9 @@ _Bei ON sieht der User mehr durchdachte Antworten.
             const mode = args.trim().toLowerCase()
 
             if (mode === 'auto') {
-                // Enable auto-fix mode
-                ; (supervisor as any).config.autoFix = true
-                return `🤖 *Supervisor: AUTO-FIX aktiviert*
-
-Der Supervisor fixt Fehler jetzt automatisch mit LLM-Hilfe!
-
-⚠️ Warnung: Änderungen werden ohne Bestätigung angewendet.`
+                // 2.90.2 (Codekarte D14-16): no automatic code fixes past PATCH_GATE.
+                return 'Automatische Code-Fixes laufen nur über PATCH_GATE/Freigabe (/patches, /patch approve). Der Supervisor bleibt im manuellen Modus.'
             } else if (mode === 'manual') {
-                ; (supervisor as any).config.autoFix = false
                 return `👤 *Supervisor: MANUAL Mode*
 
 Fehler werden erkannt, aber du musst Fixes manuell genehmigen.`
@@ -773,8 +767,7 @@ Fehler werden erkannt, aber du musst Fixes manuell genehmigen.`
 **Fixes fehlgeschlagen:** ${status.totalFixesFailed}
 
 *Befehle:*
-/supervisor auto - Auto-Fix aktivieren
-/supervisor manual - Manueller Modus`
+/supervisor manual - Manueller Modus (Code-Fixes nur über PATCH_GATE)`
         }
 
         case 'skills': {

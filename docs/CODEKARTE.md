@@ -442,7 +442,7 @@ v2.72); In-Place-Git-Updates sind abgeschaltet.
 | `src/sensing` | Geräte- und Netzerkennung, Adapter |
 | `src/sessions` | `session-key-utils.ts` |
 | `src/startup` | Umgebungs-Scan beim Start (`environment-scanner.ts` `locateProgram`), Tailscale-Status |
-| `src/supervisor` | Auto-Tester, Circuit-Breaker, Stop-Loss (`src/supervisor.ts` = Prozess) |
+| `src/supervisor` | Auto-Tester, Circuit-Breaker, Stop-Loss (`src/supervisor.ts` = Prozess); seit 2.90.2 `autoFix` fest aus, `/supervisor auto` lehnt ab (Code nur über PATCH_GATE); Aufräumen 2.92.0 |
 | `src/synthesis` | Patch-Gate, Patch-Sandbox, Selbstevolution |
 | `src/terminal` | Terminal-Manager |
 | `src/test-utils` | gemeinsame Test-Fixtures |
