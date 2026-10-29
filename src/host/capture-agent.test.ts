@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { createHash, randomUUID } from 'node:crypto'
-import { createCaptureAgent, CaptureSessionLocked } from './capture-agent.js'
+import { createCaptureAgent, CaptureSessionLocked, interpretInputResponse } from './capture-agent.js'
+import { DesktopActionRefused } from './desktop-input.js'
 
 const token = 'capture-fixture-credential-'.repeat(3)
 const image = Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), Buffer.alloc(24)])
@@ -74,4 +75,22 @@ it('authenticates input and returns only the correlated executor receipt',async(
  expect(input).toHaveBeenCalledOnce();expect(capture).not.toHaveBeenCalled()
  input.mockRejectedValueOnce(new CaptureSessionLocked())
  expect((await call({...body,requestId:randomUUID()},token,'/v1/input')).status).toBe(423)
+})
+
+it('answers a refused desktop action with 403 and its reason (no generic 503)',async()=>{
+ await new Promise<void>(r=>server.close(()=>r()))
+ const input=vi.fn(async()=>{throw new DesktopActionRefused('nicht auf der Erlaubnisliste: wikipedia.org')})
+ server=createCaptureAgent(token,capture,input)
+ await new Promise<void>(r=>server.listen(0,'127.0.0.1',r));base=`http://127.0.0.1:${(server.address() as any).port}`
+ const res=await call({requestId:randomUUID(),action:{action:'open_url',url:'https://wikipedia.org/'}},token,'/v1/input')
+ expect(res.status).toBe(403)
+ expect(await res.text()).toContain('nicht auf der Erlaubnisliste: wikipedia.org')
+})
+it('client: 403 is a certain refusal with reason, 503 stays uncertain',()=>{
+ const id=randomUUID()
+ expect(()=>interpretInputResponse(403,'Desktop action refused: nicht auf der Erlaubnisliste: wikipedia.org',id,'h')).toThrow(DesktopActionRefused)
+ expect(()=>interpretInputResponse(403,'Desktop action refused: nicht auf der Erlaubnisliste: wikipedia.org',id,'h')).toThrow(/nicht auf der Erlaubnisliste: wikipedia.org/)
+ let uncertain:unknown;try{interpretInputResponse(503,'x',id,'h')}catch(e){uncertain=e}
+ expect(uncertain).not.toBeInstanceOf(DesktopActionRefused);expect(String(uncertain)).toMatch(/uncertain/)
+ expect(interpretInputResponse(200,JSON.stringify({requestId:id,hash:'h',status:'completed'}),id,'h')).toMatchObject({status:'completed'})
 })

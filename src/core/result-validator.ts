@@ -28,6 +28,17 @@ export function validateToolOutcome(toolName: string, result: unknown, intent?: 
             : { success: false, evidence: [], reason: 'image generator returned no image artifact' }
     }
 
+    // 2.90.3: node captures keep the image privately (path per node) and never deliver it themselves.
+    if (toolName === 'mesh_screenshot' || toolName === 'mesh_desktop_input') {
+        const r = result as any
+        const paths = toolName === 'mesh_screenshot'
+            ? (Array.isArray(r?.captures) ? r.captures : []).filter((c: any) => c?.captured === true && typeof c.path === 'string').map((c: any) => c.path)
+            : (typeof r?.capture?.path === 'string' ? [r.capture.path] : [])
+        return paths.length
+            ? { success: true, evidence: paths.map((path: string) => `path:${path}`) }
+            : { success: false, evidence: [], reason: 'node capture returned no image' }
+    }
+
     if (intent?.kind === 'screenshot' && /screenshot|desktop/i.test(toolName)) {
         return evidence.some(key => /path|file|screenshot|url/i.test(key))
             ? { success: true, evidence }

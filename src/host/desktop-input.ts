@@ -3,6 +3,13 @@ import { promisify } from 'node:util'
 import { createHash } from 'node:crypto'
 import { mkdirSync, openSync, closeSync, writeFileSync, fsyncSync, existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { assertTrustedBrowser, type PathFacts } from './workstation-security.js'
+
+/** A workstation action refused for certain before anything ran or was journaled:
+ * the caller may report "nothing happened" and must not retry it unchanged. */
+export class DesktopActionRefused extends Error {
+    constructor(reason: string) { super(`Desktop action refused: ${reason}`); this.name = 'DesktopActionRefused' }
+}
 
 export function desktopInputArgs(value: any): string[] {
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw Error('Invalid desktop action')
@@ -39,7 +46,19 @@ export function desktopActionArgs(value: any): string[] {
 export function assertOpenUrlAllowed(href: string, allowList: string|undefined): void {
     const host=new URL(href).hostname.toLowerCase()
     const allowed=String(allowList||'').split(',').map(s=>s.trim().toLowerCase()).filter(Boolean)
-    if (!allowed.some(entry=>host===entry||host.endsWith('.'+entry))) throw Error(`open_url host not on the workstation allowlist: ${host}`)
+    if (!allowed.some(entry=>host===entry||host.endsWith('.'+entry))) throw Error(`nicht auf der Erlaubnisliste: ${host}`)
+}
+
+/** Everything that can refuse an action for certain, checked BEFORE the journal intent:
+ * typed action, and for open_url the operator allowlist and the operator browser. */
+export function precheckWorkstationAction(action: unknown, options: { allowList?: string; browser: string; stat: (path: string) => PathFacts }): string[] {
+    let args: string[]
+    try { args = desktopActionArgs(action) } catch (error) { throw new DesktopActionRefused(error instanceof Error ? error.message : String(error)) }
+    if (args[0] !== 'open_url') return args
+    try { assertOpenUrlAllowed(args[1], options.allowList) } catch (error) { throw new DesktopActionRefused(error instanceof Error ? error.message : String(error)) }
+    if (!options.browser.startsWith('/')) throw new DesktopActionRefused('kein Browser für den Arbeitsplatz eingerichtet')
+    try { assertTrustedBrowser(options.browser, options.stat(options.browser)) } catch { throw new DesktopActionRefused('Browser des Arbeitsplatzes fehlt oder ist nicht vertrauenswürdig') }
+    return args
 }
 
 /** Combos that end, lock or switch away from the X session (server zap,

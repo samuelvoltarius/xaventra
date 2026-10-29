@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { executeDesktopInputOnce, runDesktopInput } from './desktop-input.js'
+import { executeDesktopInputOnce, runDesktopInput, DesktopActionRefused } from './desktop-input.js'
 
 const MAX_IMAGE = 16 * 1024 * 1024
 const PNG = Buffer.from('89504e470d0a1a0a', 'hex')
@@ -74,6 +74,8 @@ export function createCaptureAgent(token: string, capture = captureSessionDeskto
             res.setHeader('X-Capture-SHA256', digest(image))
             res.end(image)
         } catch (error) {
+            // A refusal is certain (nothing ran, nothing journaled): say so with its reason.
+            if (error instanceof DesktopActionRefused) return fail(403, error.message.slice(0, 300))
             fail(error instanceof CaptureSessionLocked ? 423 : 503,
                 error instanceof CaptureSessionLocked ? error.message : 'Desktop capture unavailable; no image delivered')
         } finally { if (locked) busy = false }
@@ -127,6 +129,16 @@ export function listenCaptureAgent(socketPath: string, tokenFile: string) {
     return server
 }
 
+/** 403 = certain refusal (nothing happened); 423 = locked; anything else but 200 = uncertain effect. */
+export function interpretInputResponse(status:number|undefined,body:string,requestId:string,expectedHash:string):any {
+    if(status===403)throw new DesktopActionRefused(String(body||'').replace(/^Desktop action refused: /,'').slice(0,300)||'refused')
+    if(status===423)throw new CaptureSessionLocked()
+    if(status!==200)throw Error('Desktop input unavailable or uncertain; do not repeat automatically')
+    const r=JSON.parse(body)
+    if(r.requestId!==requestId||r.hash!==expectedHash||r.status!=='completed')throw Error('Desktop input receipt mismatch')
+    return r
+}
+
 export async function requestSessionInput(socketPath:string,tokenFile:string,requestId:string,action:unknown):Promise<any> {
     if(process.platform!=='linux'||!socketPath.startsWith('/')||!tokenFile.startsWith('/'))throw Error('Enrolled local desktop endpoint required')
     const socket=statSync(socketPath),secret=statSync(tokenFile)
@@ -136,7 +148,7 @@ export async function requestSessionInput(socketPath:string,tokenFile:string,req
     return new Promise((resolve,reject)=>{
         const req=request({socketPath,method:'POST',path:'/v1/input',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'}},res=>{
             let body='';res.on('data',chunk=>{body+=chunk;if(Buffer.byteLength(body)>4096)req.destroy(Error('Input receipt limit'))});res.on('error',reject)
-            res.on('end',()=>{try{if(res.statusCode===423)throw new CaptureSessionLocked();if(res.statusCode!==200)throw Error('Desktop input unavailable or uncertain; do not repeat automatically');const r=JSON.parse(body);if(r.requestId!==requestId||r.hash!==expectedHash||r.status!=='completed')throw Error('Desktop input receipt mismatch');resolve(r)}catch(e){reject(e)}})
+            res.on('end',()=>{try{resolve(interpretInputResponse(res.statusCode,body,requestId,expectedHash))}catch(e){reject(e)}})
         })
         const timer=setTimeout(()=>req.destroy(Error('Desktop input timeout; effect uncertain')),15000)
         req.on('error',reject);req.on('close',()=>clearTimeout(timer));req.end(JSON.stringify({requestId,action}))

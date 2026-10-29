@@ -147,6 +147,13 @@ Switches and opt-ins, all operator-owned:
   root-owned, non-writable browser binary). A snap browser does not start
   inside a system service cgroup; install a non-snap build for the workstation.
 
+A refused action is certain and reported as such: the workstation checks
+the typed action, the allowlist and the browser **before** it writes the
+input journal intent, answers `403` with the reason (for example
+`nicht auf der Erlaubnisliste: wikipedia.org`), and `mesh_desktop_input`
+returns `status: "refused"`, `executedNow: false` — nothing happened, do not
+repeat it unchanged. Any other failure stays "uncertain".
+
 `open_url` accepts only public `http(s)` host names: no IP literals, no
 credentials in the URL, no `localhost`, `.local`, `.internal`, `.lan`,
 `.home`, `.arpa` or `.ts.net`. Also restrict the workstation account's

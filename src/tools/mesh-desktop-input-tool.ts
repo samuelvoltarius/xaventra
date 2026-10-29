@@ -4,7 +4,7 @@ import { getUserPermission } from '../users/multi-user-middleware.js'
 import { desktopActionArgs } from '../host/desktop-input.js'
 import { captureReason } from '../mesh/capture-reason.js'
 import type { NovaTool } from './complete-registry.js'
-import { storePrivateNodeCapture } from './mesh-screenshot-tool.js'
+import { resolveCaptureNode, storePrivateNodeCapture } from './mesh-screenshot-tool.js'
 import { featureEnabled } from '../core/context-switches.js'
 
 /** Computer use on an enrolled node (e.g. the lab workstation): one typed action,
@@ -25,9 +25,10 @@ export const meshDesktopInputTool: NovaTool = {
             // The node keeps its own explicit opt-in (NOVA_DESKTOP_INPUT_ENABLED + input enrollment).
             if (!featureEnabled('meshDesktopInput')) throw new Error('Mesh desktop input is switched off on this Main')
             if (!context.authUserId || !context.runId || getUserPermission(context.authUserId, context.channel) !== 'owner') throw new Error('Node desktop input requires an authenticated owner run')
-            const node = String(params.node_id || '')
             const { currentCaptureNodes, requestNodeInput } = await import('../mesh/mesh-transport-runtime.js')
-            if (!node || node === 'all' || !currentCaptureNodes().includes(node)) throw new Error('No fresh known desktop node')
+            const requested = String(params.node_id || '')
+            const node = requested === 'all' ? undefined : resolveCaptureNode(requested, currentCaptureNodes())
+            if (!node) throw new Error('No fresh known desktop node')
             if (typeof params.step !== 'string' || !/^[a-zA-Z0-9_-]{1,80}$/.test(params.step)) throw new Error('Invalid step')
             let action: Record<string, unknown>
             try { action = JSON.parse(String(params.action)) } catch { throw new Error('Invalid action JSON') }
@@ -45,6 +46,13 @@ export const meshDesktopInputTool: NovaTool = {
                     + 'Wirkung nur mit analyze_image auf capture.path prüfen, nicht behaupten.' }
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error)
+            // The workstation refused before anything ran (e.g. host not on its allowlist): certain, not uncertain.
+            const refused = /Desktop action refused: (.+)$/s.exec(message)
+            if (refused) {
+                const reason = refused[1].trim().slice(0, 300)
+                return { success: false, refused: true, status: 'refused', executedNow: false, error: reason,
+                    message: `Am Arbeitsplatz abgelehnt, nichts ausgeführt — so nicht wiederholen: ${reason}` }
+            }
             return { success: false, executedNow: false, error: message.slice(0, 400), reason: captureReason(message) }
         }
     },

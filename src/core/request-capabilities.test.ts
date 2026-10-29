@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isEnvironmentOverview, isKubernetesQuestion, isKubernetesStatusQuestion, isKubernetesTestPodRequest, isMeshWideInventoryRequest, mentionsEnvironment } from './request-capabilities.js'
+import { isEnvironmentOverview, isKubernetesQuestion, isKubernetesStatusQuestion, isKubernetesTestPodRequest, isMeshWideInventoryRequest, isNodeWorkstationRequest, mentionsEnvironment } from './request-capabilities.js'
 import { detectActionIntent } from './action-intent.js'
 
 describe('environment overview stays separate from action requests', () => {
@@ -117,4 +117,21 @@ describe('mesh-wide inventory stays read-only and all-nodes', () => {
         }
         expect(isEnvironmentOverview('Mach eine Inventur von allem, was du so kannst')).toBe(false)
     })
+})
+
+describe('node workstation requests (2.90.3, Langtest D)', () => {
+    it.each([
+        'Öffne auf dem Lab greenchili.at und mach einen Screenshot davon. Sag mir nur, ob es geklappt hat und was auf der Seite oben steht.',
+        'Öffne greenchili.at auf deinem Computer und sag mir die Überschrift',
+        'Mach einen Screenshot vom Lab',
+        'Klick auf dem Labor-Computer auf Weiter',
+        'öffne auf xaventra-lab example.org',
+    ])('targets the node workstation: %s', text => expect(isNodeWorkstationRequest(text)).toBe(true))
+    it.each([
+        'Mach einen Screenshot von meinem Desktop',
+        'Öffne Firefox',
+        'Wie sind meine Laborwerte?',
+        'Was macht das Lab gerade?',
+        'Schick mir einen Screenshot von jedem Node',
+    ])('does not: %s', text => expect(isNodeWorkstationRequest(text)).toBe(false))
 })

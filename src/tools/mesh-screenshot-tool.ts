@@ -7,6 +7,16 @@ import { getUserPermission } from '../users/multi-user-middleware.js'
 import type { NovaTool } from './complete-registry.js'
 import { captureReason } from '../mesh/capture-reason.js'
 
+/** Exact node id, or a unique short name ("lab" -> "xaventra-lab", case-insensitive); otherwise undefined. */
+export function resolveCaptureNode(target: string, known: readonly string[]): string | undefined {
+    const wanted = String(target || '').trim().toLowerCase()
+    if (!wanted) return undefined
+    const exact = known.find(id => id.toLowerCase() === wanted)
+    if (exact) return exact
+    const matches = known.filter(id => id.toLowerCase().endsWith(`-${wanted}`))
+    return matches.length === 1 ? matches[0] : undefined
+}
+
 /** Private local copy of a verified node capture (for analyze_image); never overwrites or prunes. */
 export function storePrivateNodeCapture(receipt: { bytes: number; base64: string }): string {
     const parent = join(getRuntimeRoot(), '.nova-vision')
@@ -47,7 +57,8 @@ export const meshScreenshotTool: NovaTool = {
         const { currentCaptureNodes, requestNodeCapture } = await import('../mesh/mesh-transport-runtime.js')
         const known = currentCaptureNodes()
         const target = String(params.node_id || '')
-        const nodes = target === 'all' ? known : known.includes(target) ? [target] : []
+        const resolved = target === 'all' ? undefined : resolveCaptureNode(target, known)
+        const nodes = target === 'all' ? known : resolved ? [resolved] : []
         if (!nodes.length) return { success: false, captured: false, delivered: false, error: 'No fresh known capture target' }
         const captures: Array<Record<string, unknown>> = []
         if (target === 'all') {

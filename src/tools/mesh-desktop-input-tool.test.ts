@@ -65,3 +65,32 @@ describe('mesh_desktop_input: owner-only input on an enrolled node, judged by a 
         expect(result.error).toMatch(/uncertain/)
     })
 })
+
+describe('refusal at the workstation', () => {
+    it('is shown as a safe refusal: nothing executed, do not repeat, with the reason', async () => {
+        fixture.input.mockRejectedValueOnce(new Error('Error: Desktop action refused: nicht auf der Erlaubnisliste: wikipedia.org'))
+        const result = await call({ action: '{"action":"open_url","url":"https://wikipedia.org/"}', step: 'oeffnen-1' })
+        expect(result).toMatchObject({ success: false, refused: true, executedNow: false, status: 'refused' })
+        expect(result.error).toContain('nicht auf der Erlaubnisliste: wikipedia.org')
+        expect(result.message).toMatch(/nichts ausgeführt/)
+        expect(result.message).toMatch(/nicht wiederholen/)
+    })
+    it('an uncertain failure is not presented as a refusal', async () => {
+        fixture.input.mockRejectedValueOnce(new Error('Desktop input unavailable or uncertain; do not repeat automatically'))
+        const result = await call()
+        expect(result.refused).not.toBe(true)
+    })
+})
+
+describe('node short names', () => {
+    it('resolves a unique short name (lab -> xaventra-lab), never an ambiguous or unknown one', async () => {
+        const { resolveCaptureNode } = await import('./mesh-screenshot-tool.js')
+        expect(resolveCaptureNode('lab', ['xaventra-spark', 'xaventra-lab'])).toBe('xaventra-lab')
+        expect(resolveCaptureNode('xaventra-lab', ['xaventra-lab'])).toBe('xaventra-lab')
+        expect(resolveCaptureNode('Lab', ['xaventra-spark', 'xaventra-lab'])).toBe('xaventra-lab')
+        expect(resolveCaptureNode('ns', ['xaventra-ns1', 'xaventra-ns2'])).toBeUndefined()
+        expect(resolveCaptureNode('lab', ['xaventra-lab', 'other-lab'])).toBeUndefined()
+        expect(resolveCaptureNode('foreign', ['xaventra-lab'])).toBeUndefined()
+        expect(resolveCaptureNode('', ['xaventra-lab'])).toBeUndefined()
+    })
+})

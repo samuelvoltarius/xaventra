@@ -134,6 +134,21 @@ export function compoundRemainder(text: string): string | null {
     return rest.length >= 4 ? rest : null
 }
 
+/** 2.90.3 (Langtest D): her own computer is the lab workstation node. "auf dem Lab", "im Labor",
+ * "xaventra-lab", "auf deinem (eigenen) Computer" name that node, not the daemon's local desktop. */
+const NODE_WORKSTATION_TARGET = /\b(?:auf|im|am|vom|von)\s+(?:dem\s+|deinem\s+|im\s+)?(?:lab|labor|lab-?computer|labor-?computer|labor-?rechner)\b|\bxaventra-lab\b|\bauf\s+deinem\s+(?:eigenen\s+)?(?:computer|rechner)\b/i
+// Unicode word boundaries: a plain \b does not match before "Ö" ("Öffne …").
+const NODE_WORKSTATION_USE = /(?<![\p{L}\p{N}_])(?:[oö]ffne\p{L}*|oeffne\p{L}*|ruf\p{L}*\s.{0,60}\bauf|geh\p{L}*\s+auf|klick\p{L}*|tipp\p{L}*|scroll\p{L}*|bedien\p{L}*|screen\s*shots?|screenshots?|bildschirm\p{L}*|aufnahme\p{L}*|zeig\p{L}*)(?![\p{L}\p{N}_])/iu
+export function isNodeWorkstationRequest(text: string): boolean {
+    const value = String(text || '')
+    return NODE_WORKSTATION_TARGET.test(value) && NODE_WORKSTATION_USE.test(value)
+}
+
+/** A request aimed at a node (capture or workstation action): never served by the daemon's local desktop. */
+export function isNodeTargetRequest(text: string): boolean {
+    return isNodeWorkstationRequest(text) || isNodeScreenshotRequest(text)
+}
+
 /** A node target must not silently become the daemon's local desktop. */
 export function isNodeScreenshotRequest(text: string): boolean {
     // Separate mixed tasks: "Screenshot vom Desktop und zeige die Nodes"
