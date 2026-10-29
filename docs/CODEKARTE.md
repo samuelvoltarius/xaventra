@@ -99,8 +99,10 @@ ist nur noch Fassade von `context-policy.ts` ohne Importeur.
 **In Arbeit (2.90.0, noch nicht auf main):** „Kontext je Aufgabe" bringt
 `src/core/context-metrics.ts` (`/kontext`), `src/core/task-prompt.ts`
 (Prompt-Blöcke je Werkzeug-Route, Schalter off/shadow/on) und
-`src/core/lagebild.ts` (`/lage`); Einhängepunkt vor der Prompt-Kappung in
-`message-pipeline.ts`. Nach dem Merge hier eintragen.
+`src/core/lagebild.ts` (`/lage`), `src/core/turn-context.ts` (der eine
+Einhängepunkt vor der Prompt-Kappung plus Messzeile nach dem Lauf) und
+`src/core/context-switches.ts` (Schalter `context.*`). Wer das merged, trägt
+es hier als festen Teil der Pipeline ein.
 
 ### 3. Runner und Agenten
 
