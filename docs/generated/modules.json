@@ -221,6 +221,7 @@
     {
       "module": "src/agents/subagent-orchestrator.ts",
       "imports": [
+        "../core/topic-threads.js",
         "../mesh/mesh-policy.js",
         "node:crypto",
         "node:fs",
@@ -2821,6 +2822,15 @@
       "imports": []
     },
     {
+      "module": "src/core/topic-threads.ts",
+      "imports": [
+        "./data-root.js",
+        "node:async_hooks",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
       "module": "src/core/turn-context.ts",
       "imports": [
         "./context-metrics.js",
@@ -2829,7 +2839,9 @@
         "./lagebild.js",
         "./prompt-budget.js",
         "./request-tracer.js",
-        "./task-prompt.js"
+        "./side-effects.js",
+        "./task-prompt.js",
+        "./topic-threads.js"
       ]
     },
     {

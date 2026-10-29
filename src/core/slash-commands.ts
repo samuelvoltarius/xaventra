@@ -139,6 +139,7 @@ export const COMMAND_MENU: ReadonlyArray<CommandMenuEntry> = Object.freeze([
     // System
     { command: 'lage', description: '🧭 Lagebild: wo ich laufe, Knoten, Proxmox, Kubernetes (Owner)', gruppe: 'System' },
     { command: 'kontext', description: '📏 Kontext-Messung der letzten Züge (Owner)', gruppe: 'System' },
+    { command: 'themen', description: '🧵 Erkannte Themen-Fäden (nur Einsicht, Owner)', gruppe: 'System' },
     { command: 'software', description: '🧩 Software: vorhanden / passt / fehlt (Owner)', gruppe: 'System' },
     { command: 'modelle', description: '🧭 Modell-Register & Routing (Owner)', gruppe: 'System' },
     { command: 'model', description: '🔄 Modell wechseln', gruppe: 'System' },
@@ -3672,6 +3673,14 @@ ${status.receipts.slice(-5).map(receipt => `${receipt.status === 'verified' ? '�
             return `${await lagebildText()}
 
 (Schalter lagebild: ${contextSwitch('lagebild')})`
+        }
+        // 2.91.0 Themen-Fäden (owner only, see COMMAND_MINIMUM_ROLE default): view only.
+        case 'themen': {
+            const { formatThemen, sharedTopicThreadStore } = await import('./topic-threads.js')
+            const { contextSwitch } = await import('./context-switches.js')
+            const mode = contextSwitch('threads')
+            if (mode === 'off') return '🧵 Themen-Fäden sind abgeschaltet (context.threads / XAVENTRA_THREADS).'
+            return formatThemen(sharedTopicThreadStore().threads(principalContext?.principalId || from), Date.now(), mode)
         }
         case 'kontext': {
             const { formatKontext, readContextMetrics } = await import('./context-metrics.js')

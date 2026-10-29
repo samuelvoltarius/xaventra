@@ -619,6 +619,33 @@ function credentialMissing(name: string): boolean {
  * 4. MCP / forge / plugin tools by name and description words
  * 5. Packs seen only in older conversation context fill the remaining room
  */
+function packIntentBonus(pack: SkillPack, intent: ActionIntent): number {
+    return (pack.name === 'files' && intent.kind === 'file')
+        || (pack.name === 'web-search' && intent.kind === 'web')
+        || (pack.name === 'image-generation' && intent.kind === 'image-generation') ? 10 : 0
+}
+
+function packKeywordScore(pack: SkillPack, text: string): number {
+    return pack.keywords.reduce((sum, keyword) => sum + (matchesSkillKeyword(text, keyword) ? keywordWeight(keyword) : 0), 0)
+}
+
+/**
+ * 2.91.0: the routes the request itself activates — live routes that apply and
+ * the packs its own words score for (best first), the same scoring as
+ * getRelevantTools. Topic threads read this; a tool's own pack is ambiguous
+ * (many tools sit in several packs).
+ */
+export function requestRouteNames(primaryMessage: string): Array<{ route: string; score: number }> {
+    const intent = detectActionIntent(primaryMessage)
+    const live = LIVE_ROUTES.filter(route => route.applies(primaryMessage, intent)).map(route => ({ route: `live:${route.name}`, score: 100 }))
+    const packs = SKILL_PACKS
+        .map(pack => ({ route: `pack:${pack.name}`, score: packIntentBonus(pack, intent) + packKeywordScore(pack, packScoringText(primaryMessage)) }))
+        .filter(item => item.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, MAX_ACTIVE_PACKS)
+    return [...live, ...packs]
+}
+
 export function getRelevantTools(
     userMessage: string,
     primaryMessage = userMessage,
@@ -680,11 +707,8 @@ export function getRelevantTools(
         .filter(tool => matchesSkillKeyword(primaryMessage, tool.name))
         .map(tool => tool.name)
 
-    const intentBonus = (pack: SkillPack) => (pack.name === 'files' && primaryIntent.kind === 'file')
-        || (pack.name === 'web-search' && primaryIntent.kind === 'web')
-        || (pack.name === 'image-generation' && primaryIntent.kind === 'image-generation') ? 10 : 0
-    const score = (pack: SkillPack, text: string) => pack.keywords.reduce((sum, keyword) =>
-        sum + (matchesSkillKeyword(text, keyword) ? keywordWeight(keyword) : 0), 0)
+    const intentBonus = (pack: SkillPack) => packIntentBonus(pack, primaryIntent)
+    const score = packKeywordScore
 
     const rankedPacks = SKILL_PACKS
         .map(pack => ({ pack, primaryScore: intentBonus(pack) + score(pack, packScoringText(primaryMessage)), contextScore: score(pack, packScoringText(userMessage)) }))

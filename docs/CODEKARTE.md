@@ -112,6 +112,16 @@ dort auch `featureEnabled` für die standardmäßig eingeschalteten Fähigkeiten
 Neue Prompt-Blöcke bekommen ihr Thema über die Überschrift
 (`task-prompt.ts` `TOPIC_RULES`); ohne Thema bleiben sie immer drin.
 
+**Themen-Fäden (2.91.0, Schalter `context.threads`, Standard shadow):** die eine
+Zuordnung je Nachricht ist `src/core/topic-threads.ts` `assignThread` (Regeln
+raum → antwort → rueckfrage → smalltalk → marke → folge → unklar → allgemein;
+Themen aus `tool-router.ts` `requestRouteNames` und Owner-Profil-Einträgen),
+aufgerufen in `turn-context.ts` `prepareTurnPrompt`; Speicher
+`.nova-data/topic-threads.json` (`sharedTopicThreadStore`, kein Nachrichtentext),
+`/themen` nur Einsicht. Der Agentenlauf läuft in `runInThread`; Unteragent-Audit
+und Aufträge (`Mission.threadId`) tragen den Faden (`currentThreadId`).
+Eigener Verlauf je Faden (conversationId) erst ab 2.91.1.
+
 ### 3. Runner und Agenten
 
 **Zweck:** die eine Agentenschleife (Modell ↔ Werkzeuge) samt Unteragenten.
@@ -149,6 +159,8 @@ nur über `createAgentBackend` aus dem Benchmark erreichbar);
 (`NovaToolRegistry`, `getToolRegistry` ~3601, `ALL_TOOLS`). Auswahl je Anfrage
 `src/tools/tool-router.ts:613` `getRelevantTools` (einziger Aufrufer
 `src/core/intent-dispatcher.ts`). Nachladen im Lauf `src/core/tool-admission.ts`.
+Welche Packs und Live-Routen ein Satz selbst aktiviert (gleiche Bewertung):
+`requestRouteNames` (2.91.0, für Themen-Fäden).
 
 **Weitere Router (je eine Entscheidung):**
 

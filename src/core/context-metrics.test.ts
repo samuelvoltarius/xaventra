@@ -150,3 +150,14 @@ describe('2.90.0 /kontext and /lage commands', () => {
         }
     })
 })
+
+describe('2.91.0 /themen', () => {
+    it('answers the owner (view only) and refuses a guest', async () => {
+        const { handleCommand } = await import('./slash-commands.js')
+        const state: any = { tools: { getAll: () => [] }, config: {} }
+        const owner = await handleCommand('themen', '', 'o1', state, [], { permission: 'owner', channel: 'telegram', principalId: 'o1', rawUserId: 'o1' } as any)
+        expect(owner).toContain('🧵')
+        const guest = await handleCommand('themen', '', 'g1', state, [], { permission: 'guest', channel: 'telegram', principalId: 'g1', rawUserId: 'g1' } as any)
+        expect(guest).toContain('🔒')
+    })
+})

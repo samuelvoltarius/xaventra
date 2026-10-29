@@ -13,6 +13,8 @@ import { recordContextMetrics, type ContextTurnMetrics } from './context-metrics
 import { taskPromptForRequest, type TaskPromptRouter } from './task-prompt.js'
 import { cachedLagebildBlock, replaceStaticEnvironment } from './lagebild.js'
 import { currentTraceId } from './request-tracer.js'
+import { assignThread, sharedTopicThreadStore, type TopicThreadStore } from './topic-threads.js'
+import { sideEffectsDisabled } from './side-effects.js'
 
 /** What the runner measured (AgentResponse.contextStats). */
 export interface RunnerContextStats {
@@ -29,9 +31,15 @@ export interface RunnerContextStats {
 
 export interface TurnContext {
     prompt: string
+    /** 2.91.0: the topic thread of this turn (shadow: measured only), undefined when threads are off or not applicable. */
+    threadId?: string
     metrics: Partial<ContextTurnMetrics>
     afterCap(sections: PromptBudgetResult['sections'] | null, sentChars: number, cap: number): void
-    record(input: { channel: string; outcome: ContextTurnMetrics['outcome']; durationMs: number; stats?: Partial<RunnerContextStats> }, options?: { dir?: string }): void
+    record(input: {
+        channel: string; outcome: ContextTurnMetrics['outcome']; durationMs: number; stats?: Partial<RunnerContextStats>
+        /** 2.91.0: the run waits for the owner's approval code / the answer text (a closing question is remembered for the short reply). */
+        awaitingApproval?: boolean; answer?: string
+    }, options?: { dir?: string }): void
 }
 
 export async function prepareTurnPrompt(input: {
@@ -42,7 +50,14 @@ export async function prepareTurnPrompt(input: {
     env?: NodeJS.ProcessEnv
     lagebildBlock?: () => string | null
     /** Tests inject the router; live it is loaded here, inside the guarded step. */
-    router?: TaskPromptRouter
+    router?: TaskPromptRouter & { requestRouteNames?: (text: string) => Array<{ route: string }> }
+    /** 2.91.0 topic threads: who writes, from which room, and the owner-profile entities (vehicle, dogs). */
+    principalId?: string
+    roomId?: string
+    isGroup?: boolean
+    replyTo?: string
+    threadStore?: TopicThreadStore
+    profileEntities?: ReadonlyArray<{ name: string; kind: string; aliases?: string[] }>
 }): Promise<TurnContext> {
     const raw = input.prompt
     let prompt = raw
@@ -74,8 +89,25 @@ export async function prepareTurnPrompt(input: {
         metrics.taskPromptChars = undefined
     }
 
+    let threadId: string | undefined
+    const threadMode = contextSwitch('threads', { env: input.env })
+    const threadStore = input.threadStore ?? (threadMode !== 'off' ? sharedTopicThreadStore() : null)
+    if (threadMode !== 'off' && threadStore && input.principalId) try {
+        const router = input.router?.requestRouteNames ? input.router : await import('../tools/tool-router.js')
+        let entities = input.profileEntities
+        if (!entities) try { entities = (await import('../memory/owner-profile.js')).loadOwnerProfile()?.entities ?? [] } catch { entities = [] }
+        const assigned = assignThread({
+            principalId: input.principalId, content: input.request, routes: router.requestRouteNames!(input.request).map(item => item.route),
+            profileEntities: entities, roomId: input.roomId, isGroup: input.isGroup, replyTo: input.replyTo,
+        }, threadStore)
+        if (assigned.rule !== 'aus') threadId = assigned.threadId
+        Object.assign(metrics, { threadMode, threadId: assigned.threadId, threadKey: assigned.key, threadRule: assigned.rule, threadNew: assigned.isNew, foreignHistoryShare: Math.round(assigned.foreignHistoryShare * 1000) / 1000 })
+        if (!input.threadStore && !sideEffectsDisabled()) threadStore.save()
+    } catch (error) { console.debug('[TurnContext] topic thread skipped:', error) }
+
     return {
         prompt,
+        threadId,
         metrics,
         afterCap(sections, sentChars, cap) {
             const reduced = sections?.reduced ?? []
@@ -90,7 +122,14 @@ export async function prepareTurnPrompt(input: {
                 metrics.taskPromptRescued = metrics.taskPromptMode === 'shadow' ? reduced.filter(heading => taskKept.includes(heading)) : []
             }
         },
-        record({ channel, outcome, durationMs, stats }, options = {}) {
+        record({ channel, outcome, durationMs, stats, awaitingApproval, answer }, options = {}) {
+            if (threadId && threadStore && input.principalId) try {
+                const askedQuestion = /\?\s*$/.test(String(answer ?? '').trim())
+                if (awaitingApproval || askedQuestion) {
+                    threadStore.noteOutcome(input.principalId, threadId, { awaitingApproval, askedQuestion })
+                    if (!input.threadStore && !sideEffectsDisabled()) threadStore.save()
+                }
+            } catch (error) { console.debug('[TurnContext] thread outcome skipped:', error) }
             try {
                 recordContextMetrics({
                     at: new Date().toISOString(),
@@ -116,6 +155,12 @@ export async function prepareTurnPrompt(input: {
                     taskPromptUntagged: metrics.taskPromptUntagged,
                     lagebildMode: metrics.lagebildMode,
                     lagebildChars: metrics.lagebildChars,
+                    threadMode: metrics.threadMode,
+                    threadId: metrics.threadId,
+                    threadKey: metrics.threadKey,
+                    threadRule: metrics.threadRule,
+                    threadNew: metrics.threadNew,
+                    foreignHistoryShare: metrics.foreignHistoryShare,
                 }, { dir: options.dir })
             } catch (error) { console.debug('[TurnContext] metrics skipped:', error) }
         },
