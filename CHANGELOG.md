@@ -22,6 +22,11 @@ Reliability after the Telegram acceptance of 2.89.14.
   step failed after a switch had already worked, the answer said "Die Aktion
   ist nicht gelungen … es wurde keine Änderung ausgeführt". It now names what
   was done first (for example the socket that was switched on).
+- **Vehicle values: no unrelated sensor as answer.** The battery question was
+  answered with a solar surplus sensor in km and a long list of outdated
+  values. A replacement value now has to belong to the asked vehicle and be of
+  the same kind; outdated values are named as outdated, at most three. The
+  2.89.14 change to this check is withdrawn.
 - **`mesh_delegate` tells the other node who is asking.** Delegated tasks
   carried only the Main's node id, so another node treated the request as an
   unknown guest. They now carry the requesting owner and a time budget, like
