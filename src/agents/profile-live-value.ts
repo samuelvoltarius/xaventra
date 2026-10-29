@@ -93,10 +93,15 @@ function staleness(input: { question: LiveValueQuestion; executions: readonly Li
         const best = [...stale].sort((a, b) => a.age - b.age)[0]
         return `Stand vor ${ageText(best.age)}: ${label(best.entity)}: ${best.entity.state}${unitOf(best.entity)}. Der Wert ist nicht aktuell, Home Assistant hat ihn seit längerem nicht aktualisiert.`
     }
-    const citedStale = stale.filter(item => cites(reply, item.entity) && !fresh.some(f => cites(reply, f.entity)))
-    if (citedStale.length) {
-        const best = [...fresh].sort((a, b) => a.age - b.age)[0]
-        return `Aktuell laut Home Assistant: ${label(best.entity)}: ${best.entity.state}${unitOf(best.entity)}. Nicht aktuell ignoriert (${note(stale)}).`
+    // 2.89.14 (Abnahme 2.89.13): the reply stated the stale 50 % as current and called the fresh 99 % "another
+    // vehicle" - mentioning the fresh value must not let a stale one through. Only a comparable fresh value
+    // (same unit or device class) replaces it; a reply that names the age itself stays.
+    const comparable = (a: any, b: any) => Boolean((a?.attributes?.unit_of_measurement && a.attributes.unit_of_measurement === b?.attributes?.unit_of_measurement)
+        || (a?.attributes?.device_class && a.attributes.device_class === b?.attributes?.device_class))
+    const citedStale = mentionsAge ? [] : stale.filter(item => cites(reply, item.entity))
+    const replacement = citedStale.length ? fresh.filter(f => citedStale.some(s => comparable(f.entity, s.entity))).sort((a, b) => a.age - b.age)[0] : undefined
+    if (replacement) {
+        return `Aktuell laut Home Assistant: ${label(replacement.entity)}: ${replacement.entity.state}${unitOf(replacement.entity)}. Nicht aktuell ignoriert (${note(stale)}).`
     }
     return mentionsAge ? null : `${reply}
 
