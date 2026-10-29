@@ -13,6 +13,7 @@ import { getPluginManager } from '../plugins/plugin-sdk.js'
 import { followUpHint } from './follow-up-hint.js'
 import { isConversationalClosure, isHistoryOnlyRequest, toolProvidesActionEvidence } from '../core/action-intent.js'
 import { buildToolTaskContext } from '../core/tool-task-context.js'
+import { measureModelInput } from '../core/context-metrics.js'
 import { ExecutionKernel } from '../core/execution-kernel.js'
 import { userFacingVerdictMessage, type TaskContract, type TaskValidationReport } from '../core/task-contract.js'
 import { SessionCheckpoints, sessionIdentity, sessionKey, type SessionScope } from './session-checkpoints.js'
@@ -158,6 +159,8 @@ export const SELF_INFO_NOTE = 'Selbstauskunft liegt schon vor — keine weitere 
 export interface AgentResponse {
     /** 2.89.3: the run ended at a limit or kept to makeshift tools - a part of the request has no matching tool. */
     capabilityGap?: boolean
+    /** 2.90.0: sizes and counts of this run for the context measurement (turn-context.ts). */
+    contextStats?: import('../core/turn-context.js').RunnerContextStats
     incompleteSynthesis?: boolean
     /** True when the incomplete-run text is already a short honest sentence (no raw tool data). */
     incompleteAnswerReady?: boolean
@@ -857,6 +860,10 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
         })
         if (llmPolicy.decision !== 'allow') throw new Error(`LLM policy ${llmPolicy.decision}: ${llmPolicy.reason || 'blocked'}`)
         if (llmPolicy.additionalContext) messages.unshift({ role: 'system', content: llmPolicy.additionalContext })
+        // 2.90.0: the real model input (all system messages, history, tool schemas) — /kontext.
+        const firstInput = measureModelInput(messages as any, toolDefinitions as any)
+        let modelCalls = 1
+        let maxModelInputChars = firstInput.modelInputChars
 
         // Every native planning, follow-up and repair round shares one budget.
         // Do not mutate the global/shared client used by other users or runs.
@@ -1852,6 +1859,8 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                             })
                             if (decision.decision !== 'allow') throw new Error('SDK continuation blocked by LLM policy')
                             if (decision.additionalContext) sdkMessages.unshift({ role: 'system', content: decision.additionalContext })
+                            modelCalls++
+                            maxModelInputChars = Math.max(maxModelInputChars, measureModelInput(sdkMessages as any, sdkTools as any).modelInputChars)
                         },
                         afterCall: async output => {
                             const decision = await lifecyclePolicy.run('llm.after', {
@@ -2121,6 +2130,11 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
             screenshotDelivered: !!screenshotPath && deliveredScreenshots.has(screenshotPath),
             toolExecutions: missingTools.length ? [...toolExecutions, ...missingTools] : toolExecutions,
             ...(capabilityGap ? { capabilityGap: true } : {}),
+            contextStats: {
+                modelInputChars: firstInput.modelInputChars, systemChars: firstInput.systemChars, historyChars: firstInput.historyChars,
+                toolSchemaChars: firstInput.toolSchemaChars, toolsOffered: firstInput.toolsOffered,
+                modelCalls, maxModelInputChars, toolCalls: toolsUsed.length, selfInfoCalls,
+            },
             actionState: {
                 requiresTool: actionIntent.requiresTool,
                 kind: actionIntent.kind,

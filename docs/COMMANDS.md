@@ -28,6 +28,7 @@
 | Users | `/users` `/users promote` `/users block` |
 | SSH & Mesh | `/hosts` `/nodes` `/update` `/preflight` |
 | Autonomy | `/autonom` `/auftrag` `/remind` `/jetzt` `/gedanken` `/arbeit` `/delegiert` `/entscheidungen` `/heilung` `/software` `/modelle` `/waechter` |
+| Kontext *(2.90)* | `/lage` `/kontext` |
 | Proxmox *(Phase 6c)* | `/vms` `/vms meine` `/vms neu` `/vms wegwerf` `/vms snapshot` `/vms entfernen` |
 | Session | `/clear` `/save` `/compact` `/monitor` `/log` |
 | Desktop | `/desktop` |
@@ -241,6 +242,12 @@ Owner. Kausales Gedächtnis: gültige Entscheidungen mit Warum, wer/wann, gülti
 
 ### `/arbeit [pause <id>|weiter <id>]`
 Owner. Missionen nach Zustand (In Arbeit / Geplant / Wartet auf Alfred / Blockiert / Abgeschlossen) und die aktiven Verantwortungen mit erfüllt/verletzt. `pause`/`weiter` schaltet eine Verantwortung an/aus. Details: `docs/AUTONOMY_GUIDE.md` („Verantwortungen und Missionen“).
+
+### `/lage`
+Owner, nur lesend (2.90). Gemessenes Lagebild: wo Xaventra läuft (z. B. VM auf Proxmox-Knoten X), welches Sprachmodell, welche Knoten mit Version und Fähigkeiten, der Proxmox-Pool mit freiem Platz, ob Kubernetes verbunden ist und was fehlt. Eine Quelle, die nicht antwortet, heißt „unbekannt“. Schalter `context.lagebild` (`off`/`shadow`/`on`, Standard `shadow`): erst bei `on` steht das Lagebild im Prompt und ersetzt den alten festen Umgebungstext.
+
+### `/kontext`
+Owner, nur lesend (2.90). Messung der letzten 50 Züge mit Modell: wie oft der Systemprompt gekappt wurde, Größe gebaut/gesendet, ganze Modelleingabe, Werkzeugaufrufe, Selbstauskünfte, Größe des Aufgaben-Prompts (Probe) und die am häufigsten weggekappten Blöcke. Datei: `.nova-data/context-metrics.jsonl` (nur Größen und Überschriften, nie der Text). Schalter `context.metrics` (`on`/`off`).
 
 ### `/vms [meine|snapshots <vmid>|snapshot|start|stop|rollback|neu|wegwerf|vergroessern|entfernen|cloudinit|hilfe]`
 Owner. Proxmox-Gäste (nur lesend) mit Markierung der eigenen VM, des Pools `xaventra` und „meiner VMs“ (Tag `xaventra-created`) samt freiem Ressourcen-Deckel. Alle schreibenden Unterbefehle erzeugen nur eine Knopf-Karte (Wirkung `infra`, nie „Immer erlauben“); ausgeführt wird erst nach dem Ja. Standard aus. Details: `docs/PROXMOX.md`.

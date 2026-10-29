@@ -197,6 +197,26 @@ without `roles` only gets `worker`; grant more only explicitly:
 }
 ```
 
+### Context per task (2.90)
+
+```json
+{
+  "context": {
+    "metrics": "on",
+    "taskPrompt": "shadow",
+    "lagebild": "shadow"
+  }
+}
+```
+
+| Key | Values | Default | Effect |
+|-----|--------|---------|--------|
+| `context.metrics` | `on` / `off` | `on` | One line per turn in `.nova-data/context-metrics.jsonl` (sizes and block headings only, never text); `/kontext` |
+| `context.taskPrompt` | `off` / `shadow` / `on` | `shadow` | Task prompt: only the core blocks plus the blocks that match the turn's tool route. `shadow` measures it and still sends the old prompt; `on` sends it. The prompt budget stays as safety net. |
+| `context.lagebild` | `off` / `shadow` / `on` | `shadow` | Measured self-image (node profile, peers, Proxmox pool, Kubernetes). `shadow`: only `/lage`; `on`: protected prompt block that replaces the fixed soul text „DEINE UMGEBUNG“, „MESH NETZWERK“, „NODE UPDATES“. |
+
+The environment wins: `XAVENTRA_CONTEXT_METRICS`, `XAVENTRA_TASK_PROMPT`, `XAVENTRA_LAGEBILD`. Switching back is `off` plus a restart; no rollback needed.
+
 ---
 
 ## Environment Variables

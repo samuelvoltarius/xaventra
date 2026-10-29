@@ -35,7 +35,7 @@ export interface PromptBudgetResult {
 
 export type BlockPriority = 0 | 1 | 2 | 3
 
-const PROTECTED = /eingehendes bild|entscheidung|gespeicherter skill|bekannte lösung|prozedur|user-kontext|nutzerkorrektur|sicherheit|security|strict|freigabe|rechte|bot-profil|verifiziertes gedächtnis|entitätenbezug|gedächtniswege/i
+const PROTECTED = /eingehendes bild|lagebild|entscheidung|gespeicherter skill|bekannte lösung|prozedur|user-kontext|nutzerkorrektur|sicherheit|security|strict|freigabe|rechte|bot-profil|verifiziertes gedächtnis|entitätenbezug|gedächtniswege/i
 const IMPORTANT = /kritisch|regeln|handeln|systemzeit|bedienmodus|ehrlichkeit|nicht verfügbar/i
 const BACKGROUND = /gelerntes wissen|hintergrund|system-status|system-befund|hardware|mesh|journal|tagebuch|reflexion|reflection|proaktiv|proactive|vorschl|emotion|stimmung|empath|muster|pattern|vorhersage|predict|insight|trace|inventar|inventory|persönlichkeit|session management|soziale|node updates|gesprächs-kontext/i
 
@@ -78,6 +78,11 @@ function splitBlocks(input: string, activeRequest: string): Block[] {
         blocks.push({ text, heading: isHeading ? headingLine.trim() : '(Identität)', priority, keep: text.length })
     }
     return blocks
+}
+
+/** 2.90.0: the same `## ` split for the task prompt (task-prompt.ts); text before the first heading is '(Identität)'. */
+export function splitPromptBlocks(input: string, activeRequest = ''): Array<{ text: string; heading: string; priority: BlockPriority }> {
+    return splitBlocks(input, activeRequest).map(({ text, heading, priority }) => ({ text, heading, priority }))
 }
 
 function renderBlock(block: Block): string {

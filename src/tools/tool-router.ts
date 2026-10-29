@@ -613,6 +613,8 @@ function credentialMissing(name: string): boolean {
 export function getRelevantTools(
     userMessage: string,
     primaryMessage = userMessage,
+    /** 2.90.0: the task prompt asks for the same route without a second log line. */
+    options: { quiet?: boolean } = {},
 ): RegisteredTool[] {
     const registry = getToolRegistry()
     const allTools = registry.getAll()
@@ -684,7 +686,7 @@ export function getRelevantTools(
         .slice(0, MAX_ACTIVE_PACKS)
 
     const activatedPacks = rankedPacks.map(candidate => candidate.pack.name)
-    if (activatedPacks.length > 0) {
+    if (activatedPacks.length > 0 && !options.quiet) {
         console.log(`[ToolRouter] 🎯 Activated packs: ${activatedPacks.join(', ')}`)
     }
 
@@ -704,7 +706,7 @@ export function getRelevantTools(
         .map(name => registry.get(name))
         .filter((tool): tool is NonNullable<typeof tool> => Boolean(tool))
         .slice(0, MAX_WORKER_TOOLS)
-    console.log(`[ToolRouter] 📦 ${relevant.length}/${allTools.length} tools (filtered mode, core: ${CORE_TOOLS.size}, packs: ${activatedPacks.length})`)
+    if (!options.quiet) console.log(`[ToolRouter] 📦 ${relevant.length}/${allTools.length} tools (filtered mode, core: ${CORE_TOOLS.size}, packs: ${activatedPacks.length})`)
     return relevant
 }
 

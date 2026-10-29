@@ -96,6 +96,11 @@ export function runWithTrace<T>(traceId: string, fn: () => T): T {
     return traceContext.run(traceId, fn)
 }
 
+/** 2.90.0: trace id of the running request (context metrics join on it). */
+export function currentTraceId(): string | undefined {
+    return traceContext.getStore()
+}
+
 export function traceStep(step: string): void {
     const traceId = traceContext.getStore()
     if (traceId) traceLog(traceId, step)

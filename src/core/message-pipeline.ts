@@ -2165,13 +2165,21 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
         } catch (error) { stageFailure('Bild-Verkleinern', error) }
         systemPrompt += systemTimeBlock
         const MAX_SYSTEM_PROMPT = contextPolicy.maxPromptChars
+        // 2.90.0 Kontext je Aufgabe: Lagebild + Aufgaben-Prompt (context-switches.ts) and one measurement line per turn.
+        const { prepareTurnPrompt } = await import('./turn-context.js')
+        const turnContext = await prepareTurnPrompt({ prompt: systemPrompt, request: content, policy: contextPolicy, toolNames: execution?.allowedTools })
+        const turnStartedAt = Date.now()
+        systemPrompt = turnContext.prompt
+        let budgetSections: import('./prompt-budget.js').PromptBudgetResult['sections'] | null = null
         if (systemPrompt.length > MAX_SYSTEM_PROMPT) {
             console.log(`[Pipeline] ⚠️ systemPrompt too large: ${systemPrompt.length} chars, capping to ${MAX_SYSTEM_PROMPT}`)
             const { applySystemPromptBudget } = await import('./prompt-budget.js')
             const budgeted = applySystemPromptBudget(systemPrompt, MAX_SYSTEM_PROMPT, content)
             systemPrompt = budgeted.prompt
+            budgetSections = budgeted.sections
             console.log(`[Pipeline] Prompt budgets: ${JSON.stringify(budgeted.sections)}`)
         }
+        turnContext.afterCap(budgetSections, systemPrompt.length, MAX_SYSTEM_PROMPT)
         console.log(`[Pipeline] systemPrompt size: ${systemPrompt.length} chars`)
 
         let result: any
@@ -2266,6 +2274,12 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             throw err
         } finally {
             progress.close()
+            turnContext.record({
+                channel,
+                outcome: !result ? 'error' : result.incompleteSynthesis ? 'incomplete' : 'answer',
+                durationMs: Date.now() - turnStartedAt,
+                stats: result?.contextStats,
+            })
         }
 
         // ============================================

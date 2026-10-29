@@ -136,6 +136,8 @@ export const COMMAND_MENU: ReadonlyArray<CommandMenuEntry> = Object.freeze([
     { command: 'nodes', description: '🌐 Mesh-Nodes anzeigen/verwalten', gruppe: 'Wahrnehmen' },
     { command: 'desktop', description: '🖥 Desktop ansehen/übernehmen (Owner)', gruppe: 'Wahrnehmen' },
     // System
+    { command: 'lage', description: '🧭 Lagebild: wo ich laufe, Knoten, Proxmox, Kubernetes (Owner)', gruppe: 'System' },
+    { command: 'kontext', description: '📏 Kontext-Messung der letzten Züge (Owner)', gruppe: 'System' },
     { command: 'software', description: '🧩 Software: vorhanden / passt / fehlt (Owner)', gruppe: 'System' },
     { command: 'modelle', description: '🧭 Modell-Register & Routing (Owner)', gruppe: 'System' },
     { command: 'model', description: '🔄 Modell wechseln', gruppe: 'System' },
@@ -3635,6 +3637,22 @@ ${status.receipts.slice(-5).map(receipt => `${receipt.status === 'verified' ? '�
         // /nodes stays the older mesh command above; /setup knoten is the alias.
         case 'knoten': {
             return formatAllNodeProfiles()
+        }
+
+        // 2.90.0 Kontext je Aufgabe (owner only, see COMMAND_MINIMUM_ROLE default): measured Lagebild and the context measurement.
+        case 'lage': {
+            const { lagebildText } = await import('./lagebild.js')
+            const { contextSwitch } = await import('./context-switches.js')
+            return `${await lagebildText()}
+
+(Schalter lagebild: ${contextSwitch('lagebild')})`
+        }
+        case 'kontext': {
+            const { formatKontext, readContextMetrics } = await import('./context-metrics.js')
+            const { contextSwitch } = await import('./context-switches.js')
+            return `${formatKontext(readContextMetrics({ limit: 50 }))}
+
+Schalter: Messung ${contextSwitch('metrics')}, Aufgaben-Prompt ${contextSwitch('taskPrompt')}, Lagebild ${contextSwitch('lagebild')}`
         }
 
         // Phase 6c: Proxmox (owner only, see COMMAND_MINIMUM_ROLE default). Writes only create cards.
