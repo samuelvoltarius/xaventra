@@ -861,10 +861,6 @@ async function startDaemon() {
     // Initialize Layer 0 - Resilience & Self-Repair
     // ============================================
     try {
-        const { ResilienceManager } = await import('./resilience/manager.js')
-        state.resilience = new ResilienceManager()
-        state.resilience.start()
-
         // Add Self-Repair Engine
         const { getSelfRepairEngine, handleUncaughtError, rejectionLogGate } = await import('./layers/L0-self-repair.js')
         const _repairEngine = getSelfRepairEngine() // Triggered for initialization
@@ -895,7 +891,9 @@ async function startDaemon() {
             }
         })
 
-        console.log('[Nova] ✓ Layer 0 (Resilience + Self-Repair) aktiv')
+        // 2.92.0: the global handlers are Layer 0 now; each error line becomes one Doctor finding per signature.
+        state.resilience = { errorFindings: true }
+        console.log('[Nova] ✓ Layer 0 (Self-Repair, Fehler-Signaturen) aktiv')
     } catch (err) {
         console.log(`[Nova] ⚠ Resilience nicht verfügbar: ${err}`)
     }
@@ -2240,15 +2238,6 @@ async function startDaemon() {
         console.log(`[Nova] ⚠ Benchmark schedule unavailable: ${err}`)
     }
 
-    // Start L(-1) Supervisor
-    try {
-        const { getSupervisor } = await import('./supervisor/supervisor-manager.js')
-        const supervisor = getSupervisor({ autoFix: false })  // Manual approval by default
-        supervisor.start()
-        console.log('[Nova] ✓ L(-1) Supervisor aktiv (Manual Mode)')
-    } catch (err) {
-        console.log(`[Nova] ⚠ Supervisor nicht verfügbar: ${err}`)
-    }
 
     // ============================================
     // Start L6 Cold Storage (USER.md + MEMORY.md)
@@ -2315,27 +2304,6 @@ async function startDaemon() {
         await initMemoryDistiller(() => serviceModels.learning)
     } catch (err) {
         console.log(`[Nova] ⚠ Memory Distiller nicht verfügbar: ${err}`)
-    }
-
-    // ============================================
-    // Start Resilience Manager (Self-Healing Layer)
-    // ============================================
-    try {
-        const { createResilienceManager } = await import('./resilience/manager.js')
-        const resilience = createResilienceManager()
-        resilience.start()
-            ; (state as any).resilience = resilience
-
-        // Mark healthy components (uses ErrorCategory types)
-        // Note: constructor already inits auth, llm, memory, channels, learning
-        if (state.llm) resilience.reportSuccess('llm')
-        if (state.channels.telegram) resilience.reportSuccess('channel')
-        if ((state as any).lanceMemory) resilience.reportSuccess('memory')
-
-        const health = resilience.getHealthStatus()
-        console.log(`[Nova] ✓ Resilience Manager aktiv (Status: ${health.overall}, ${Object.keys(health.components).length} Components)`)
-    } catch (err) {
-        console.log(`[Nova] ⚠ Resilience Manager nicht verfügbar: ${err}`)
     }
 
     // ============================================

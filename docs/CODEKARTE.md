@@ -411,7 +411,7 @@ v2.72); In-Place-Git-Updates sind abgeschaltet.
 | `src/dashboard` | Browser-Server, CSP, Zugangsschutz |
 | `src/dev` | Build-/Layer-/Release-Prüfungen, Katalog-Generator, `check-codekarte.ts` |
 | `src/devops` | Dockerfile/Compose-Generator |
-| `src/doctor` | deterministische Diagnose und Reparatur (`/doctor`, `self_doctor`) |
+| `src/doctor` | deterministische Diagnose und Reparatur (`/doctor`, `self_doctor`); Fehlerzeile → Befund: der eine Weg ist `src/core/self-doctor.ts` `recordErrorFinding` (eine Signatur = ein Befund mit Anzahl, zuletzt, geschwärzter Zeile) |
 | `src/e2e` | nur End-to-End-Tests |
 | `src/guided` | „Geführt"-Schritte (Ampel, Tipps) |
 | `src/hooks` | `event-hooks.ts` (Werkzeuge `create_hook` …) |
@@ -425,8 +425,8 @@ v2.72); In-Place-Git-Updates sind abgeschaltet.
 | `src/media` | Bildaufbereitung, Medienverständnis |
 | `src/onboarding` | Erststart, Telegram-Kopplung, Onboarding-API |
 | `src/plugins` | `PluginManager`, Lader |
-| `src/process` | Befehlswarteschlange, Exec, Daemon-Steuerung, Watchdog |
-| `src/resilience` | Schicht-0-Resilienz, Backup, Rückfall-Befehle |
+| `src/process` | Befehlswarteschlange, Exec, Daemon-Steuerung (Prozesswächter: `src/supervisor.ts` bzw. systemd) |
+| `src/resilience` | Backup, Rückfall-Befehle, Qualitäts-/Ehrlichkeitsprüfer, SSRF-Schutz, Orchestrator (der alte `ResilienceManager` ist seit 2.92.0 entfernt) |
 | `src/routing` | Modellregister, Modell je Aufgabe, Outcome-Stichproben |
 | `src/runtime` | Code-Laufzeit, Missions-Arbeitsbereich, LSP, Profile |
 | `src/secrets` | Tresor, Credential-Broker, Provider-/Dienstschlüssel |
@@ -434,7 +434,6 @@ v2.72); In-Place-Git-Updates sind abgeschaltet.
 | `src/sensing` | Geräte- und Netzerkennung, Adapter |
 | `src/sessions` | `session-key-utils.ts` |
 | `src/startup` | Umgebungs-Scan beim Start (`environment-scanner.ts` `locateProgram`), Tailscale-Status |
-| `src/supervisor` | Auto-Tester, Circuit-Breaker, Stop-Loss (`src/supervisor.ts` = Prozess) |
 | `src/synthesis` | Patch-Gate, Patch-Sandbox, Selbstevolution |
 | `src/terminal` | Terminal-Manager |
 | `src/test-utils` | gemeinsame Test-Fixtures |
@@ -633,7 +632,7 @@ Belegte Widersprüche:
   `src/channels/even-g2-runtime.ts` `numericOwnerIds` (gleiche Regex zweimal).
 - Rohes `allowFrom[0]` als Besitzer: `src/daemon.ts`, `src/memory/memory-distiller.ts`,
   `src/layers/L6-core-facts.ts`, `src/core/daemon-channels.ts`,
-  `src/tools/reminder-tool.ts`, `src/watchdog.ts` — widerspricht
+  `src/tools/reminder-tool.ts` — widerspricht
   `resolveCanonicalOwner` bei mehreren Besitzern.
 - `src/secrets/chat-key-intake.ts` nimmt ohne `isOwner` `true` an.
 - **Empfehlung:** `getUserPermission` + `resolveCanonicalOwner` als einziger
@@ -729,6 +728,23 @@ Belegte Widersprüche:
 | `check_updates` / `pull_update` / `mesh_update` | `pull_update` Stub | `check_updates`, `mesh_update` |
 | `self_doctor` / `auto_fix` | Befundliste vs. tsc-Reparaturlauf — verschieden | beide |
 | `run_command` / `ssh_command` / `code_runtime_run` / `execute_python` | absichtlich verschieden (lokal/remote/Sandbox/Python); `ssh_command` dreifach (D2) | alle, `ssh_command` vereinheitlichen |
+
+### D14 Selbstreparatur-Wege
+
+- **Erledigt in 2.92.0:** `src/supervisor/*` (LLM-Fix → Branch → Build → Merge,
+  `git reset --hard`, ohne Eingabe), `src/watchdog.ts`,
+  `src/process/nova-watchdog.ts` (startete die alte `dist/index.js`) und der
+  `ResilienceManager` (leere Strategien, zweite Instanz) sind entfernt;
+  `/supervisor` verweist nur noch auf `/doctor`. Fehlerzeilen aus Ausnahmen,
+  Zustellung und Werkzeugen landen über `recordErrorFinding` in einem Befund je
+  Signatur.
+- **Offen:** drei Wege enden in `evolve()` — `src/layers/L0-self-repair.ts`
+  `autoRepair`, `src/layers/auto-bug-fix.ts` (`auto_fix`) und
+  `src/doctor/repair-candidate.ts`; freigebbar ist nur der Doctor-Weg (die
+  anderen liefern kein Reparaturprofil, `src/synthesis/self-evolution.ts`
+  `approveEvolutionProposal`).
+- **Empfehlung:** ein Reparaturweg Befund → Fall → Zweig mit rotem Test → CI →
+  Reparaturprofil (Plan Selbstreparatur, Stufe 2.94).
 
 ---
 

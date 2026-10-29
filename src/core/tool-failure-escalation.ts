@@ -6,6 +6,7 @@ import { classifyToolFailure, type ToolFailureKind } from './typed-tool-recovery
 import { getSessionContinuityStore, type SessionContinuityStore } from '../memory/session-summarizer.js'
 import { getFailureResearchCoordinator, type FailureResearchCoordinator } from '../doctor/failure-research-coordinator.js'
 import { redactSecrets } from '../security/secret-redaction.js'
+import { errorFindingSignature, recordErrorFinding } from './self-doctor.js'
 
 export interface VerifiedToolFailureObservation {
     callId: string
@@ -180,14 +181,18 @@ export function escalateVerifiedToolFailures(input: {
         return { record: structuredClone(base), content: requestedQuestion, deduplicated: false }
     }
 
+    // 2.92.0: the same failure in another run is the same case (signature, not run/call id).
+    const signatureKey = `${observation.toolName}|${classification}|${summary}`
+    const signature = errorFindingSignature('tool-failure', signatureKey)
+    recordErrorFinding({ source: 'tool-failure', key: signatureKey, line: `${observation.toolName}: ${summary}`, title: `Werkzeugfehler ${observation.toolName} (${classification})`, category: 'tools' }, { ingest: false })
     const finding = doctor.ingest({
-        id: `tool-failure-${id}`,
+        id: `tool-failure-${signature}`,
         title: `Verified ${classification} failure in ${observation.toolName}`,
         detail: `Observed by the Execution Kernel for ${observation.toolName}: ${summary}`,
         category: 'tools', severity: classification === 'unknown' ? 'warning' : 'info',
         source: 'execution-kernel',
         recommendation: 'Run bounded read-only Doctor research; do not execute a repair without sandbox, regression, rollback and PATCH_GATE evidence.',
-        evidence: { runId: input.runId, callId: observation.callId, toolName: observation.toolName, classification, failureDigest: base.failureDigest },
+        evidence: { runId: input.runId, callId: observation.callId, toolName: observation.toolName, classification, failureDigest: base.failureDigest, signature },
         status: 'open', createdAt: now, updatedAt: now,
     })
     base.doctorCaseId = finding.id

@@ -298,7 +298,7 @@ export function groundedInConversation(response: string, history: readonly strin
     if (!past || !response || response.length > 300) return false
     const proper: string[] = []
     for (const sentence of response.split(/(?<=[.!?])\s+|\n+/)) {
-        const words = sentence.match(/[\p{L}\p{N}][\p{L}\p{N}'-]*/gu) || []
+        const words: string[] = sentence.match(/[\p{L}\p{N}][\p{L}\p{N}'-]*/gu) || []
         words.forEach((word, index) => {
             if (/^\p{N}+$/u.test(word) || (index > 0 && /^\p{Lu}/u.test(word) && word.length >= 3)) proper.push(word.toLowerCase())
         })

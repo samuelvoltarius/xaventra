@@ -389,7 +389,15 @@ export function rejectionLogGate(error: Error, now = Date.now()): number | null 
 export function resetSelfRepairGate(): void { lastDiagnosis.clear(); lastLogged.clear() }
 
 export function handleUncaughtError(error: Error): void {
-    if (!selfRepairGate(error).diagnose) return
+    const gate = selfRepairGate(error)
+    // 2.92.0: every occurrence counts towards one finding per signature (reachability stays out, B4).
+    if (!gate.reachability) {
+        const line = `${error?.name || 'Error'}: ${error?.message || ''}`
+        void import('../core/self-doctor.js')
+            .then(({ recordErrorFinding }) => recordErrorFinding({ source: 'uncaught-exception', key: errorSignature(error), line, title: `Ungefangene Ausnahme: ${line.slice(0, 80)}` }))
+            .catch(() => undefined)
+    }
+    if (!gate.diagnose) return
     const engine = getSelfRepairEngine()
     const issue = engine.detectIssue(error)
     engine.diagnoseIssue(issue).then(result => {

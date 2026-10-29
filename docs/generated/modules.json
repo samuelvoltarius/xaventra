@@ -2557,6 +2557,7 @@
       "module": "src/core/self-doctor.ts",
       "imports": [
         "../config/config-path.js",
+        "../security/secret-redaction.js",
         "dotenv/config",
         "node:crypto",
         "node:fs",
@@ -2794,6 +2795,7 @@
         "../security/secret-redaction.js",
         "./atomic-storage.js",
         "./data-root.js",
+        "./self-doctor.js",
         "./typed-tool-recovery.js",
         "node:crypto",
         "node:fs"
@@ -6177,17 +6179,6 @@
       "imports": []
     },
     {
-      "module": "src/process/nova-watchdog.ts",
-      "imports": [
-        "node:child_process",
-        "node:fs",
-        "node:http",
-        "node:os",
-        "node:path",
-        "node:url"
-      ]
-    },
-    {
       "module": "src/providers/github-copilot-auth.ts",
       "imports": [
         "../agents/auth-profiles.js",
@@ -6241,21 +6232,6 @@
     {
       "module": "src/resilience/honesty.ts",
       "imports": []
-    },
-    {
-      "module": "src/resilience/index.ts",
-      "imports": [
-        "./fallback.js",
-        "./honesty.js",
-        "./manager.js",
-        "./quality-gate.js"
-      ]
-    },
-    {
-      "module": "src/resilience/manager.ts",
-      "imports": [
-        "node:events"
-      ]
     },
     {
       "module": "src/resilience/orchestrator.ts",
@@ -7254,77 +7230,6 @@
         "node:http",
         "node:path",
         "node:url"
-      ]
-    },
-    {
-      "module": "src/supervisor/auto-tester.ts",
-      "imports": [
-        "./fix-generator.js",
-        "node:child_process",
-        "node:fs",
-        "node:path"
-      ]
-    },
-    {
-      "module": "src/supervisor/circuit-breaker.ts",
-      "imports": [
-        "../config/config-path.js",
-        "node:child_process",
-        "node:events",
-        "node:fs",
-        "node:os",
-        "node:path"
-      ]
-    },
-    {
-      "module": "src/supervisor/fix-generator.ts",
-      "imports": [
-        "../logging/structured-logger.js",
-        "./pattern-matcher.js"
-      ]
-    },
-    {
-      "module": "src/supervisor/index.ts",
-      "imports": [
-        "../logging/structured-logger.js",
-        "./auto-tester.js",
-        "./circuit-breaker.js",
-        "./fix-generator.js",
-        "./log-collector.js",
-        "./pattern-matcher.js",
-        "./supervisor-manager.js"
-      ]
-    },
-    {
-      "module": "src/supervisor/log-collector.ts",
-      "imports": [
-        "../logging/structured-logger.js",
-        "node:events",
-        "node:fs",
-        "node:path"
-      ]
-    },
-    {
-      "module": "src/supervisor/pattern-matcher.ts",
-      "imports": [
-        "../logging/structured-logger.js",
-        "node:events"
-      ]
-    },
-    {
-      "module": "src/supervisor/stop-loss.ts",
-      "imports": []
-    },
-    {
-      "module": "src/supervisor/supervisor-manager.ts",
-      "imports": [
-        "../logging/structured-logger.js",
-        "./auto-tester.js",
-        "./circuit-breaker.js",
-        "./fix-generator.js",
-        "./log-collector.js",
-        "./pattern-matcher.js",
-        "node:events"
       ]
     },
     {
@@ -8479,16 +8384,6 @@
       "imports": [
         "../core/resource-thresholds.js",
         "./sample.js"
-      ]
-    },
-    {
-      "module": "src/watchdog.ts",
-      "imports": [
-        "./config/config-path.js",
-        "node:child_process",
-        "node:fs",
-        "node:os",
-        "node:path"
       ]
     },
     {

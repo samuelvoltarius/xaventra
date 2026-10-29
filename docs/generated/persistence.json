@@ -966,10 +966,6 @@
       "path": ".nova-data"
     },
     {
-      "owner": "src/process/nova-watchdog.ts",
-      "path": ".nova-data"
-    },
-    {
       "owner": "src/runtime/mission-workspace.ts",
       "path": ".nova-data"
     },
@@ -1031,10 +1027,6 @@
     },
     {
       "owner": "src/supervisor.ts",
-      "path": ".nova-data"
-    },
-    {
-      "owner": "src/supervisor/auto-tester.ts",
       "path": ".nova-data"
     },
     {
@@ -1494,10 +1486,6 @@
       "path": ".nova-data/users"
     },
     {
-      "owner": "src/supervisor/supervisor-autofix-safety.test.ts",
-      "path": ".nova-data/users.json"
-    },
-    {
       "owner": "src/users/owner-accounts.ts",
       "path": ".nova-data/users/owner-accounts.json"
     },
@@ -1571,10 +1559,6 @@
     },
     {
       "owner": "src/mesh/mesh-policy.ts",
-      "path": ".nova-learning"
-    },
-    {
-      "owner": "src/supervisor/auto-tester.ts",
       "path": ".nova-learning"
     },
     {
