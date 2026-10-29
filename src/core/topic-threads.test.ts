@@ -146,12 +146,15 @@ describe('2.91.0 measurement and privacy', () => {
         const result = ask('Schalte das Licht im Wohnzimmer aus')
         expect(result.foreignHistoryShare).toBeCloseTo(2 / 3, 2)
     })
-    it('the store keeps no message text', () => {
+    it('the store keeps no sentence, only a few keywords per thread', () => {
         ask('Wann war Ozzy zuletzt beim Tierarzt?')
+        ask('Wie ist der Stand bei der Bricks Website für die Termine?')
         store.save()
         const raw = readFileSync(join(dir, 'topic-threads.json'), 'utf8')
-        expect(raw).not.toContain('Tierarzt')
+        expect(raw).not.toContain('Wann war Ozzy')
+        expect(raw).not.toContain('Stand bei der Bricks')
         expect(raw).toContain('hunde')
+        for (const thread of store.threads('owner')) expect(thread.terms.length).toBeLessThanOrEqual(12)
     })
     it('groups and guests get no threads', () => {
         const result = ask('Welche Lichter sind an?', { isGroup: true })
@@ -169,5 +172,55 @@ describe('2.91.0 /themen', () => {
         expect(text).toContain('Hunde')
         expect(text).toMatch(/Probe|Schatten/)
         expect(formatThemen([], now, 'shadow')).toContain('Noch keine')
+    })
+})
+
+describe('2.91.0 automatic: threads appear, get a name, merge, rest and correct themselves (no command needed)', () => {
+    it('real content without a fixed topic opens its own thread with a short name from the content', () => {
+        const first = ask('Wie ist der Stand bei der Bricks Website für die Termine?')
+        expect(first.isNew).toBe(true)
+        expect(first.rule).toBe('inhalt')
+        expect(first.name).toMatch(/Bricks/)
+        expect(first.name.split(/\s+/).length).toBeLessThanOrEqual(3)
+        const again = ask('Kannst du bei Bricks die Termine für Samstag eintragen?')
+        expect(again.threadId).toBe(first.threadId)
+        expect(again.rule).toBe('inhalt')
+        expect(again.isNew).toBe(false)
+    })
+    it('a sentence that joins two threads merges them into the older one', () => {
+        const wedding = ask('Plane die Hochzeit von Lisa im Mai')
+        const party = ask('Wie viele Gäste kommen zur Gartenparty?')
+        expect(party.threadId).not.toBe(wedding.threadId)
+        const bridge = ask('Die Gartenparty gehört eigentlich zur Hochzeit')
+        expect(bridge.threadId).toBe(wedding.threadId)
+        expect(bridge.merged).toBe(1)
+        expect(store.threads('owner').some(thread => thread.id === party.threadId)).toBe(false)
+        expect(ask('Wer kommt zur Gartenparty?').threadId).toBe(wedding.threadId)
+    })
+    it('a thread rests after 7 days without activity and wakes when its topic comes back', () => {
+        const bricks = ask('Wie ist der Stand bei der Bricks Website für die Termine?')
+        now += 8 * 24 * 60 * 60_000
+        ask('Welche Lichter sind an?')
+        expect(store.threads('owner').find(thread => thread.id === bricks.threadId)?.status).toBe('ruhend')
+        const back = ask('Trag bei Bricks den nächsten Termin ein')
+        expect(back.threadId).toBe(bricks.threadId)
+        expect(back.woke).toBe(true)
+        expect(store.threads('owner').find(thread => thread.id === bricks.threadId)?.status).toBe('aktiv')
+    })
+    it('„nein, ich meine das Auto“ moves the previous message to Auto and counts a correction', () => {
+        ask('Mach die Steckdose vom Drucker an')
+        const vague = ask('und wie lange noch?')
+        expect(vague.key).toBe('haus')
+        const fix = ask('nein, ich meine das Auto')
+        expect(fix.key).toBe('auto')
+        expect(fix.rule).toBe('korrektur')
+        expect(fix.corrected).toBe(true)
+        const haus = store.threads('owner').find(thread => thread.key === 'haus')!
+        expect(haus.turns).toBe(1)
+        expect(store.threads('owner').find(thread => thread.key === 'auto')!.turns).toBe(2)
+    })
+    it.each(['nein, das stimmt nicht', 'Nein danke', 'nein'])('„%s“ is no correction', content => {
+        ask('Welche Lichter sind an?')
+        expect(ask(content).rule).not.toBe('korrektur')
     })
 })

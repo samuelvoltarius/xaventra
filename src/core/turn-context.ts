@@ -101,7 +101,11 @@ export async function prepareTurnPrompt(input: {
             profileEntities: entities, roomId: input.roomId, isGroup: input.isGroup, replyTo: input.replyTo,
         }, threadStore)
         if (assigned.rule !== 'aus') threadId = assigned.threadId
-        Object.assign(metrics, { threadMode, threadId: assigned.threadId, threadKey: assigned.key, threadRule: assigned.rule, threadNew: assigned.isNew, foreignHistoryShare: Math.round(assigned.foreignHistoryShare * 1000) / 1000 })
+        Object.assign(metrics, {
+            threadMode, threadId: assigned.threadId, threadKey: assigned.key, threadRule: assigned.rule, threadNew: assigned.isNew,
+            foreignHistoryShare: Math.round(assigned.foreignHistoryShare * 1000) / 1000, threadName: assigned.name, threadMerged: assigned.merged,
+            threadWoke: assigned.woke, threadCorrected: assigned.corrected, activeThreads: assigned.activeThreads, restingThreads: assigned.restingThreads,
+        })
         if (!input.threadStore && !sideEffectsDisabled()) threadStore.save()
     } catch (error) { console.debug('[TurnContext] topic thread skipped:', error) }
 
@@ -161,6 +165,12 @@ export async function prepareTurnPrompt(input: {
                     threadRule: metrics.threadRule,
                     threadNew: metrics.threadNew,
                     foreignHistoryShare: metrics.foreignHistoryShare,
+                    threadName: metrics.threadName,
+                    threadMerged: metrics.threadMerged,
+                    threadWoke: metrics.threadWoke,
+                    threadCorrected: metrics.threadCorrected,
+                    activeThreads: metrics.activeThreads,
+                    restingThreads: metrics.restingThreads,
                 }, { dir: options.dir })
             } catch (error) { console.debug('[TurnContext] metrics skipped:', error) }
         },

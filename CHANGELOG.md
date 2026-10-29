@@ -19,17 +19,21 @@ gets a topic. Nothing the model sees changes with the default.
 
 ### Added
 
-- **Topic threads (shadow).** Every owner message in a direct chat is
-  assigned to a thread — Haus, Auto, Hunde, Infra, Computer, Arbeit/Projekte,
-  Recherche, Pakete, Xaventra or Allgemein — from a chosen room, an open
+- **Topic threads (shadow), fully automatic.** Every owner message in a
+  direct chat is assigned to a thread without any command: fixed topics
+  (Haus, Auto, Hunde, Infra, Computer, Arbeit/Projekte, Recherche, Pakete,
+  Xaventra) from the request's own tool route and the owner profile, an open
   question or approval (a one-time code goes to the thread that waits for it),
-  the request's own tool route, the owner profile (the car, the dogs) or a
-  short follow-up. Small talk never opens a thread. In `shadow` the
-  assignment is measured (`/kontext`: rule, how much of the recent history
-  belongs to other topics) and shown with `/themen`; the history stays shared
-  until 2.91.1. Subagents and missions record the thread they were started
-  from. Switch `context.threads` (`XAVENTRA_THREADS`). No message text is
-  stored.
+  a short follow-up — and for anything else with real content a thread of its
+  own, named from its keywords (e.g. „Bricks Website“). A sentence that
+  joins two threads merges them; a thread rests after 7 days and wakes when
+  its topic comes back; „nein, ich meine das Auto“ moves the previous message
+  and learns from it. Small talk never opens a thread. In `shadow` all of this
+  is measured (`/kontext`: rules, foreign history, created/merged/corrected)
+  and visible with `/themen` (optional); the history stays shared until
+  2.91.1. Subagents and missions record their thread. Switch `context.threads`
+  (`XAVENTRA_THREADS`). Stored per thread: name, times, counts and at most 12
+  keywords — never a sentence.
 
 ## [2.90.2] — 2026-10-29
 

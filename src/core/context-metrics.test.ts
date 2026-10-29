@@ -126,6 +126,12 @@ describe('2.90.0 summary and /kontext', () => {
         expect(text).toContain('4 Züge')
         expect(text).toContain('75 %')
         expect(formatKontext([])).toContain('Noch keine')
+        const threads = formatKontext([
+            turn({ threadKey: 'frei', threadRule: 'inhalt', threadNew: true, foreignHistoryShare: 0.5 }),
+            turn({ threadKey: 'frei', threadRule: 'inhalt', threadMerged: 1, foreignHistoryShare: 0.25 }),
+            turn({ threadKey: 'auto', threadRule: 'korrektur', threadCorrected: true, foreignHistoryShare: 0 }),
+        ])
+        expect(threads).toContain('1 neu angelegt, 1 zusammengeführt, 1 selbst korrigiert')
     })
 })
 

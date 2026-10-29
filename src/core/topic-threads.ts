@@ -1,23 +1,29 @@
 /**
- * 2.91.0 Themen-Fäden („ich schreib ihr x und sie teilt es x zu“).
+ * 2.91.0 Themen-Fäden („ich schreib ihr x und sie teilt es x zu“) — fully automatic.
  *
- * Alfred sees ONE chat. Internally every message of the owner is assigned to
- * a topic thread (Haus, Auto, Hunde, Infra, …). Verlauf and Zusammenfassung
- * already hang on (userId, conversationId, botId) (agents/session-checkpoints.ts),
- * so from 2.91.1 a thread is only a conversationId per topic. 2.91.0 runs in
- * shadow: the assignment is made and measured, the history stays `default`.
+ * Alfred sees ONE chat and never has to type a command. Internally every
+ * message of the owner is assigned to a topic thread. Verlauf and
+ * Zusammenfassung already hang on (userId, conversationId, botId)
+ * (agents/session-checkpoints.ts), so from 2.91.1 a thread is only a
+ * conversationId per topic. 2.91.0 runs in shadow: assignment, naming,
+ * merging, resting and correction happen in the thread store and are measured;
+ * the history stays `default`.
  *
  * Deterministic first, first match wins:
  *   raum        a chosen Desktop room
  *   antwort     a reply to an earlier message inherits its thread
  *   rueckfrage  one-time code / /freigabe → the thread waiting for approval;
  *               a short answer → the thread that asked a question
+ *   korrektur   „nein, ich meine das Auto“ → moves the previous message too and learns its keywords
  *   smalltalk   „danke“, „test“ … never creates a thread
- *   marke       topic from the tool route (tool-router.ts) and owner-profile entities
+ *   inhalt      shared keywords with a thread (a sentence joining two threads merges them);
+ *               real content without a fixed topic opens its own thread, named from the content
+ *   marke       fixed topic from the tool route (tool-router.ts) and owner-profile entities
  *   folge       short follow-up with a cue („und jetzt …“) → last active thread (≤ 15 min)
- *   unklar      two topics → the last active of them, else the first by priority
+ *   unklar      two fixed topics → the last active of them, else the first by priority
  *   allgemein   nothing matched
- * No message text is stored: thread names, times, counts and rules only.
+ * Threads rest after 7 days without activity and wake when their topic comes back.
+ * Stored per thread: name, times, counts and at most 12 keywords — never a sentence.
  */
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
@@ -33,9 +39,20 @@ export function currentThreadId(): string | undefined {
     return threadContext.getStore()
 }
 
-export type ThreadRule = 'raum' | 'antwort' | 'rueckfrage' | 'smalltalk' | 'marke' | 'folge' | 'unklar' | 'allgemein' | 'aus'
+export type ThreadRule = 'raum' | 'antwort' | 'rueckfrage' | 'korrektur' | 'smalltalk' | 'inhalt' | 'marke' | 'folge' | 'unklar' | 'allgemein' | 'aus'
 
-export interface TopicThread { id: string; key: string; name: string; createdAt: number; lastAt: number; turns: number }
+export interface TopicThread {
+    id: string
+    /** Fixed topic key (haus, auto, …), 'frei' for a thread named from its content, 'allgemein'. */
+    key: string
+    name: string
+    createdAt: number
+    lastAt: number
+    turns: number
+    status: 'aktiv' | 'ruhend'
+    /** At most 12 keywords (nouns of the messages), never a sentence. */
+    terms: string[]
+}
 
 export interface ThreadInput {
     principalId: string
@@ -58,6 +75,14 @@ export interface ThreadAssignment {
     isNew: boolean
     /** Share of the recent turns (≤ 12, 24 h) that belong to other threads: what a shared history drags in. */
     foreignHistoryShare: number
+    /** Threads merged into this one by this message. */
+    merged: number
+    /** The thread was resting and this message woke it. */
+    woke: boolean
+    /** This message corrected the previous assignment („nein, ich meine …“). */
+    corrected: boolean
+    activeThreads: number
+    restingThreads: number
 }
 
 /** Topic key → display name; order = priority when a sentence hits several. */
@@ -101,17 +126,46 @@ const ABSORBS: ReadonlyArray<[string, string[]]> = [
 const SMALLTALK = /^(?:hallo|hi|hey|servus|guten (?:morgen|abend|tag)|danke(?: dir| schön| schoen)?|merci|ok(?:ay)?|passt|super|perfekt|top|cool|test|gut)[!.? ]*$/i
 const FOLLOW_CUE = /^(?:und|aber|dann|nochmal|noch mal|noch|jetzt|auch|wieder|genau|stopp|stop|weiter|mach (?:das|es|weiter)|bitte nochmal)(?![\p{L}])/iu
 const APPROVAL = /^\s*(?:\/freigabe\b.*|(?:freigabe-?code\s*)?\d{4,8})\s*$/i
+/** „nein, ich meine das Auto“, „falsch, es geht um Bricks“ — the rest names what was meant. */
+const CORRECTION = /^(?:nein|nee|ne|falsch|nicht (?:das|den|die))[\s,!.:-]+(?:(?:ich )?mein(?:e|te)|gemeint (?:ist|war)|es geht um|ich rede von|ich spreche von)\s+(.+)$/iu
 const ANSWER_WORDS = 8
 const FOLLOW_WORDS = 8
 const FOLLOW_MS = 15 * 60_000
 const QUESTION_MS = 10 * 60_000
 const APPROVAL_MS = 30 * 60_000
+const REST_MS = 7 * 24 * 60 * 60_000
 const RECENT = 12
 const DAY_MS = 24 * 60 * 60_000
+const MAX_TERMS = 12
 
 const fold = (value: string) => value.toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '')
 const escape = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const words = (text: string) => text.trim().split(/\s+/).filter(Boolean).length
+
+/** Capitalised words that carry no topic (pronouns, sentence words, time words). */
+const GENERIC = new Set([
+    'ich', 'du', 'sie', 'er', 'es', 'wir', 'ihr', 'mir', 'dir', 'uns', 'euch', 'man', 'bitte', 'danke', 'hallo',
+    'stand', 'frage', 'sache', 'problem', 'zeit', 'ding', 'info', 'infos', 'thema', 'hilfe', 'idee', 'mal', 'ende', 'anfang',
+    'heute', 'morgen', 'gestern', 'tag', 'tage', 'woche', 'monat', 'jahr', 'uhr', 'minute', 'minuten', 'stunde', 'stunden',
+    'montag', 'dienstag', 'mittwoch', 'donnerstag', 'freitag', 'samstag', 'sonntag',
+    'januar', 'februar', 'marz', 'april', 'mai', 'juni', 'juli', 'august', 'september', 'oktober', 'november', 'dezember',
+    'herr', 'frau', 'leute', 'alles', 'nichts', 'etwas', 'was', 'wer', 'wie', 'wo', 'wann', 'warum',
+])
+
+/**
+ * Keywords of a message: its capitalised words after the first (German nouns and names),
+ * minus generic words. Only these ever reach the store.
+ */
+export function contentTerms(content: string): string[] {
+    const tokens = String(content || '').match(/[\p{L}][\p{L}\p{N}-]*/gu) ?? []
+    const out: string[] = []
+    tokens.forEach((token, index) => {
+        if (index === 0 || token.length < 3 || !/^\p{Lu}/u.test(token)) return
+        const term = fold(token).replace(/-+$/, '')
+        if (!GENERIC.has(term) && !out.includes(term)) out.push(term)
+    })
+    return out.slice(0, MAX_TERMS)
+}
 
 /** Topic keys a message carries: profile entities, topic words, then tool routes; in priority order. */
 export function topicKeys(input: Pick<ThreadInput, 'content' | 'routes' | 'profileEntities'>): string[] {
@@ -137,6 +191,13 @@ interface PrincipalState {
     outgoing: Array<{ key: string; threadId: string; at: number }>
     pendingQuestion?: { threadId: string; at: number }
     pendingApproval?: { threadId: string; at: number }
+    /** Merged thread → the thread it went into (old references keep working). */
+    aliases: Record<string, string>
+    /** Keywords of the last message (learned by its thread when the owner corrects it). */
+    lastTerms: string[]
+    seq: number
+    corrections: number
+    merges: number
 }
 
 export class TopicThreadStore {
@@ -148,11 +209,14 @@ export class TopicThreadStore {
     }
 
     state(principalId: string): PrincipalState {
-        return this.data[principalId] ??= { threads: [], recent: [], outgoing: [] }
+        const state = this.data[principalId] ??= { threads: [], recent: [], outgoing: [], aliases: {}, lastTerms: [], seq: 0, corrections: 0, merges: 0 }
+        state.aliases ??= {}; state.lastTerms ??= []; state.seq ??= 0; state.corrections ??= 0; state.merges ??= 0
+        for (const thread of state.threads) { thread.status ??= 'aktiv'; thread.terms ??= [] }
+        return state
     }
 
     threads(principalId: string): TopicThread[] {
-        return [...(this.data[principalId]?.threads ?? [])].sort((a, b) => b.lastAt - a.lastAt)
+        return [...(this.data[principalId] ? this.state(principalId).threads : [])].sort((a, b) => b.lastAt - a.lastAt)
     }
 
     /** After the run: Xaventra asked back, or an approval (one-time code) is open in this thread. */
@@ -178,7 +242,7 @@ export class TopicThreadStore {
         if (!this.dirty) return
         mkdirSync(dirname(this.path), { recursive: true })
         const temp = `${this.path}.tmp`
-        writeFileSync(temp, JSON.stringify({ version: 1, principals: this.data }), { mode: 0o600 })
+        writeFileSync(temp, JSON.stringify({ version: 2, principals: this.data }), { mode: 0o600 })
         renameSync(temp, this.path)
         this.dirty = false
     }
@@ -195,56 +259,126 @@ const share = (recent: PrincipalState['recent'], threadId: string, now: number) 
     return window.length ? window.filter(item => item.threadId !== threadId).length / window.length : 0
 }
 
+const learn = (thread: TopicThread, terms: readonly string[]) => {
+    thread.terms = [...new Set([...thread.terms, ...terms])].slice(-MAX_TERMS)
+}
+
+/** Short name from the content: the first two keywords, capitalised. */
+const nameFrom = (terms: readonly string[]) => terms.slice(0, 2).map(term => term.charAt(0).toUpperCase() + term.slice(1)).join(' ')
+
+/** A message with real content (≥ 2 keywords, or 1 keyword in a sentence of ≥ 6 words) may open its own thread. */
+const opensThread = (content: string, terms: readonly string[]) => terms.length >= 2 || (terms.length === 1 && words(content) >= 6)
+
 export function assignThread(input: ThreadInput, store: TopicThreadStore): ThreadAssignment {
     const now = input.now ?? Date.now()
     const content = String(input.content || '').trim()
-    if (input.roomId) return { threadId: `room:${input.roomId}`, key: 'raum', name: `Raum ${input.roomId}`, rule: 'raum', isNew: false, foreignHistoryShare: 0 }
-    if (input.isGroup || !input.principalId) return { threadId: 'default', key: 'allgemein', name: 'Allgemein', rule: 'aus', isNew: false, foreignHistoryShare: 0 }
+    const none = { merged: 0, woke: false, corrected: false, activeThreads: 0, restingThreads: 0, foreignHistoryShare: 0, isNew: false }
+    if (input.roomId) return { ...none, threadId: `room:${input.roomId}`, key: 'raum', name: `Raum ${input.roomId}`, rule: 'raum' }
+    if (input.isGroup || !input.principalId) return { ...none, threadId: 'default', key: 'allgemein', name: 'Allgemein', rule: 'aus' }
 
     const state = store.state(input.principalId)
-    const byId = (id?: string) => (id ? state.threads.find(thread => thread.id === id) : undefined)
+    for (const thread of state.threads) if (thread.status === 'aktiv' && now - thread.lastAt > REST_MS) thread.status = 'ruhend'
+    const resolve = (id?: string) => {
+        let current = id
+        for (let hop = 0; current && state.aliases[current] && hop < 10; hop++) current = state.aliases[current]
+        return current ? state.threads.find(thread => thread.id === current) : undefined
+    }
     const last = [...state.threads].sort((a, b) => b.lastAt - a.lastAt)[0]
     const lastFresh = last && now - last.lastAt <= FOLLOW_MS ? last : undefined
     const keys = topicKeys(input)
+    const terms = contentTerms(content)
+    const overlap = (thread: TopicThread) => terms.filter(term => thread.terms.includes(term)).length
+    const fixed = (key: string) => state.threads.find(thread => thread.key === key)
+    const create = (key: string, name: string): TopicThread => {
+        const id = key === 'frei' ? `thread:frei-${++state.seq}` : `thread:${key}`
+        const thread: TopicThread = { id, key, name, createdAt: now, lastAt: now, turns: 0, status: 'aktiv', terms: [] }
+        state.threads.push(thread)
+        return thread
+    }
 
-    let chosen: TopicThread | undefined, key = '', rule: ThreadRule = 'allgemein'
+    let chosen: TopicThread | undefined, key = '', rule: ThreadRule = 'allgemein', merged = 0, corrected = false
     const reply = input.replyTo ? state.outgoing.find(item => item.key === input.replyTo) : undefined
-    if (reply && byId(reply.threadId)) { chosen = byId(reply.threadId); rule = 'antwort' }
-    else if (APPROVAL.test(content) && state.pendingApproval && now - state.pendingApproval.at <= APPROVAL_MS && byId(state.pendingApproval.threadId)) {
-        chosen = byId(state.pendingApproval.threadId); rule = 'rueckfrage'
+    const correction = CORRECTION.exec(content)
+    const correctionTarget = (() => {
+        if (!correction) return undefined
+        const rest = correction[1]
+        const restKeys = topicKeys({ content: rest, routes: [], profileEntities: input.profileEntities })
+        if (restKeys.length) return { key: restKeys[0], thread: fixed(restKeys[0]) }
+        // `x` stands in for the first word, which contentTerms never counts as a keyword.
+        const restTerms = contentTerms(`x ${rest}`)
+        const byTerms = state.threads.map(thread => ({ thread, hits: restTerms.filter(term => thread.terms.includes(term)).length })).filter(item => item.hits > 0)
+            .sort((a, b) => b.hits - a.hits)[0]
+        return byTerms ? { key: byTerms.thread.key, thread: byTerms.thread } : undefined
+    })()
+    const previous = state.recent.at(-1)
+
+    if (reply && resolve(reply.threadId)) { chosen = resolve(reply.threadId); rule = 'antwort' }
+    else if (APPROVAL.test(content) && state.pendingApproval && now - state.pendingApproval.at <= APPROVAL_MS && resolve(state.pendingApproval.threadId)) {
+        chosen = resolve(state.pendingApproval.threadId); rule = 'rueckfrage'
         if (/^\s*\d/.test(content)) state.pendingApproval = undefined
+    } else if (correctionTarget && previous && (correctionTarget.thread?.id ?? `thread:${correctionTarget.key}`) !== resolve(previous.threadId)?.id) {
+        // „nein, ich meine das Auto“: this message and the previous one belong to the meant thread.
+        chosen = correctionTarget.thread ?? create(correctionTarget.key, NAME.get(correctionTarget.key) ?? correctionTarget.key)
+        rule = 'korrektur'; corrected = true; state.corrections++
+        const wrong = resolve(previous.threadId)
+        if (wrong) wrong.turns = Math.max(0, wrong.turns - 1)
+        chosen.turns++
+        learn(chosen, state.lastTerms)
+        previous.threadId = chosen.id; previous.rule = 'korrektur'
     } else if (SMALLTALK.test(content)) { chosen = lastFresh; key = chosen ? chosen.key : 'allgemein'; rule = 'smalltalk' }
     else if (state.pendingQuestion && now - state.pendingQuestion.at <= QUESTION_MS && words(content) <= ANSWER_WORDS
-        && byId(state.pendingQuestion.threadId) && (keys.length === 0 || keys.includes(byId(state.pendingQuestion.threadId)!.key))) {
-        chosen = byId(state.pendingQuestion.threadId); rule = 'rueckfrage'; state.pendingQuestion = undefined
-    } else if (keys.length === 1) { key = keys[0]; rule = 'marke' }
-    else if (keys.length > 1) { key = lastFresh && keys.includes(lastFresh.key) ? lastFresh.key : keys[0]; rule = 'unklar' }
-    else if (lastFresh && words(content) <= FOLLOW_WORDS && FOLLOW_CUE.test(content)) { chosen = lastFresh; rule = 'folge' }
-    else { key = 'allgemein'; rule = 'allgemein' }
-
-    let isNew = false
-    if (!chosen && rule === 'smalltalk' && key === 'allgemein') chosen = state.threads.find(thread => thread.key === 'allgemein')
-    if (!chosen && rule !== 'smalltalk') {
-        chosen = state.threads.find(thread => thread.key === key)
-        if (!chosen) {
-            chosen = { id: `thread:${key}`, key, name: NAME.get(key) ?? key, createdAt: now, lastAt: now, turns: 0 }
-            state.threads.push(chosen)
-            isNew = true
-        }
+        && resolve(state.pendingQuestion.threadId) && (keys.length === 0 || keys.includes(resolve(state.pendingQuestion.threadId)!.key))) {
+        chosen = resolve(state.pendingQuestion.threadId); rule = 'rueckfrage'; state.pendingQuestion = undefined
+    } else {
+        const hits = state.threads.map(thread => ({ thread, hits: overlap(thread) })).filter(item => item.hits > 0).sort((a, b) => b.hits - a.hits || a.thread.createdAt - b.thread.createdAt)
+        const best = hits[0]
+        const freeHits = hits.filter(item => item.thread.key === 'frei')
+        if (keys.length === 0 && freeHits.length > 1) {
+            // A sentence joining two own threads: they are one topic — merge into the oldest.
+            const [target, ...rest] = [...freeHits].sort((a, b) => a.thread.createdAt - b.thread.createdAt).map(item => item.thread)
+            for (const other of rest) {
+                learn(target, other.terms); target.turns += other.turns
+                state.aliases[other.id] = target.id
+                state.threads = state.threads.filter(thread => thread.id !== other.id)
+                merged++; state.merges++
+            }
+            chosen = target; rule = 'inhalt'
+        } else if (best && best.thread.key === 'frei' && (keys.length === 0 || best.hits >= 2)) { chosen = best.thread; rule = 'inhalt' }
+        else if (keys.length === 1) { key = keys[0]; rule = 'marke' }
+        else if (keys.length > 1) { key = lastFresh && keys.includes(lastFresh.key) ? lastFresh.key : keys[0]; rule = 'unklar' }
+        else if (best) { chosen = best.thread; rule = 'inhalt' }
+        else if (lastFresh && words(content) <= FOLLOW_WORDS && FOLLOW_CUE.test(content)) { chosen = lastFresh; rule = 'folge' }
+        else if (opensThread(content, terms)) { chosen = create('frei', nameFrom(terms)); rule = 'inhalt' }
+        else { key = 'allgemein'; rule = 'allgemein' }
     }
+
+    let isNew = Boolean(chosen && chosen.turns === 0 && chosen.createdAt === now && rule !== 'korrektur')
+    if (!chosen && rule === 'smalltalk' && key === 'allgemein') chosen = fixed('allgemein')
+    if (!chosen && rule !== 'smalltalk') {
+        chosen = fixed(key)
+        if (!chosen) { chosen = create(key, NAME.get(key) ?? key); isNew = true }
+    }
+    const counts = () => ({
+        activeThreads: state.threads.filter(thread => thread.status === 'aktiv').length,
+        restingThreads: state.threads.filter(thread => thread.status === 'ruhend').length,
+    })
+    state.lastTerms = terms
     if (!chosen) {
         // Small talk with no active thread: Allgemein, but never created for it.
         const foreignHistoryShare = share(state.recent, 'thread:allgemein', now)
         state.recent = [...state.recent, { at: now, threadId: 'thread:allgemein', rule }].slice(-50)
         store.markDirty()
-        return { threadId: 'thread:allgemein', key: 'allgemein', name: 'Allgemein', rule, isNew: false, foreignHistoryShare }
+        return { threadId: 'thread:allgemein', key: 'allgemein', name: 'Allgemein', rule, isNew: false, foreignHistoryShare, merged, woke: false, corrected, ...counts() }
     }
+    const woke = chosen.status === 'ruhend'
+    chosen.status = 'aktiv'
     const foreignHistoryShare = share(state.recent, chosen.id, now)
     chosen.lastAt = now
     chosen.turns++
+    if (rule !== 'smalltalk' && rule !== 'rueckfrage') learn(chosen, terms)
     state.recent = [...state.recent, { at: now, threadId: chosen.id, rule }].slice(-50)
     store.markDirty()
-    return { threadId: chosen.id, key: chosen.key, name: chosen.name, rule, isNew, foreignHistoryShare }
+    return { threadId: chosen.id, key: chosen.key, name: chosen.name, rule, isNew, foreignHistoryShare, merged, woke, corrected, ...counts() }
 }
 
 function ago(ms: number): string {
@@ -255,10 +389,11 @@ function ago(ms: number): string {
     return hours < 24 ? `vor ${hours} h` : `vor ${Math.round(hours / 24)} Tagen`
 }
 
-/** /themen: view only. */
+/** /themen: optional view, never a required step. */
 export function formatThemen(threads: readonly TopicThread[], now = Date.now(), mode = 'shadow'): string {
     if (!threads.length) return '🧵 Noch keine Themen erkannt.'
-    const lines = threads.slice(0, 20).map(thread => `• ${thread.name} — ${thread.turns} Nachricht${thread.turns === 1 ? '' : 'en'}, zuletzt ${ago(now - thread.lastAt)}`)
-    const note = mode === 'on' ? '' : '\n\n(Probebetrieb: Themen werden erkannt und gemessen, der Verlauf ist noch gemeinsam.)'
+    const lines = threads.slice(0, 20).map(thread =>
+        `• ${thread.name}${thread.status === 'ruhend' ? ' (ruht)' : ''} — ${thread.turns} Nachricht${thread.turns === 1 ? '' : 'en'}, zuletzt ${ago(now - thread.lastAt)}`)
+    const note = mode === 'on' ? '' : '\n\n(Probebetrieb: Themen werden automatisch erkannt, benannt und zusammengeführt und gemessen; der Verlauf ist noch gemeinsam.)'
     return `🧵 *Themen*\n${lines.join('\n')}${note}`
 }

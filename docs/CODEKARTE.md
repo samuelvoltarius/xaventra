@@ -114,11 +114,13 @@ Neue Prompt-Blöcke bekommen ihr Thema über die Überschrift
 
 **Themen-Fäden (2.91.0, Schalter `context.threads`, Standard shadow):** die eine
 Zuordnung je Nachricht ist `src/core/topic-threads.ts` `assignThread` (Regeln
-raum → antwort → rueckfrage → smalltalk → marke → folge → unklar → allgemein;
+raum → antwort → rueckfrage → korrektur → smalltalk → inhalt → marke → folge → unklar → allgemein;
 Themen aus `tool-router.ts` `requestRouteNames` und Owner-Profil-Einträgen),
 aufgerufen in `turn-context.ts` `prepareTurnPrompt`; Speicher
-`.nova-data/topic-threads.json` (`sharedTopicThreadStore`, kein Nachrichtentext),
-`/themen` nur Einsicht. Der Agentenlauf läuft in `runInThread`; Unteragent-Audit
+`.nova-data/topic-threads.json` (`sharedTopicThreadStore`, je Faden nur Name,
+Zeiten, Zähler, ≤ 12 Stichwörter), `/themen` nur Einsicht. Alles automatisch:
+freie Fäden aus Stichwörtern (`contentTerms`, Name aus Inhalt), Zusammenführen
+bei verbindendem Satz, ruhend nach 7 Tagen, Selbstkorrektur „nein, ich meine …“. Der Agentenlauf läuft in `runInThread`; Unteragent-Audit
 und Aufträge (`Mission.threadId`) tragen den Faden (`currentThreadId`).
 Eigener Verlauf je Faden (conversationId) erst ab 2.91.1.
 

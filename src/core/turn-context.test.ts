@@ -113,6 +113,9 @@ describe('2.91.0 Themen-Fäden im Zug (Schattenbetrieb)', () => {
         expect(entry.threadRule).toBe('marke')
         expect(entry.threadNew).toBe(true)
         expect(typeof entry.foreignHistoryShare).toBe('number')
+        expect(entry.threadName).toBe('Auto')
+        expect(entry.threadMerged).toBe(0)
+        expect(entry.activeThreads).toBe(1)
     })
     it('off: no thread, no thread fields', async () => {
         const { store } = make()

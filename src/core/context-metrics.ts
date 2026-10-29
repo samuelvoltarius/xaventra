@@ -66,6 +66,13 @@ export interface ContextTurnMetrics {
     threadRule?: string
     threadNew?: boolean
     foreignHistoryShare?: number
+    /** Automatic thread care (measured in shadow): name, merges, waking from rest, self-correction, counts. */
+    threadName?: string
+    threadMerged?: number
+    threadWoke?: boolean
+    threadCorrected?: boolean
+    activeThreads?: number
+    restingThreads?: number
 }
 
 const FILE = 'context-metrics.jsonl'
@@ -98,6 +105,7 @@ const KEYS: ReadonlyArray<keyof ContextTurnMetrics> = [
     'maxModelInputChars', 'toolCalls', 'selfInfoCalls', 'outcome', 'durationMs', 'taskPromptMode', 'taskPromptChars',
     'taskPromptWouldCap', 'taskPromptTopics', 'taskPromptOmitted', 'taskPromptRescued', 'taskPromptUntagged', 'lagebildMode', 'lagebildChars',
     'threadMode', 'threadId', 'threadKey', 'threadRule', 'threadNew', 'foreignHistoryShare',
+    'threadName', 'threadMerged', 'threadWoke', 'threadCorrected', 'activeThreads', 'restingThreads',
 ]
 
 /** Only known fields; heading lists bounded. */
@@ -168,6 +176,9 @@ export interface ContextMetricsSummary {
     /** Median share of the recent history that belongs to another topic (what one shared history drags in). */
     medianForeignHistoryPercent: number
     threadRules: Record<string, number>
+    threadsCreated: number
+    threadMerges: number
+    threadCorrections: number
 }
 
 export function summarizeContextMetrics(entries: readonly ContextTurnMetrics[]): ContextMetricsSummary {
@@ -196,6 +207,9 @@ export function summarizeContextMetrics(entries: readonly ContextTurnMetrics[]):
             if (entry.threadRule) out[entry.threadRule] = (out[entry.threadRule] ?? 0) + 1
             return out
         }, {}),
+        threadsCreated: entries.filter(entry => entry.threadNew).length,
+        threadMerges: entries.reduce((sum, entry) => sum + (entry.threadMerged ?? 0), 0),
+        threadCorrections: entries.filter(entry => entry.threadCorrected).length,
     }
 }
 
@@ -213,6 +227,7 @@ export function formatKontext(entries: readonly ContextTurnMetrics[]): string {
         `Werkzeugaufrufe Median: ${s.medianToolCalls} · Selbstauskunft höchstens ${s.maxSelfInfoCalls}× in einem Zug`,
         s.taskPromptTurns ? `Aufgaben-Prompt (Probe): Median ${k(s.medianTaskPromptChars)}, müsste ${s.taskPromptWouldCap}× gekappt werden` : '',
         s.threadTurns ? `Themen (Probe): ${s.threadTurns} Züge zugeordnet, Fremd-Verlauf Median ${s.medianForeignHistoryPercent} % · Regeln ${Object.entries(s.threadRules).map(([rule, count]) => `${rule} ${count}`).join(', ')}` : '',
+        s.threadTurns ? `Automatisch: ${s.threadsCreated} neu angelegt, ${s.threadMerges} zusammengeführt, ${s.threadCorrections} selbst korrigiert` : '',
         s.topReduced.length ? `Am häufigsten weggekappt: ${s.topReduced.map(item => `${item.heading.replace(/^## /, '')} (${item.count})`).join(', ')}` : '',
     ]
     return lines.filter(Boolean).join('\n')
