@@ -12,6 +12,19 @@
   helpers on nodes with a screen, maps and routes, music, a maker helper for
   boards and sensors.
 
+## [2.89.16] — 2026-10-29
+
+Reliability after the Telegram acceptance of 2.89.15.
+
+### Fixed
+
+- **Short answer when a task could not be finished.** The closing summary of
+  an unfinished run is at most five short sentences (it was up to twelve
+  Telegram pages with a node listing).
+- **A node that runs out of time is no result.** When another node answers a
+  delegated task with its own timeout sentence, `mesh_delegate` reports a
+  failed delegation instead of "Ergebnis von …".
+
 ## [2.89.15] — 2026-10-29
 
 Reliability after the Telegram acceptance of 2.89.14.
