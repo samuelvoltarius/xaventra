@@ -3,7 +3,7 @@ import {mkdtempSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import {randomUUID} from 'node:crypto'
-import {desktopInputArgs,desktopActionArgs,assertOpenUrlAllowed,executeDesktopInputOnce} from './desktop-input.js'
+import {desktopInputArgs,desktopActionArgs,assertOpenUrlAllowed,executeDesktopInputOnce,precheckWorkstationAction,DesktopActionRefused} from './desktop-input.js'
 it('maps bounded typed input to argv without a shell',()=>{
  expect(desktopInputArgs({action:'click',x:3,y:4,button:'left'})).toEqual(['mousemove','--sync','3','4','click','1'])
  expect(desktopInputArgs({action:'type',text:'$(whoami)'})).toEqual(['type','--clearmodifiers','--delay','1','--','$(whoami)'])
@@ -50,3 +50,23 @@ it('journals open_url only when the caller passes the workstation plan',async()=
  expect(result).toMatchObject({status:'completed',replayed:false})
  expect(run).toHaveBeenCalledWith(['open_url','https://example.com/'])
 })
+
+const trusted={isFile:()=>true,isDirectory:()=>false,isSymbolicLink:()=>false,uid:0,mode:0o755}
+const env={allowList:'greenchili.at,example.com',browser:'/opt/firefox-workstation/current/firefox/firefox',stat:()=>trusted}
+it('pre-check refuses a host outside the allowlist with a clear reason, before anything is journaled',()=>{
+ let error:unknown
+ try{precheckWorkstationAction({action:'open_url',url:'https://wikipedia.org/'},env)}catch(e){error=e}
+ expect(error).toBeInstanceOf(DesktopActionRefused)
+ expect(String((error as Error).message)).toContain('nicht auf der Erlaubnisliste: wikipedia.org')
+})
+it('pre-check passes an allowed page with a trusted browser and plain xdotool actions',()=>{
+ expect(precheckWorkstationAction({action:'open_url',url:'https://www.greenchili.at/'},env)).toEqual(['open_url','https://www.greenchili.at/'])
+ expect(precheckWorkstationAction({action:'key',key:'Return'},{...env,browser:''})).toEqual(['key','--clearmodifiers','Return'])
+})
+it.each([
+ [{action:'open_url',url:'https://greenchili.at/'},{...env,stat:()=>({...trusted,uid:997})}],
+ [{action:'open_url',url:'https://greenchili.at/'},{...env,browser:''}],
+ [{action:'exec',command:'id'},env],
+ [{action:'open_url',url:'http://192.168.0.1/'},env],
+])('pre-check refuses (certain, nothing executed) %j',(action,options)=>
+ expect(()=>precheckWorkstationAction(action,options as any)).toThrow(DesktopActionRefused))

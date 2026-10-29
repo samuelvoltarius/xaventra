@@ -12,6 +12,16 @@
   helpers on nodes with a screen, maps and routes, music, a maker helper for
   boards and sensors.
 
+### Fixed (next patch, version set at release)
+
+- **A page the lab computer may not open is a clear "no".** Opening a page
+  outside the workstation allowlist came back as "capture unavailable" and
+  was treated as an uncertain step, with a leftover journal entry. The
+  workstation now checks the allowlist and its browser before anything is
+  recorded, answers with the reason ("nicht auf der Erlaubnisliste:
+  wikipedia.org"), and Xaventra reports it as refused: nothing happened,
+  not to be repeated as is.
+
 ## [2.90.2] — 2026-10-29
 
 Fixes from the Telegram acceptance of 2.90.0 and 2.90.1, plus remembered

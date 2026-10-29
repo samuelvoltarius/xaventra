@@ -6,7 +6,7 @@ import { existsSync, writeFileSync, readFileSync, chmodSync, mkdirSync, unlinkSy
 import { join } from 'node:path'
 import { userInfo } from 'node:os'
 import { createCaptureAgent } from './capture-agent.js'
-import { executeDesktopInputOnce, runDesktopInput, desktopActionArgs, assertOpenUrlAllowed } from './desktop-input.js'
+import { executeDesktopInputOnce, runDesktopInput, desktopActionArgs, assertOpenUrlAllowed, precheckWorkstationAction } from './desktop-input.js'
 import { planDesktopSession } from './workstation-desktop.js'
 import { planWorkstationPaths, workstationChildEnv, checkOwnedPrivatePath, assertOutsideShellHome,
  RUNTIME_FORBIDDEN_BITS, PRIVATE_FORBIDDEN_BITS, assertDedicatedWorkstationAccount, readLogindSessions, assertTrustedBrowser } from './workstation-security.js'
@@ -64,6 +64,9 @@ const openUrl=async(url:string)=>{
 const server=createCaptureAgent(readFileSync(tokenFile,'utf8').trim(),async()=>{
  live();const path=join(paths.captureDir,`capture-${randomBytes(12).toString('hex')}.png`)
  try{await exec('/usr/bin/scrot',['--overwrite',path],{env,timeout:15000,maxBuffer:4096});live();return readFileSync(path)}finally{if(existsSync(path))unlinkSync(path)}
-},async(id,action)=>{live();return executeDesktopInputOnce(paths.journal,id,action,async args=>{live();if(args[0]==='open_url')await openUrl(args[1]);else await runDesktopInput(args);live()},desktopActionArgs)})
+},async(id,action)=>{live()
+ // Refusals (allowlist, browser, malformed) are decided before the journal intent: certain, nothing ran.
+ precheckWorkstationAction(action,{allowList:process.env.NOVA_WORKSTATION_OPEN_URL_ALLOW,browser:process.env.NOVA_WORKSTATION_BROWSER||'',stat:lstatSync})
+ return executeDesktopInputOnce(paths.journal,id,action,async args=>{live();if(args[0]==='open_url')await openUrl(args[1]);else await runDesktopInput(args);live()},desktopActionArgs)})
 server.on('error',()=>{console.error('Workstation adapter failed');stop()})
 server.listen(socket,()=>{chmodSync(socket,0o660);writeFileSync(paths.ready,JSON.stringify({display,pid:x.pid,socket,kind:'owned-virtual-desktop'}),{mode:0o640});console.log('Dedicated workstation ready')})

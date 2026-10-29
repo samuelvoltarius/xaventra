@@ -86,6 +86,15 @@ describe('signed node input through the runtime route', () => {
         expect(input).toHaveBeenCalledWith('/fixture/socket', '/fixture/token', requestId, { action: 'key', key: 'Return' })
         expect(runtime.getMeshRunResult(result.requestId)).toBeUndefined()
     })
+    it('carries a workstation refusal with its reason back to Main (certain, no capture)', async () => {
+        authority.valid = true; input.mockReset(); capture.mockClear()
+        const { DesktopActionRefused } = await import('../host/desktop-input.js')
+        input.mockRejectedValue(new DesktopActionRefused('nicht auf der Erlaubnisliste: wikipedia.org'))
+        const result = await send()
+        expect(result).toMatchObject({ success: false })
+        expect(result.error).toContain('Desktop action refused: nicht auf der Erlaubnisliste: wikipedia.org')
+        expect(capture).not.toHaveBeenCalled()
+    })
     it('never types without valid Main authority', async () => {
         input.mockClear(); authority.valid = false
         expect(await send()).toMatchObject({ success: false })

@@ -45,6 +45,13 @@ export const meshDesktopInputTool: NovaTool = {
                     + 'Wirkung nur mit analyze_image auf capture.path prüfen, nicht behaupten.' }
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error)
+            // The workstation refused before anything ran (e.g. host not on its allowlist): certain, not uncertain.
+            const refused = /Desktop action refused: (.+)$/s.exec(message)
+            if (refused) {
+                const reason = refused[1].trim().slice(0, 300)
+                return { success: false, refused: true, status: 'refused', executedNow: false, error: reason,
+                    message: `Am Arbeitsplatz abgelehnt, nichts ausgeführt — so nicht wiederholen: ${reason}` }
+            }
             return { success: false, executedNow: false, error: message.slice(0, 400), reason: captureReason(message) }
         }
     },

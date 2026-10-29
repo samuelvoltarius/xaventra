@@ -3970,6 +3970,7 @@
     {
       "module": "src/host/desktop-input.ts",
       "imports": [
+        "./workstation-security.js",
         "node:child_process",
         "node:crypto",
         "node:fs",
