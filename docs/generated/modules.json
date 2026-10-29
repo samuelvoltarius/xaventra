@@ -1175,8 +1175,10 @@
     {
       "module": "src/channels/telegram-presentation.ts",
       "imports": [
+        "../core/tool-evidence-response.js",
         "../core/tool-progress-label.js",
         "../core/types.js",
+        "../core/unverified-claims.js",
         "./telegram-status-card.js"
       ]
     },
