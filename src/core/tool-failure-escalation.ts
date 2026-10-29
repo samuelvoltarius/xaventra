@@ -203,3 +203,25 @@ export function getToolFailureEscalationStore(): ToolFailureEscalationStore {
     return singleton ||= new ToolFailureEscalationStore()
 }
 export function setToolFailureEscalationStore(value: ToolFailureEscalationStore): void { singleton = value }
+
+/**
+ * 2.89.15 (Abnahme 2.89.14, 29.10. 11:28:58): hass_turn_on succeeded, a later printer_info failed, and the
+ * escalation answered "… es wurde keine Änderung ausgeführt" - false. An action that succeeded in this run is
+ * named first; "keine Änderung" is never claimed then. An effect tool is one that takes the owner's approval
+ * code (`confirm` parameter, guarded by owner-approval-confirm-param.test.ts). The code itself is never shown.
+ */
+export function escalationWithCompletedEffects(
+    content: string,
+    executions: ReadonlyArray<{ toolName?: string; params?: Record<string, unknown>; success?: boolean }>,
+    tools: ReadonlyArray<{ name: string; parameters?: ReadonlyArray<{ name: string }> }> = [],
+): string {
+    const effectTools = new Set(tools.filter(tool => tool.parameters?.some(parameter => parameter.name === 'confirm')).map(tool => tool.name))
+    const done = executions.filter(item => item.success === true && effectTools.has(String(item.toolName || '')))
+    if (!done.length) return content
+    const target = (params: Record<string, unknown> = {}) => {
+        const value = ['entity_id', 'filename', 'target', 'host', 'to', 'name'].map(key => params[key]).find(item => typeof item === 'string' && item.trim())
+        return value ? ` (${String(value).slice(0, 80)})` : ''
+    }
+    return `Erledigt: ${done.map(item => `${item.toolName}${target(item.params)}`).join('; ')}.\n\n`
+        + 'Ein späterer Schritt ist danach nicht gelungen; die Ursache ist intern zur Prüfung vorgemerkt.'
+}

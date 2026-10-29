@@ -39,7 +39,7 @@ import type { ResponseConstraint } from '../core/response-contract.js'
 import { isReasoningOnlyResponse, reasoningEffortForTurn, recoverReasoningOnlyResponse } from '../core/reasoning-policy.js'
 import { recoverMissingResource } from '../core/missing-resource-recovery.js'
 import { recoverTransientReadOnlyTool } from '../core/typed-tool-recovery.js'
-import { escalateVerifiedToolFailures, type VerifiedToolFailureObservation } from '../core/tool-failure-escalation.js'
+import { escalateVerifiedToolFailures, escalationWithCompletedEffects, type VerifiedToolFailureObservation } from '../core/tool-failure-escalation.js'
 import { NativeToolReceiptStore } from '../core/native-tool-receipts.js'
 import { hydrateNativeToolCheckpoint, publishNativeToolCheckpoint } from '../core/native-tool-takeover.js'
 import { selectContractTools } from './tool-contract-selection.js'
@@ -1769,7 +1769,10 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                     request: content,
                     observations: runFailureObservations,
                 })
+                // 2.89.15: an action that succeeded in this run is never reported as "keine Änderung".
                 failureEscalationContent = escalation?.content
+                    ? escalationWithCompletedEffects(escalation.content, toolExecutions as any, (tools || []) as any)
+                    : escalation?.content
                 console.log(`[Xaventra Agent] Typed failure escalation: ${escalation?.record.state || 'no-observation'}`)
             }
             // 2.89: out of rounds/time/model patience -> ONE last model call without tools
