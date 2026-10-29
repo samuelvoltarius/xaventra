@@ -50,7 +50,11 @@
  * `install-katalog`, `release-promote` → `release-ausrollen`, `patch` →
  * `patch-anwenden`), damit jedes Karten-Ja die Leiter füttert. Dieselben
  * Ausschlüsse gelten für beides (`isStandingExcluded`).
+ * 2.90.x: Abschnitt `gemerkt` hält gemerkte Werkzeug-Freigaben (`/freigabe`-
+ * Ziel ohne Einmal-Code, Knopf „📌 merken“); deren feste Grenzen stehen in
+ * `tools/owner-approval.ts` (`rememberRefusal`).
  */
+import { randomBytes } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { neverListViolation, NEVER_LIST } from '../install/never-list.js'
@@ -459,7 +463,14 @@ interface TrustStats {
 }
 /** Ausdrückliche dauerhafte Owner-Erlaubnis für ein Subjekt einer Art (z. B. install-katalog / ffmpeg). */
 export interface StandingGrant { kind: string; subject: string; grantedAt: string; by: string }
-interface TrustFile { version: 1; kinds: Record<string, TrustStats>; erlaubt?: Record<string, StandingGrant> }
+/**
+ * Gemerkte Werkzeug-Freigabe (2.90.x, Alfred 29.10.: „merken“ je Gerät): ein
+ * `/freigabe`-Ziel `tool:<werkzeug>:<detail>`, das ohne Einmal-Code gilt. Was
+ * nie gemerkt werden darf, entscheidet `tools/owner-approval.ts`
+ * (`rememberRefusal`) beim Merken UND bei jeder Nutzung.
+ */
+export interface RememberedApproval { id: string; target: string; tool: string; detail: string; grantedAt: string; by: string; uses: number; lastUsedAt?: string }
+interface TrustFile { version: 1; kinds: Record<string, TrustStats>; erlaubt?: Record<string, StandingGrant>; gemerkt?: Record<string, RememberedApproval> }
 export interface TrustOptions { dataDir?: string; now?: () => number }
 
 const trustFile = (opts: TrustOptions) => join(opts.dataDir || getNovaDataDir(), 'action-policy', 'trust.json')
@@ -468,6 +479,7 @@ function loadTrust(opts: TrustOptions): TrustFile {
         const raw = JSON.parse(readFileSync(trustFile(opts), 'utf8'))
         if (!(raw?.version === 1 && raw.kinds && typeof raw.kinds === 'object')) return { version: 1, kinds: {} }
         if (raw.erlaubt !== undefined && (typeof raw.erlaubt !== 'object' || raw.erlaubt === null || Array.isArray(raw.erlaubt))) delete raw.erlaubt
+        if (raw.gemerkt !== undefined && (typeof raw.gemerkt !== 'object' || raw.gemerkt === null || Array.isArray(raw.gemerkt))) delete raw.gemerkt
         return raw
     } catch { return { version: 1, kinds: {} } }
 }
@@ -649,6 +661,57 @@ export function hasStanding(kindName: string, subject: string | undefined, opts:
 /** Alle ausdrücklichen Erlaubnisse (für /arbeit und /setup katalog). */
 export function standingGrants(opts: TrustOptions = {}): StandingGrant[] {
     return Object.values(loadTrust(opts).erlaubt || {}).filter(grant => !isStandingExcluded(grant.kind))
+}
+
+const REMEMBER_ID = /^f-[a-f0-9]{8}$/
+const REMEMBER_TARGET = /^tool:[a-z][a-z0-9_-]{1,79}:[^\u0000-\u001f\u007f]{1,80}$/
+const MAX_REMEMBERED = 200
+
+/** Owner: diese Werkzeug-Freigabe merken. Die festen Grenzen prüft der Aufrufer (owner-approval.ts). */
+export function rememberApproval(input: { target: string; tool: string; detail: string; by: string }, opts: TrustOptions = {}): { ok: boolean; message: string; item?: RememberedApproval } {
+    const target = String(input?.target ?? '')
+    if (!REMEMBER_TARGET.test(target) || target !== `tool:${input.tool}:${input.detail}`) return { ok: false, message: 'Ungültiges Freigabe-Ziel.' }
+    const data = loadTrust(opts)
+    const list = data.gemerkt || {}
+    const existing = Object.values(list).find(item => item.target === target)
+    if (existing) return { ok: true, message: `Schon gemerkt: ${target} [${existing.id}]`, item: existing }
+    if (Object.keys(list).length >= MAX_REMEMBERED) return { ok: false, message: `Zu viele gemerkte Freigaben (${MAX_REMEMBERED}) — erst welche widerrufen.` }
+    let id = ''
+    do { id = `f-${randomBytes(4).toString('hex')}` } while (list[id])
+    const item: RememberedApproval = { id, target, tool: input.tool, detail: input.detail, grantedAt: new Date((opts.now || Date.now)()).toISOString(), by: String(input.by || 'owner').slice(0, 120), uses: 0 }
+    data.gemerkt = { ...list, [id]: item }
+    saveTrust(data, opts)
+    return { ok: true, message: `Gemerkt: ${target} [${id}]`, item }
+}
+
+/** Owner: gemerkte Freigabe widerrufen (danach gilt wieder der Einmal-Code). */
+export function forgetApproval(id: string, opts: TrustOptions = {}): { ok: boolean; message: string; item?: RememberedApproval } {
+    if (!REMEMBER_ID.test(String(id ?? ''))) return { ok: false, message: `Unbekannte Freigabe ${String(id ?? '').slice(0, 20)}.` }
+    const data = loadTrust(opts)
+    const item = data.gemerkt?.[id]
+    if (!item) return { ok: false, message: `Unbekannte Freigabe ${id}.` }
+    delete data.gemerkt![id]
+    saveTrust(data, opts)
+    return { ok: true, message: `Widerrufen: ${item.target} — ab jetzt wieder mit Einmal-Code.`, item }
+}
+
+export function rememberedApprovals(opts: TrustOptions = {}): RememberedApproval[] {
+    return Object.values(loadTrust(opts).gemerkt || {}).filter(item => REMEMBER_ID.test(item?.id) && REMEMBER_TARGET.test(item?.target))
+        .sort((a, b) => a.grantedAt.localeCompare(b.grantedAt))
+}
+
+export function findRememberedApproval(target: string, opts: TrustOptions = {}): RememberedApproval | null {
+    return rememberedApprovals(opts).find(item => item.target === target) ?? null
+}
+
+/** Zählt eine Nutzung (Audit liegt beim Aufrufer). */
+export function noteRememberedUse(id: string, opts: TrustOptions = {}): void {
+    const data = loadTrust(opts)
+    const item = data.gemerkt?.[id]
+    if (!item) return
+    item.uses = (Number(item.uses) || 0) + 1
+    item.lastUsedAt = new Date((opts.now || Date.now)()).toISOString()
+    saveTrust(data, opts)
 }
 
 /** true, wenn diese Art durch die Vertrauensleiter selbst ausgeführt werden darf. */

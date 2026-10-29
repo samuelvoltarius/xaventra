@@ -1490,6 +1490,7 @@
         "../install/never-list.js",
         "./atomic-storage.js",
         "./data-root.js",
+        "node:crypto",
         "node:fs",
         "node:path"
       ]

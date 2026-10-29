@@ -1366,6 +1366,10 @@
       "path": ".nova-data/outcome-ledger/decisions"
     },
     {
+      "owner": "src/tools/owner-approval.ts",
+      "path": ".nova-data/outcome-ledger/decisions"
+    },
+    {
       "owner": "src/dev/generate-runtime-catalogs.test.ts",
       "path": ".nova-data/outcome-router-samples.json"
     },

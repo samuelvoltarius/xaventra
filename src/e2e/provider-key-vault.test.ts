@@ -95,7 +95,8 @@ describe('2.89.5 vault: register_llm_provider over the real entry', () => {
         h = await createE2EHarness()
         const approval = await h.telegram(`/freigabe register_llm_provider mimo@${BASE_URL}`)
         expect(approval.error).toBeUndefined()
-        const code = approval.final.match(/nur für dich\):\s+(\S+)/)?.[1] || ''
+        // 2.90.x: in Telegram the /freigabe reply is the message with the „📌 merken“ button.
+        const code = (approval.final || approval.buttons.at(-1)?.text || '').match(/nur für dich\):\s+(\S+)/)?.[1] || ''
         expect(code.length).toBeGreaterThan(4)
 
         const turn = await h.telegram('Registriere den externen LLM-Provider mimo mit seinen Angaben.', [{
@@ -126,7 +127,8 @@ describe('2.89.5 vault: save_config over the real entry (the live MiMo write pat
         const { approvalDetailOf } = await h.module('tools/owner-approval.js')
         const approval = await h.telegram(`/freigabe save_config ${approvalDetailOf({ section: 'providers', values })}`)
         expect(approval.error).toBeUndefined()
-        const code = approval.final.match(/nur für dich\):\s+(\S+)/)?.[1] || ''
+        // 2.90.x: in Telegram the /freigabe reply is the message with the „📌 merken“ button.
+        const code = (approval.final || approval.buttons.at(-1)?.text || '').match(/nur für dich\):\s+(\S+)/)?.[1] || ''
         expect(code.length).toBeGreaterThan(4)
 
         const turn = await h.telegram('Trage den Provider mimo mit seinem Key in die Konfiguration ein.', [{

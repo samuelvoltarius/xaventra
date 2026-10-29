@@ -492,6 +492,31 @@ export class TelegramAdapter implements ChannelAdapter {
      * the central slash role gate sees the real role. Returns null when the
      * sender would not be admitted as a message sender either.
      */
+    /**
+     * 2.90.x „📌 merken“ under a /freigabe reply: owner only, private chat, the
+     * principal the offer was issued for; the token is single use.
+     */
+    async handleRememberPress(query: any): Promise<string> {
+        let text = '❌ Gerade nicht möglich.'
+        try {
+            await this.requireLiveAuthority('remember approval')
+            const principal = await this.resolveCallbackPrincipal(query)
+            const privateChat = query?.message?.chat?.type === 'private' && String(query?.message?.chat?.id ?? '') === String(query?.from?.id ?? '')
+            if (!principal || principal.permission !== 'owner' || !privateChat) text = '🔒 Nur der Owner im eigenen Chat kann Freigaben merken.'
+            else {
+                const { pressRememberOffer } = await import('../tools/owner-approval.js')
+                const { setupConfirmationPrincipal } = await import('../core/setup-confirmation.js')
+                text = await pressRememberOffer(String(query.data), setupConfirmationPrincipal('telegram', principal.principalId), `owner:telegram:${principal.principalId}`)
+                if (text.startsWith('📌')) {
+                    try { await this.bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: query.message?.chat?.id, message_id: query.message?.message_id }) } catch { /* message may be too old */ }
+                }
+            }
+        } catch { /* answer below */ }
+        try { await this.bot.answerCallbackQuery(query.id, { text: text.slice(0, 190), show_alert: text.length > 120 }) } catch { /* ignore */ }
+        try { if (query?.message?.chat?.id !== undefined) await this.bot.sendMessage(String(query.message.chat.id), text) } catch { /* the toast already said it */ }
+        return text
+    }
+
     private async resolveCallbackPrincipal(query: any): Promise<PrincipalContext | null> {
         const userId = query?.from?.id?.toString() ?? ''
         if (!/^-?\d+$/.test(userId)) return null
@@ -555,6 +580,10 @@ export class TelegramAdapter implements ChannelAdapter {
             const { pressVoiceInstall } = await import('./telegram-voice.js')
             const text = await pressVoiceInstall(isOwner)
             try { await this.bot.answerCallbackQuery(query.id, { text: text.slice(0, 190) }) } catch { /* ignore */ }
+            return
+        }
+        if (typeof data === 'string' && data.startsWith('fm:')) {
+            await this.handleRememberPress(query)
             return
         }
         if (typeof data === 'string' && data.startsWith('gf:')) {

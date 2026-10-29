@@ -1911,6 +1911,12 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
             if (replacement) { console.log('[Xaventra Agent] Live value guard: reply replaced (no Home Assistant evidence for the stated value)'); finalContent = replacement }
         }
 
+        // 2.90.x „Freigaben merken“: a call on a remembered approval is named in the answer.
+        if (!policyBlocked && toolExecutions.length) {
+            const { appendApprovalNotes } = await import('./governed-tool-executor.js')
+            finalContent = appendApprovalNotes(finalContent, toolExecutions)
+        }
+
         // L17 persistence is handled per verified tool outcome above. The final
         // model response is deliberately not stored as execution evidence.
         if (policyBlocked) finalContent = checkpointUnreplicated

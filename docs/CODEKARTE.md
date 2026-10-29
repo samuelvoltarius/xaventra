@@ -334,7 +334,13 @@ Alt-Erinnerungen `reminders.json` + Croner-Prüfer (nur Rückfall, siehe D10).
   `answerApprovalCard`, `registerCardExecutor`; Ausführer in
   `approval-card-sources.ts`.
 - Einzelfreigabe im Werkzeug: `src/tools/owner-approval.ts`
-  `ownerApprovalRefusal` + Parameter `confirm`.
+  `ownerApprovalRefusal` + Parameter `confirm`. Gemerkte Freigabe (Knopf
+  „📌 merken“, `/freigabe merken`, `/freigaben`): `rememberToolApproval` /
+  `forgetToolApproval`, feste Grenzen `rememberRefusal` (beim Merken und bei
+  jeder Nutzung), Ablage im EINEN Erlaubnis-Speicher `action-policy.ts`
+  `rememberApproval` (`trust.json`, Abschnitt `gemerkt`), Hinweis in der Antwort
+  `governed-tool-executor.ts` `appendApprovalNotes`, Telegram-Knopf `fm:`
+  (`telegram.ts` `handleRememberPress`).
 - Selbständerung: `src/synthesis/patch-gate.ts` `approvePatchProposal`
   (`NOVA_PATCH_GATE_TOKEN`); `self-evolution.ts` legt nur Vorschläge an.
 - Code: `src/security/code-guardian.ts` `fullSecurityCheck`; Befehle
@@ -342,7 +348,8 @@ Alt-Erinnerungen `reminders.json` + Croner-Prüfer (nur Rückfall, siehe D10).
 - Tresor: `src/secrets/` (`credential-broker.ts`, `tresor-cards.ts`).
 
 **Tests:** `src/security/*.test.ts`, `src/core/approval-cards*.test.ts`,
-`src/tools/owner-approval.test.ts`, `src/agents/tool-authorization.test.ts`,
+`src/tools/owner-approval.test.ts`, `src/e2e/freigaben-merken.test.ts`,
+`src/agents/tool-authorization.test.ts`,
 `src/core/action-policy.test.ts`, `src/core/message-pipeline-security.test.ts`,
 `npm run check:assurance`.
 
