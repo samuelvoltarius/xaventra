@@ -8030,6 +8030,7 @@
         "../core/action-intent.js",
         "../core/context-switches.js",
         "../core/request-capabilities.js",
+        "../core/setup-confirmation.js",
         "../core/tool-evidence-binding.js",
         "../memory/memory-quality.js",
         "../memory/owner-profile.js",

@@ -197,12 +197,14 @@ export async function ownerApprovalRefusal(params: Record<string, unknown>, tool
         if (getUserPermission(authUserId, channel || undefined) !== 'owner') {
             return `❌ ${toolName}: nur der Owner darf das freigeben — nicht ausgeführt.`
         }
-        const { consumeSetupConfirmation, setupConfirmationPrincipal, findLiveSetupConfirmation } = await import('../core/setup-confirmation.js')
+        const { consumeSetupConfirmation, setupConfirmationPrincipal, findLiveSetupConfirmation, noteToolApprovalRequest } = await import('../core/setup-confirmation.js')
         const principal = setupConfirmationPrincipal(channel, clean(context.userId) || clean(params.userId) || authUserId)
         const target = toolApprovalTarget(toolName, detail)
         if (consumeSetupConfirmation(principal, target, params.confirm)) return null
         // 2.90.x „merken“: a remembered approval for exactly this target, checked against the fixed limits on every use.
         if (await useRememberedApproval(toolName, target, { authUserId, channel, runId: clean(context.runId) }, context)) return null
+        // 2.90.2: the owner's next message (the detail or the code) must offer this tool again.
+        noteToolApprovalRequest(target)
         // 2.89.4: when a code is already open, ask for THAT code — never re-send /freigabe.
         const live = findLiveSetupConfirmation(principal, target)
         if (live) {
