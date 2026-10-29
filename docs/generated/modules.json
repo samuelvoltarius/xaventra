@@ -120,6 +120,7 @@
         "../auth/codex-installer.js",
         "../core/action-intent.js",
         "../core/action-lifecycle.js",
+        "../core/context-metrics.js",
         "../core/context-policy.js",
         "../core/execution-control.js",
         "../core/execution-kernel.js",
@@ -1727,11 +1728,27 @@
       ]
     },
     {
+      "module": "src/core/context-metrics.ts",
+      "imports": [
+        "./context-switches.js",
+        "./data-root.js",
+        "./side-effects.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
       "module": "src/core/context-policy.ts",
       "imports": [
         "./action-intent.js",
         "./request-capabilities.js",
         "./runtime-profile.js"
+      ]
+    },
+    {
+      "module": "src/core/context-switches.ts",
+      "imports": [
+        "./nova-state.js"
       ]
     },
     {
@@ -2003,6 +2020,13 @@
       "imports": [
         "../tools/tool-router.js",
         "./action-intent.js"
+      ]
+    },
+    {
+      "module": "src/core/lagebild.ts",
+      "imports": [
+        "./nova-state.js",
+        "./prompt-budget.js"
       ]
     },
     {
@@ -2699,6 +2723,13 @@
       ]
     },
     {
+      "module": "src/core/task-prompt.ts",
+      "imports": [
+        "./context-policy.js",
+        "./prompt-budget.js"
+      ]
+    },
+    {
       "module": "src/core/task-tracker.ts",
       "imports": [
         "node:fs",
@@ -2784,6 +2815,18 @@
     {
       "module": "src/core/tool-task-context.ts",
       "imports": []
+    },
+    {
+      "module": "src/core/turn-context.ts",
+      "imports": [
+        "./context-metrics.js",
+        "./context-policy.js",
+        "./context-switches.js",
+        "./lagebild.js",
+        "./prompt-budget.js",
+        "./request-tracer.js",
+        "./task-prompt.js"
+      ]
     },
     {
       "module": "src/core/typed-tool-recovery.ts",
@@ -5484,6 +5527,15 @@
       ]
     },
     {
+      "module": "src/mesh/known-node-names.ts",
+      "imports": [
+        "../core/data-root.js",
+        "../core/run-limits.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
       "module": "src/mesh/leader-election.ts",
       "imports": [
         "../config/config-path.js",
@@ -7945,6 +7997,7 @@
         "../core/tool-evidence-binding.js",
         "../memory/memory-quality.js",
         "../memory/owner-profile.js",
+        "../mesh/known-node-names.js",
         "./complete-registry.js",
         "./minimax-tools.js"
       ]

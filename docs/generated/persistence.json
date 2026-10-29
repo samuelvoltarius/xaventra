@@ -198,6 +198,14 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/core/context-metrics.test.ts",
+      "path": ".nova-data"
+    },
+    {
+      "owner": "src/core/context-metrics.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/core/correction-detector.ts",
       "path": ".nova-data"
     },
@@ -834,6 +842,10 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/mesh/known-node-names.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/mesh/live-failover-test.ts",
       "path": ".nova-data"
     },
@@ -1302,8 +1314,16 @@
       "path": ".nova-data/mesh-identity/main.json"
     },
     {
+      "owner": "src/mesh/known-node-names.ts",
+      "path": ".nova-data/mesh-peer-state.json"
+    },
+    {
       "owner": "src/core/auto-updater-rollout.test.ts",
       "path": ".nova-data/mesh-update-state.json"
+    },
+    {
+      "owner": "src/mesh/known-node-names.ts",
+      "path": ".nova-data/mesh.json"
     },
     {
       "owner": "src/routing/local-model-control.ts",
