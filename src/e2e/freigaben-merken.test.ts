@@ -113,6 +113,31 @@ describe('2.90.x: Freigaben merken', () => {
         expect((await h.telegram('/freigaben')).final).toMatch(/Keine gemerkten Freigaben/)
     }, T)
 
+    it('a hashed detail is never rememberable: its content (here lock.haustuer) cannot be checked', async () => {
+        h = await createE2EHarness({ config: haConfig, routes: haRoutes([]) })
+        const { approvalDetailOf, rememberRefusal } = await h.module('tools/owner-approval.js')
+        // A tool that binds its approval to an argument hash (approvalDetailOf), e.g. an MCP tool.
+        const hashed = approvalDetailOf({ entity_id: 'lock.haustuer', service: 'unlock' })
+        expect(hashed).toMatch(/^#[a-f0-9]{12}$/)
+        const issued = await h.telegram(`/freigabe mcp__home__call ${hashed}`)
+        expect(mergeButton(issued.buttons)).toBeUndefined()
+        expect(issued.final).toMatch(/Nicht merkbar \(Inhalt nicht prüfbar/)
+        expect((await h.telegram(`/freigabe merken mcp__home__call ${hashed}`)).final).toMatch(/Nicht merkbar/)
+        expect((await h.telegram('/freigaben')).final).toMatch(/Keine gemerkten Freigaben/)
+        // A stored entry from before this rule is inert: never used, listed as blocked.
+        const policy = await h.module('core/action-policy.js')
+        const stored = policy.rememberApproval({ target: `tool:mcp__home__call:${hashed}`, tool: 'mcp__home__call', detail: hashed, by: 'alt' })
+        expect(stored.ok).toBe(true)
+        expect(await rememberRefusal('mcp__home__call', hashed)).toMatch(/Hash/)
+        const { withExecutionPolicyContext } = await h.module('core/lifecycle-policy.js')
+        const { ownerApprovalRefusal } = await h.module('tools/owner-approval.js')
+        const refusal = await withExecutionPolicyContext({ userId: OWNER_TELEGRAM_ID, authUserId: OWNER_TELEGRAM_ID, channel: 'telegram' },
+            () => ownerApprovalRefusal({}, 'mcp__home__call', hashed))
+        // Owner path, not executed: the open one-time code from the /freigabe above is still needed.
+        expect(refusal).toMatch(/Einmal-Code für genau diesen Aufruf ist noch offen/)
+        expect((await h.telegram('/freigaben')).final).toMatch(/gesperrt: Inhalt nicht prüfbar/)
+    }, T)
+
     it('Desktop: the text form remembers too, and only the owner sees /freigaben', async () => {
         const calls: string[] = []
         h = await createE2EHarness({ config: haConfig, routes: haRoutes(calls) })

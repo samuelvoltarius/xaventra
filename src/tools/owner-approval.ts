@@ -82,6 +82,9 @@ export async function rememberRefusal(toolName: string, detail: string): Promise
     const canonical = approvalDetail(detail)
     const value = canonical.toLowerCase()
     if (!/^[a-z][a-z0-9_-]{1,79}$/.test(tool) || !canonical) return 'ungültiges Ziel'
+    // A `#<hash>` detail (long/structured arguments) hides what it targets: the
+    // detail limits below could not see a lock or a gate behind it.
+    if (canonical.startsWith('#')) return 'Inhalt nicht prüfbar (Hash)'
     const { isNieAktionsart, isNieZiel } = await import('../core/action-policy.js')
     if (isNieAktionsart(tool.replace(/_/g, '-')) || isNieZiel(canonical) || isNieZiel(`${tool} ${canonical}`)) return 'Nie-Liste'
     for (const [pattern, why] of NEVER_REMEMBER_TOOLS) if (pattern.test(tool)) return why
