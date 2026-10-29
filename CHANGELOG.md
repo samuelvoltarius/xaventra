@@ -12,6 +12,21 @@
   helpers on nodes with a screen, maps and routes, music, a maker helper for
   boards and sensors.
 
+## [2.89.15] — 2026-10-29
+
+Reliability after the Telegram acceptance of 2.89.14.
+
+### Fixed
+
+- **A successful action is never reported as "no change".** When a later
+  step failed after a switch had already worked, the answer said "Die Aktion
+  ist nicht gelungen … es wurde keine Änderung ausgeführt". It now names what
+  was done first (for example the socket that was switched on).
+- **`mesh_delegate` tells the other node who is asking.** Delegated tasks
+  carried only the Main's node id, so another node treated the request as an
+  unknown guest. They now carry the requesting owner and a time budget, like
+  `spawn_subagent` with a target node.
+
 ## [2.89.14] — 2026-10-29
 
 Reliability after the Telegram acceptance of 2.89.13.
