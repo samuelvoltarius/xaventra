@@ -81,3 +81,16 @@ describe('refusal at the workstation', () => {
         expect(result.refused).not.toBe(true)
     })
 })
+
+describe('node short names', () => {
+    it('resolves a unique short name (lab -> xaventra-lab), never an ambiguous or unknown one', async () => {
+        const { resolveCaptureNode } = await import('./mesh-screenshot-tool.js')
+        expect(resolveCaptureNode('lab', ['xaventra-spark', 'xaventra-lab'])).toBe('xaventra-lab')
+        expect(resolveCaptureNode('xaventra-lab', ['xaventra-lab'])).toBe('xaventra-lab')
+        expect(resolveCaptureNode('Lab', ['xaventra-spark', 'xaventra-lab'])).toBe('xaventra-lab')
+        expect(resolveCaptureNode('ns', ['xaventra-ns1', 'xaventra-ns2'])).toBeUndefined()
+        expect(resolveCaptureNode('lab', ['xaventra-lab', 'other-lab'])).toBeUndefined()
+        expect(resolveCaptureNode('foreign', ['xaventra-lab'])).toBeUndefined()
+        expect(resolveCaptureNode('', ['xaventra-lab'])).toBeUndefined()
+    })
+})

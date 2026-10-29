@@ -21,6 +21,15 @@
   recorded, answers with the reason ("nicht auf der Erlaubnisliste:
   wikipedia.org"), and Xaventra reports it as refused: nothing happened,
   not to be repeated as is.
+- **"Öffne auf dem Lab … und mach einen Screenshot" works directly.** Such a
+  request was not recognised as aimed at the lab computer: no
+  `mesh_desktop_input`/`mesh_screenshot` was offered, Xaventra handed the job
+  to a subagent on the lab, which refused it. "Auf dem Lab", "im Labor",
+  `xaventra-lab` and "auf deinem Computer" now name her own computer: Main
+  opens the page there and takes the capture itself (short node names like
+  "lab" resolve when unique). The answer is no longer replaced by "Screenshot
+  nicht zuverlässig erstellt", and Telegram never falls back to a screenshot
+  of the host's own desktop for it.
 
 ## [2.90.2] — 2026-10-29
 

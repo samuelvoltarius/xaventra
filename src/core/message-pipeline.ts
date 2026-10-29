@@ -20,7 +20,7 @@ import { markOwnerTurn, runAsPotentialOwnerTurn } from './owner-activity.js'
 import { compatiblePrincipalScopes, principalScope, resolvePrincipalId, type PrincipalContext } from '../users/principal-id.js'
 import { decideMemoryTurn } from '../memory/memory-quality.js'
 import { resolveConfigPath } from '../config/config-path.js'
-import { isNodeScreenshotRequest, isEnvironmentOverview, liveEvidenceGuidance } from './request-capabilities.js'
+import { isNodeScreenshotRequest, isNodeTargetRequest, isNodeWorkstationRequest, isEnvironmentOverview, liveEvidenceGuidance } from './request-capabilities.js'
 import { createProgressNotice } from './progress-notice.js'
 
 import { isTechnicalProbe } from './channel-name.js'
@@ -418,7 +418,7 @@ export interface ScreenshotFallbackRequest {
 export async function runAuthorizedScreenshotFallback(
     request: ScreenshotFallbackRequest,
 ): Promise<{ path: string; size?: number } | null> {
-    if (isNodeScreenshotRequest(request.content)) return null
+    if (isNodeTargetRequest(request.content)) return null
     if (request.channel.toLowerCase() !== 'telegram') return null
     if (!request.tools?.execute || !request.telegram?.sendPhoto) return null
     let args: Record<string, unknown>
@@ -2310,7 +2310,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
         // already sent it and this block sent the same file again.
         const { pendingScreenshot } = await import('./screenshot-delivery.js')
         let screenshotDelivered = (result as any).screenshotDelivered === true
-        if (!isNodeScreenshotRequest(content) && pendingScreenshot(result as any) && channel.toLowerCase() === 'telegram') {
+        if (!isNodeTargetRequest(content) && pendingScreenshot(result as any) && channel.toLowerCase() === 'telegram') {
             try {
                 const tg = state.channels?.telegram || state.telegram
                 if (tg?.sendPhoto) {
@@ -2508,7 +2508,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
         // tool through the same authorization boundary.
         const preGateIntent = isSystemMessage ? { requiresTool: false as const, kind: 'none' as const } : detectActionIntent(content)
         const { shouldRunScreenshotFallback, applyScreenshotFallback } = await import('./screenshot-delivery.js')
-        if (!isNodeScreenshotRequest(content) && shouldRunScreenshotFallback({ isSystemMessage, intentKind: preGateIntent.kind, screenshotDelivered, result: result as any })) {
+        if (!isNodeTargetRequest(content) && shouldRunScreenshotFallback({ isSystemMessage, intentKind: preGateIntent.kind, screenshotDelivered, result: result as any })) {
             try {
                 const tg = state.channels?.telegram || state.telegram
                 const captured = await runAuthorizedScreenshotFallback({
@@ -2536,7 +2536,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
         }
 
         // A retry can create the screenshot after the first delivery opportunity.
-        if (!isNodeScreenshotRequest(content) && !screenshotDelivered && (result as any).screenshotPath && channel.toLowerCase() === 'telegram') {
+        if (!isNodeTargetRequest(content) && !screenshotDelivered && (result as any).screenshotPath && channel.toLowerCase() === 'telegram') {
             try {
                 const tg = state.channels?.telegram || state.telegram
                 const imgPath = (result as any).screenshotPath
@@ -2603,7 +2603,9 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             : successfulExecutions.some((execution: any) => execution.toolName === 'build_skill' || execution.toolName === 'create_skill')
         if (actionObservationClosed) {
             // 2.89.4: the screenshot-is-not-action gate already closed this honestly.
-        } else if (!isSystemMessage && preGateIntent.kind === 'screenshot' && (!screenshotDelivered || isNodeScreenshotRequest(content))) {
+        // 2.90.3: a node-workstation request (open + capture on the lab) is judged by its mesh tool results below,
+        // never as a failed local screenshot.
+        } else if (!isSystemMessage && preGateIntent.kind === 'screenshot' && !isNodeWorkstationRequest(content) && (!screenshotDelivered || isNodeScreenshotRequest(content))) {
             supervised.content = isNodeScreenshotRequest(content) ? await nodeScreenshotAnswer(content, [...successfulExecutions, ...failedExecutions], (result as any).modelContent ?? supervised.content) : screenshotFailureResponse(failedExecutions)
         } else if (!isSystemMessage && actionIntent.requiresTool && fulfillmentToolCount === 0 && skillProposalCreated) {
             if (!supervised.content || responseClaimsCompletedAction(supervised.content)) {
@@ -2676,7 +2678,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                     finalContent = sanitizeInternalOutboundArtifacts(kubernetesStatusResponse((result as any).toolExecutions || []))
                 }
             }
-            if (!isSystemMessage && preGateIntent.kind === 'screenshot' && (!screenshotDelivered || isNodeScreenshotRequest(content))) {
+            if (!isSystemMessage && preGateIntent.kind === 'screenshot' && !isNodeWorkstationRequest(content) && (!screenshotDelivered || isNodeScreenshotRequest(content))) {
                 finalContent = isNodeScreenshotRequest(content) ? sanitizeInternalOutboundArtifacts(await nodeScreenshotAnswer(content, [...successfulExecutions, ...failedExecutions], (result as any).modelContent ?? supervised.content)) : screenshotFailureResponse(failedExecutions)
                 try {
                     const { replaceLastAssistantInHistory } = await import('../agents/nova-runner.js')

@@ -29,7 +29,7 @@ import { loadOwnerProfile, profileRouteTools } from '../memory/owner-profile.js'
 import { handoffTargetNode } from '../mesh/known-node-names.js'
 import { featureEnabled } from '../core/context-switches.js'
 import { toolsReferencedByApproval } from '../core/setup-confirmation.js'
-import { compoundRemainder, containsTailnetUrl, isKubernetesQuestion, isKubernetesTestPodRequest, isMeshWideInventoryRequest, isNodeScreenshotRequest, mentionsMesh, mentionsEnvironment } from '../core/request-capabilities.js'
+import { compoundRemainder, containsTailnetUrl, isKubernetesQuestion, isKubernetesTestPodRequest, isMeshWideInventoryRequest, isNodeScreenshotRequest, isNodeWorkstationRequest, mentionsMesh, mentionsEnvironment } from '../core/request-capabilities.js'
 
 // ============================================
 // Core Tools — ALWAYS sent to the model
@@ -504,7 +504,7 @@ export function routedToolNames(): string[] { return [...STATICALLY_ROUTED] }
  * fixed source-bound contract.
  */
 export function toolExpansionPolicy(primaryMessage: string): { sealed: boolean; excluded: ReadonlySet<string> } {
-    if (isNodeScreenshotRequest(primaryMessage) || isDirectUrlCheck(primaryMessage)) return { sealed: true, excluded: new Set() }
+    if (isNodeWorkstationRequest(primaryMessage) || isNodeScreenshotRequest(primaryMessage) || isDirectUrlCheck(primaryMessage)) return { sealed: true, excluded: new Set() }
     return { sealed: false, excluded: routeExclusions(primaryMessage, detectActionIntent(primaryMessage)) }
 }
 
@@ -628,6 +628,14 @@ export function getRelevantTools(
     const registry = getToolRegistry()
     const allTools = registry.getAll()
     const primaryIntent = detectActionIntent(primaryMessage)
+
+    // 2.90.3 (Langtest D): acting on her own computer (the lab workstation) runs directly from Main:
+    // mesh_desktop_input (open_url, click, type) + mesh_screenshot + analyze_image. No subagent or
+    // mesh_delegate hand-over, no local browser/desktop tools that act on the daemon host instead.
+    if (isNodeWorkstationRequest(primaryMessage)) {
+        return [...CORE_TOOLS, 'mesh_nodes', 'mesh_status', 'mesh_desktop_input', 'mesh_screenshot', 'analyze_image'].map(name => registry.get(name))
+            .filter((tool): tool is NonNullable<typeof tool> => Boolean(tool))
+    }
 
     // Only the source-bound capture protocol may fulfill a node screenshot.
     if (isNodeScreenshotRequest(primaryMessage)) {
