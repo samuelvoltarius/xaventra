@@ -472,9 +472,17 @@ streicht sie hier im selben Commit (oder markiert sie als erledigt mit Version).
   `cancelMeshRun`, `allowedTools`, löst `mesh_node="auto"` über `routeTask`.
 - Besitzer-Kennung: bis 2.89.14 trug nur `spawn_subagent` die userId;
   2.89.15 reicht sie in `mesh_delegate` nach (`complete-registry.ts:2740–2745`).
-  **Weiterhin ohne userId:** der Warteschlangen-Rückfall in `delegateTask`
-  (`mesh-registry.ts:970–980`, Nutzlast nur `prompt`); der Empfänger läuft dann
-  als `mesh-<node>`.
+  2.90.1: der Warteschlangen-Rückfall ohne userId in `delegateTask` ist
+  entfernt (der typisierte Transport hat Supabase/Relay/Outbox selbst); der
+  L18-Weg im Runner (`nova-runner.ts` `meshDelegation`) reicht die userId mit;
+  `mesh_delegate` lehnt fehlendes/unbekanntes `node_id` sofort ab (Abgleich mit
+  `src/mesh/known-node-names.ts` `knownNodeNames`) und wartet höchstens
+  `handoffWaitSeconds()`.
+  Owner auf dem Empfänger: nur für ein `agent.request`, das mit dem festen
+  `publicKey` eines konfigurierten Peers signiert ist und dessen userId der
+  konfigurierte Owner ist (`mesh-transport-runtime.ts`
+  `verifiedMeshOwnerRequest` → Pipeline → `multi-user-middleware.ts`
+  `runAsVerifiedMeshOwner`, gilt nur für diesen einen Lauf).
 - Weitere Einstiege auf denselben Weg: `spawn_subagents_parallel`,
   `continuable_subagent_start`, `mesh_repo_task` — reichen `mesh_node="auto"`
   aber roh durch bzw. routen selbst (siehe D11).

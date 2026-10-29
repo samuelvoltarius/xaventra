@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { setKnownNodeNamesForTests } from './known-node-names.js'
 
 // 2.89.15 (Abnahme 2.89.12/13, task D, 29.10.): xaventra-nas answered a mesh_delegate task with the first-contact
 // greeting "Du bist als Gast verbunden". delegateTask sent the agent request without userId, so the peer ran it
@@ -13,7 +14,7 @@ vi.mock('./mesh-transport-runtime.js', async importOriginal => ({
     },
 }))
 
-afterEach(() => { sent.calls.length = 0 })
+afterEach(() => { sent.calls.length = 0; setKnownNodeNamesForTests(null) })
 
 describe('mesh_delegate carries the requesting owner', () => {
     it('delegateTask sends the given user id and budget with the agent request', async () => {
@@ -23,6 +24,7 @@ describe('mesh_delegate carries the requesting owner', () => {
     })
 
     it('the tool takes the owner from the execution context', async () => {
+        setKnownNodeNamesForTests([{ nodeId: 'xaventra-nas' }])
         const { withExecutionPolicyContext } = await import('../core/lifecycle-policy.js')
         const { ALL_TOOLS } = await import('../tools/complete-registry.js')
         const tool = ALL_TOOLS.find(entry => entry.name === 'mesh_delegate')!

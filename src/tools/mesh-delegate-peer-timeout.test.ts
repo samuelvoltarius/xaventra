@@ -1,4 +1,5 @@
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { setKnownNodeNamesForTests } from '../mesh/known-node-names.js'
 
 // 2.89.16 (Abnahme 2.89.12–2.89.15): ns1/ns2 answered delegated tasks with their own runner timeout sentence
 // ("Das hat zu lange gedauert, ich war nicht rechtzeitig fertig …") and mesh_delegate returned it as
@@ -7,7 +8,8 @@ const mesh = vi.hoisted(() => ({ delegateTask: vi.fn(), getTaskResult: vi.fn() }
 vi.mock('../mesh/mesh-registry.js', async importOriginal => ({ ...(await importOriginal<object>()), ...mesh }))
 import { ALL_TOOLS } from './complete-registry.js'
 
-beforeAll(async () => { await import('../mesh/mesh-registry.js') }, 60_000)
+beforeAll(async () => { await import('../mesh/mesh-registry.js'); setKnownNodeNamesForTests([{ nodeId: 'xaventra-ns2' }]) }, 60_000)
+afterAll(() => setKnownNodeNamesForTests(null))
 afterEach(() => { vi.useRealTimers(); mesh.delegateTask.mockReset(); mesh.getTaskResult.mockReset() })
 
 describe('a peer timeout is a failed delegation', () => {

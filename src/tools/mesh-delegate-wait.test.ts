@@ -1,4 +1,5 @@
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { setKnownNodeNamesForTests } from '../mesh/known-node-names.js'
 
 // Telegram 28.10. (2.89.11, Langtest B) "Führe auf ns2 die Befehle uptime und df -h / aus und sag mir die
 // Ergebnisse": mesh_delegate answered "An Knoten übergeben … Status: pending" and the run went on locally
@@ -9,7 +10,8 @@ vi.mock('../mesh/mesh-registry.js', async importOriginal => ({ ...(await importO
 import { ALL_TOOLS } from './complete-registry.js'
 
 // The handler imports the mesh registry lazily; load it once on real time.
-beforeAll(async () => { await import('../mesh/mesh-registry.js') }, 60_000)
+beforeAll(async () => { await import('../mesh/mesh-registry.js'); setKnownNodeNamesForTests([{ nodeId: 'xaventra-ns2' }]) }, 60_000)
+afterAll(() => setKnownNodeNamesForTests(null))
 const delegate = () => ALL_TOOLS.find(tool => tool.name === 'mesh_delegate')!
 afterEach(() => { vi.useRealTimers(); mesh.delegateTask.mockReset(); mesh.getTaskResult.mockReset() })
 /** Advance fake time in steps until the handler settles (its first await is a real module import). */

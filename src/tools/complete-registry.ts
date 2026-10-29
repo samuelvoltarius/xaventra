@@ -2734,7 +2734,7 @@ const meshTools: NovaTool[] = [
         parameters: [
             { name: 'node_id', type: 'string', description: 'ID des Ziel-Nodes (z.B. nova-a1b2c3d4)', required: true },
             { name: 'task', type: 'string', description: 'Die Aufgabe die der Node erledigen soll', required: true },
-            { name: 'wait_seconds', type: 'number', description: 'Wie lange auf das Ergebnis des Knotens gewartet wird (Standard 90, höchstens 240; 0 = nur übergeben)', required: false },
+            { name: 'wait_seconds', type: 'number', description: 'Wie lange auf das Ergebnis des Knotens gewartet wird (Standard und Höchstwert: knapp unter der Laufgrenze; 0 = nur übergeben)', required: false },
         ],
         handler: async (params) => {
             const { delegateTask, getTaskResult } = await import('../mesh/mesh-registry.js')
@@ -2742,15 +2742,26 @@ const meshTools: NovaTool[] = [
             // instead of an unknown `node:<main>` principal (live 29.10.: "Du bist als Gast verbunden").
             const { getExecutionPolicyContext } = await import('../core/lifecycle-policy.js')
             const requester = String(getExecutionPolicyContext().userId || '').trim() || undefined
-            const requestedWait = Number(params.wait_seconds)
-            const budgetMs = Math.min(240, Number.isFinite(requestedWait) && requestedWait > 0 ? requestedWait : 90) * 1000
-            const result = await delegateTask(String(params.node_id), String(params.task), { userId: requester, timeoutMs: budgetMs })
+            // 2.90.1 (Peer-Test 29.10.): no or an unknown node_id sent a task to "undefined" - refused at once.
+            const { knownNodeNames, handoffWaitSeconds } = await import('../mesh/known-node-names.js')
+            const wanted = String(params.node_id ?? '').trim()
+            const known = knownNodeNames()
+            const node = wanted && wanted !== 'undefined' && wanted !== 'null'
+                ? known.find(item => item.nodeId.toLowerCase() === wanted.toLowerCase() || item.hostname?.toLowerCase() === wanted.toLowerCase())
+                : undefined
+            if (!node) {
+                const names = known.slice(0, 5).map(item => item.nodeId).join(', ')
+                return { success: false, error: `${wanted ? `Knoten „${wanted.slice(0, 60)}“ ist nicht bekannt` : 'Kein Zielknoten angegeben'} — nicht übergeben.${names ? ` Bekannte Knoten: ${names}.` : ''}` }
+            }
+            // The wait stays under the tool and run limit (2.90.0 handoffWaitSeconds; 90 s of a ~110 s run left no answer).
+            const maxWait = handoffWaitSeconds()
+            const requested = Number(params.wait_seconds)
+            const waitMs = Math.min(maxWait, Number.isFinite(requested) && requested >= 0 ? requested : maxWait) * 1000
+            const result = await delegateTask(node.nodeId, String(params.task), { userId: requester, timeoutMs: waitMs || maxWait * 1000 })
             if (!result) return '❌ Nicht an den Knoten übergeben: Knoten nicht erreichbar.'
             const handedOver = `An Knoten übergeben.\nID: ${result.id}\nKnoten: ${result.to_node}\nStatus: ${result.status}\nTransport: ${result.transport || 'legacy'}`
             // 2.89.12 (Telegram 28.10., ns2: uptime + df): the tool returned "pending" and the run went on
             // locally on the Main. Wait for the node's own result (direct runtime or task queue).
-            const requested = Number(params.wait_seconds)
-            const waitMs = Math.min(240, Number.isFinite(requested) && requested >= 0 ? requested : 90) * 1000
             if (!waitMs) return handedOver
             const deadline = Date.now() + waitMs
             while (Date.now() < deadline) {

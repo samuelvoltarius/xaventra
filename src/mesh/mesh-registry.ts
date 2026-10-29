@@ -963,59 +963,13 @@ export async function delegateTask(
             return delegation
         }
     } catch (error) {
-        console.warn(`[Mesh] Typed transport unavailable, trying legacy queue: ${String(error).slice(0, 160)}`)
+        console.warn(`[Mesh] Typed transport unavailable: ${String(error).slice(0, 160)}`)
     }
 
-    // Compatibility fallback for nodes that have not received transport-v1.
-    if (!SUPABASE_URL || !SUPABASE_KEY) return delegation.transport === 'outbox' ? delegation : null
-    let signedTask: string
-    try {
-        // MI-1: the legacy queue carries a signed agent.request, never plain text.
-        const { signStoredMeshEnvelope } = await import('./mesh-transport-runtime.js')
-        signedTask = `agent:${JSON.stringify(signStoredMeshEnvelope('agent.request', targetNodeId, {
-            prompt: task, idempotencyKey: `mesh-task:${delegation.id}`,
-        }, { ttlMs: 60 * 60_000 }))}`
-    } catch (error) {
-        console.error(`[Mesh] Task delegation failed, signing unavailable: ${String(error).slice(0, 160)}`)
-        return null
-    }
-    try {
-        const res = await fetch(`${SUPABASE_URL}/${TASKS_TABLE}`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'apikey': SUPABASE_KEY,
-                'Authorization': `Bearer ${SUPABASE_KEY}`,
-                'Prefer': 'return=representation',
-            },
-            body: JSON.stringify({
-                id: delegation.id,
-                from_node: delegation.from_node,
-                to_node: delegation.to_node,
-                task: signedTask,
-                status: 'pending',
-                created_at: Date.now(),
-            }),
-        })
-        if (!res.ok) {
-            console.error(`[Mesh] ❌ Supabase task insert failed: ${res.status}`)
-            return null
-        }
-        console.log(`[Mesh] 📤 Task ${delegation.id} delegated to ${targetNodeId} via Supabase`)
-        delegation.transport = 'legacy-supabase'
-    } catch (err) {
-        console.error(`[Mesh] ❌ Task delegation failed:`, err)
-        return null
-    }
-
-    // Also save locally for tracking
-    const data = loadMeshData()
-    const existing = data.tasks.findIndex(item => item.id === delegation.id)
-    if (existing >= 0) data.tasks[existing] = delegation
-    else data.tasks.push(delegation)
-    saveMeshData(data)
-
-    return delegation
+    // 2.90.1 (Codekarte D1): the old Supabase task-table fallback carried no user id (the peer ran the task
+    // as `mesh-<node>`, a guest). The typed transport already includes the durable Supabase and relay paths;
+    // what it could not deliver stays in its outbox or is reported as not delivered.
+    return delegation.transport === 'outbox' ? delegation : null
 }
 
 export async function checkIncomingTasks(): Promise<TaskDelegation[]> {
