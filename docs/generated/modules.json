@@ -7775,6 +7775,7 @@
     {
       "module": "src/tools/mesh-desktop-input-tool.ts",
       "imports": [
+        "../core/context-switches.js",
         "../core/lifecycle-policy.js",
         "../host/desktop-input.js",
         "../mesh/capture-reason.js",
@@ -8015,6 +8016,7 @@
       "module": "src/tools/tool-router.ts",
       "imports": [
         "../core/action-intent.js",
+        "../core/context-switches.js",
         "../core/request-capabilities.js",
         "../core/tool-evidence-binding.js",
         "../memory/memory-quality.js",

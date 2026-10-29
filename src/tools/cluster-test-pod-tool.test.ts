@@ -64,4 +64,18 @@ describe('cluster_test_pod', () => {
         await expect((await tool()).handler({ aktion: 'liste' })).rejects.toThrow(/Owner/)
         expect(fake.calls).toEqual([])
     })
+
+    it('2.90.0: switched off (XAVENTRA_K8S_TEST_PODS=off) nothing reaches the cluster and the router does not offer it', async () => {
+        process.env.XAVENTRA_K8S_TEST_PODS = 'off'
+        try {
+            const result: any = await (await tool()).handler({ ...create, confirm: '123456' })
+            expect(result.success).toBe(false)
+            expect(String(result.error)).toMatch(/abgeschaltet/)
+            expect(fake.calls.length).toBe(0)
+            const { getRelevantTools } = await import('./tool-router.js')
+            expect(getRelevantTools('Leg im Cluster einen Test-Pod mit busybox an').map(item => item.name)).not.toContain('cluster_test_pod')
+        } finally { delete process.env.XAVENTRA_K8S_TEST_PODS }
+        const { getRelevantTools } = await import('./tool-router.js')
+        expect(getRelevantTools('Leg im Cluster einen Test-Pod mit busybox an').map(item => item.name)).toContain('cluster_test_pod')
+    }, 60_000)
 })

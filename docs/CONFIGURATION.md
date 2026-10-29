@@ -217,6 +217,13 @@ without `roles` only gets `worker`; grant more only explicitly:
 
 The environment wins: `XAVENTRA_CONTEXT_METRICS`, `XAVENTRA_TASK_PROMPT`, `XAVENTRA_LAGEBILD`. Switching back is `off` plus a restart; no rollback needed.
 
+Two capabilities of 2.90.0 are on by default and can each be turned off:
+
+| Key | Environment | Effect when off |
+|-----|-------------|-----------------|
+| `infra.kubernetes.testPods: false` | `XAVENTRA_K8S_TEST_PODS=off` | `cluster_test_pod` is neither offered nor executed |
+| `mesh.desktopInput: false` | `NOVA_MESH_DESKTOP_INPUT_ENABLED=false` | `mesh_desktop_input` refuses on Main (the node keeps its own opt-in) |
+
 ---
 
 ## Environment Variables

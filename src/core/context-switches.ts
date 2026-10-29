@@ -44,3 +44,35 @@ export function contextSwitch(
         ?? parseMode(name, config?.context?.[name])
         ?? DEFAULTS[name]
 }
+
+/**
+ * 2.90.0 capabilities that are on by default and can each be turned off
+ * (Koordinator 29.10.): test pods in xaventra-test and desktop input on an
+ * enrolled node. Turning one off never touches the other; the node keeps its
+ * own opt-in for desktop input, the cluster its RBAC for test pods.
+ */
+export type FeatureName = 'meshDesktopInput' | 'k8sTestPods'
+
+const FEATURES: Record<FeatureName, { env: string; config: (config: Record<string, any> | null) => unknown }> = {
+    meshDesktopInput: { env: 'NOVA_MESH_DESKTOP_INPUT_ENABLED', config: config => config?.mesh?.desktopInput },
+    k8sTestPods: { env: 'XAVENTRA_K8S_TEST_PODS', config: config => config?.infra?.kubernetes?.testPods },
+}
+
+function parseOnOff(value: unknown): boolean | null {
+    if (typeof value === 'boolean') return value
+    const text = String(value ?? '').trim().toLowerCase()
+    if (!text) return null
+    if (text === 'off' || text === 'false' || text === '0') return false
+    if (text === 'on' || text === 'true' || text === '1') return true
+    return null
+}
+
+export function featureEnabled(
+    name: FeatureName,
+    source: { env?: NodeJS.ProcessEnv; config?: Record<string, any> | null } = {},
+): boolean {
+    const feature = FEATURES[name]
+    const env = source.env ?? process.env
+    const config = source.config === undefined ? currentConfig() : source.config
+    return parseOnOff(env[feature.env]) ?? parseOnOff(feature.config(config)) ?? true
+}

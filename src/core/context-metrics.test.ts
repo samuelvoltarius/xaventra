@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, statSync, existsSync } from 'node:fs
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { contextSwitch } from './context-switches.js'
+import { contextSwitch, featureEnabled } from './context-switches.js'
 import {
     formatKontext, measureModelInput, readContextMetrics, recordContextMetrics, summarizeContextMetrics,
     type ContextTurnMetrics,
@@ -34,6 +34,25 @@ describe('2.90.0 context switches', () => {
     it('an unknown value falls back to the default, never to on', () => {
         expect(contextSwitch('taskPrompt', { env: { XAVENTRA_TASK_PROMPT: 'yes please' }, config: null })).toBe('shadow')
         expect(contextSwitch('metrics', { env: { XAVENTRA_CONTEXT_METRICS: 'shadow' }, config: null })).toBe('on')
+    })
+})
+
+describe('2.90.0 feature switches (test pods, desktop input): on by default, each can be turned off', () => {
+    it.each(['meshDesktopInput', 'k8sTestPods'] as const)('%s is on without any setting', name => {
+        expect(featureEnabled(name, { env: {}, config: null })).toBe(true)
+    })
+    it('the environment turns them off one by one', () => {
+        expect(featureEnabled('meshDesktopInput', { env: { NOVA_MESH_DESKTOP_INPUT_ENABLED: '0' }, config: null })).toBe(false)
+        expect(featureEnabled('meshDesktopInput', { env: { NOVA_MESH_DESKTOP_INPUT_ENABLED: 'false' }, config: null })).toBe(false)
+        expect(featureEnabled('k8sTestPods', { env: { XAVENTRA_K8S_TEST_PODS: 'off' }, config: null })).toBe(false)
+        expect(featureEnabled('meshDesktopInput', { env: { XAVENTRA_K8S_TEST_PODS: 'off' }, config: null })).toBe(true)
+    })
+    it('the config turns them off; the environment wins', () => {
+        const config = { mesh: { desktopInput: false }, infra: { kubernetes: { testPods: false } } }
+        expect(featureEnabled('meshDesktopInput', { env: {}, config })).toBe(false)
+        expect(featureEnabled('k8sTestPods', { env: {}, config })).toBe(false)
+        expect(featureEnabled('k8sTestPods', { env: { XAVENTRA_K8S_TEST_PODS: 'on' }, config })).toBe(true)
+        expect(featureEnabled('meshDesktopInput', { env: { NOVA_MESH_DESKTOP_INPUT_ENABLED: '1' }, config })).toBe(true)
     })
 })
 

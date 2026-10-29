@@ -38,8 +38,16 @@ describe('mesh_desktop_input: owner-only input on an enrolled node, judged by a 
         fixture.input.mockImplementation(async (_node: string, payload: any) => receipt(payload.requestId, true))
         expect(await call()).toMatchObject({ success: true, status: 'replayed', executedNow: false })
     })
-    it('does nothing without Main opt-in, owner, known single node or a valid action/step', async () => {
+    it('2.90.0: on by default on Main (the node keeps its own opt-in); off when switched off', async () => {
         vi.stubEnv('NOVA_MESH_DESKTOP_INPUT_ENABLED', '')
+        expect(await call()).toMatchObject({ success: true })
+        vi.stubEnv('NOVA_MESH_DESKTOP_INPUT_ENABLED', '0')
+        expect(await call()).toMatchObject({ success: false })
+        vi.stubEnv('NOVA_MESH_DESKTOP_INPUT_ENABLED', 'off')
+        expect(await call()).toMatchObject({ success: false })
+    })
+    it('does nothing without Main opt-in, owner, known single node or a valid action/step', async () => {
+        vi.stubEnv('NOVA_MESH_DESKTOP_INPUT_ENABLED', 'false')
         expect(await call()).toMatchObject({ success: false })
         vi.stubEnv('NOVA_MESH_DESKTOP_INPUT_ENABLED', '1')
         fixture.role = 'user'

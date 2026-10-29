@@ -105,7 +105,9 @@ Router erst im abgesicherten Schritt), `src/core/lagebild.ts` (gemessenes
 Selbstbild, `/lage`, Block `## LAGEBILD` geschützt), `src/core/context-metrics.ts`
 (`.nova-data/context-metrics.jsonl`, `/kontext`; die echte Modelleingabe misst
 `nova-runner.ts` als `contextStats`) und `src/core/context-switches.ts`
-(Schalter `context.metrics|taskPrompt|lagebild`, Umgebung `XAVENTRA_*` gewinnt).
+(Schalter `context.metrics|taskPrompt|lagebild`, Umgebung `XAVENTRA_*` gewinnt;
+dort auch `featureEnabled` für die standardmäßig eingeschalteten Fähigkeiten
+`k8sTestPods` und `meshDesktopInput`).
 Neue Prompt-Blöcke bekommen ihr Thema über die Überschrift
 (`task-prompt.ts` `TOPIC_RULES`); ohne Thema bleiben sie immer drin.
 

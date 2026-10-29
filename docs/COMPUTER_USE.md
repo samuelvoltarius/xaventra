@@ -133,9 +133,12 @@ example a lab VM, without a desktop of its own:
   the same step returns `status: "replayed"`, `executedNow: false`; an
   uncertain earlier effect is refused, never repeated.
 
-Opt-ins, all operator-owned:
+Switches and opt-ins, all operator-owned:
 
-- Main: `NOVA_MESH_DESKTOP_INPUT_ENABLED=1`. Only authenticated owner runs.
+- Main: on by default since 2.90.0; `NOVA_MESH_DESKTOP_INPUT_ENABLED=false`
+  (or `mesh.desktopInput: false` in the config) turns it off. Only
+  authenticated owner runs. Nothing reaches a node without the node's own
+  opt-ins below.
 - Node daemon: `NOVA_MESH_CAPTURE_ENABLED=1`, `NOVA_DESKTOP_INPUT_ENABLED=1`,
   `NOVA_CAPTURE_SOCKET`, `NOVA_CAPTURE_TOKEN_FILE`.
 - Workstation unit, for `open_url` only: `NOVA_WORKSTATION_OPEN_URL_ALLOW`

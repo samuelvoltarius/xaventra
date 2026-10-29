@@ -84,6 +84,9 @@ export const clusterTestPodTool: NovaTool = {
     ],
     handler: async (params) => {
         await requireOwner()
+        // 2.90.0: on by default; XAVENTRA_K8S_TEST_PODS=off or infra.kubernetes.testPods=false turns it off.
+        const { featureEnabled } = await import('../core/context-switches.js')
+        if (!featureEnabled('k8sTestPods')) return { success: false, error: 'Test-Pods sind abgeschaltet (infra.kubernetes.testPods / XAVENTRA_K8S_TEST_PODS).' }
         const aktion = String(params?.aktion ?? '').trim().toLowerCase().replace('ö', 'oe')
         const name = String(params?.name ?? '').trim()
         const { runTestPodAction } = await import('../infra/kubernetes-command.js')

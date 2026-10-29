@@ -27,6 +27,7 @@ import { detectActionIntent, isWorkstationAction, WORKSTATION_ACTION, type Actio
 import { isDirectUrlCheck } from '../core/tool-evidence-binding.js'
 import { loadOwnerProfile, profileRouteTools } from '../memory/owner-profile.js'
 import { handoffTargetNode } from '../mesh/known-node-names.js'
+import { featureEnabled } from '../core/context-switches.js'
 import { compoundRemainder, containsTailnetUrl, isKubernetesQuestion, isKubernetesTestPodRequest, isMeshWideInventoryRequest, isNodeScreenshotRequest, mentionsMesh, mentionsEnvironment } from '../core/request-capabilities.js'
 
 // ============================================
@@ -442,7 +443,7 @@ const LIVE_ROUTES: readonly LiveRoute[] = [
     // 2.89.4: Kubernetes/Pods/Cluster get cluster_status (facts from the API only).
     { name: 'kubernetes', tools: ['cluster_status'], applies: text => isKubernetesQuestion(text) },
     // 2.89.15: test pods in xaventra-test (create needs the owner's one-time code).
-    { name: 'kubernetes-test-pods', tools: ['cluster_test_pod'], applies: text => isKubernetesTestPodRequest(text) },
+    { name: 'kubernetes-test-pods', tools: ['cluster_test_pod'], applies: text => isKubernetesTestPodRequest(text) && featureEnabled('k8sTestPods') },
     { name: 'screenshot', tools: ['desktop_screenshot'], applies: (_text, intent) => intent.kind === 'screenshot' },
     // 2.89.4: Handlung am Arbeitsplatz — Steuerwerkzeuge, nicht nur Screenshot.
     { name: 'workstation-action',

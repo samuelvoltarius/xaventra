@@ -269,7 +269,11 @@ Main-StatefulSet nur mit `main.enabled`; `get` auf die eigene Steuer-ConfigMap.
 Kein `secrets`, kein `pods/exec|attach|portforward`, kein `create`/`delete`,
 kein `scale`.
 
-### Test-Pods in `xaventra-test` (2.89.15)
+### Test-Pods in `xaventra-test` (2.90.0)
+
+Schalter: standardmäßig an; `infra.kubernetes.testPods: false` in der Konfig
+oder `XAVENTRA_K8S_TEST_PODS=off` schaltet nur die Test-Pods ab (das Werkzeug
+wird dann nicht mehr angeboten und lehnt ab). Lesen und `/cluster` bleiben.
 
 Die einzige Ausnahme vom „nie anlegen/löschen“: **Pods** im Namespace genau
 `xaventra-test` (Werkzeug `cluster_test_pod`: `liste`, `logs`, `anlegen`,
