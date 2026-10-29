@@ -388,21 +388,24 @@ describe('helm-lite selbst', () => {
     })
 })
 
-const helm = CHART_PRESENT && spawnSync('helm', ['version', '--short'], { encoding: 'utf8' }).status === 0
+const helm = CHART_PRESENT && spawnSync('helm', ['version', '--short'], { encoding: 'utf8', timeout: 20_000 }).status === 0
+// 2.90.1: four real helm processes take more than vitest's 5 s on the Windows runner (flaky main CI 29.10.).
+const HELM_TEST_MS = 60_000
+const HELM_CALL = { encoding: 'utf8' as const, timeout: 20_000 }
 describe.skipIf(!helm)('echtes helm (nur wenn installiert, z. B. CI)', () => {
     it('lints and templates; output parses and matches helm-lite kinds', () => {
-        execFileSync('helm', ['lint', CHART], { encoding: 'utf8' })
+        execFileSync('helm', ['lint', CHART], HELM_CALL)
         for (const set of [[], ['--set', 'sandbox.runtimeClassActive=true', '--set', 'workers.toolSandbox.enabled=true', '--set', 'workers.voice.enabled=true']]) {
-            const text = execFileSync('helm', ['template', 'xv', CHART, '--namespace', 'xaventra', ...set], { encoding: 'utf8' })
+            const text = execFileSync('helm', ['template', 'xv', CHART, '--namespace', 'xaventra', ...set], HELM_CALL)
             const real = parseAllDocuments(text).map(doc => doc.toJS()).filter(Boolean).map((o: Obj) => `${o.kind}/${o.metadata.name}`).sort()
             const values = set.length ? { sandbox: { runtimeClassActive: true }, workers: { toolSandbox: { enabled: true }, voice: { enabled: true } } } : {}
             const lite = chart.objects({ values }).map(o => `${o.kind}/${o.metadata.name}`).sort()
             expect(real).toEqual(lite)
         }
-        const refused = spawnSync('helm', ['template', 'xv', CHART, '--set', 'workers.toolSandbox.enabled=true'], { encoding: 'utf8' })
+        const refused = spawnSync('helm', ['template', 'xv', CHART, '--set', 'workers.toolSandbox.enabled=true'], HELM_CALL)
         expect(refused.status).not.toBe(0)
         expect(refused.stderr).toMatch(/kata-clh/)
-    })
+    }, HELM_TEST_MS)
 })
 
 describe('Chart: echtes Image und gültige Konfiguration (P22)', () => {
