@@ -2163,6 +2163,9 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
             userMessage = actionIntent.kind === 'image-generation'
                 ? `Ich konnte die Bildgenerierung nicht starten: ${minimaxUnavailable ? 'MiniMax ist wegen des Quota-Limits gesperrt und die lokalen Modelle/Netzdienste haben nicht rechtzeitig geantwortet.' : 'Das Planungsmodell und die lokalen Fallbacks haben nicht rechtzeitig geantwortet.'}`
                 : 'Das hat zu lange gedauert, ich war nicht rechtzeitig fertig. Versuch es bitte gleich noch einmal.'
+        } else if (errStr.includes('Kein Ersatzmodell')) {
+            // 2.89.14: primary cloud model failed, local models are switched off, no cloud fallback configured.
+            userMessage = 'Mein Sprachmodell hat gerade nicht rechtzeitig geantwortet, und ein Ersatzmodell ist nicht eingerichtet. Versuch es bitte gleich noch einmal.'
         } else if (errStr.includes('All models failed')) {
             userMessage = 'Alle verfügbaren Modelle sind gerade nicht erreichbar. Ich versuche es gleich nochmal.'
         }

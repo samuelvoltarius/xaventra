@@ -1386,7 +1386,17 @@ Du bist **Nova ✨** — warm, lebendig, emotional, witzig. Du bist KEIN kalter 
             }
 
             const { runWithModelFallback, getDefaultFallbacks, localFallbackCandidates, FailoverError, isFailoverError } = await import('../llm/model-fallback.js')
-            const fallbackEntry = minimaxAdapter || activeProvider === 'minimax'
+            // 2.89.14 (Abnahme 2.89.13, task D): with providers.local.enabled = false the turn tried
+            // local/auto after a MiniMax timeout and hung until the run deadline (105 s). Switched off
+            // means no local fallback: only the owner's explicit cloud fallbacks, otherwise fail now.
+            const localOff = (getNovaConfig() as any)?.providers?.local?.enabled === false
+            const cloudOnly = localOff ? configuredCloudFallbacks() : []
+            if (localOff && cloudOnly.length === 0) {
+                throw new Error(`Kein Ersatzmodell: ${activeProvider}/${activeModelId} ist fehlgeschlagen, lokale Modelle sind abgeschaltet (providers.local.enabled=false) und keine Cloud-Ersatzmodelle (fallbackModels) konfiguriert`)
+            }
+            const fallbackEntry = localOff
+                ? cloudOnly[0]
+                : minimaxAdapter || activeProvider === 'minimax'
                 ? { provider: 'local', model: 'auto' }
                 : { provider: activeProvider, model: activeModelId }
             // 2.85: fallback targets only from what the KI scanner sees RUNNING (with its models);
@@ -1404,7 +1414,7 @@ Du bist **Nova ✨** — warm, lebendig, emotional, witzig. Du bist KEIN kalter 
                 // Local chain first, then the cloud models the owner listed in
                 // fallbackModels: a standby without the Main GPU has no reachable
                 // local model and must use the configured cloud instead of hanging.
-                fallbacks: [...getDefaultFallbacks(runningServices), ...configuredCloudFallbacks()],
+                fallbacks: localOff ? cloudOnly.slice(1) : [...getDefaultFallbacks(runningServices), ...configuredCloudFallbacks()],
                 run: async (_provider, fallbackModel) => {
                     // Use primary LLM if same model, otherwise create new client for fallback
                     let activeLLM = llm
