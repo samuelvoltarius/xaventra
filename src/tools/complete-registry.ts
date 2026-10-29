@@ -2737,7 +2737,13 @@ const meshTools: NovaTool[] = [
         ],
         handler: async (params) => {
             const { delegateTask, getTaskResult } = await import('../mesh/mesh-registry.js')
-            const result = await delegateTask(String(params.node_id), String(params.task))
+            // 2.89.15: the governed requester (as spawn_subagent with mesh_node), so the peer knows the owner
+            // instead of an unknown `node:<main>` principal (live 29.10.: "Du bist als Gast verbunden").
+            const { getExecutionPolicyContext } = await import('../core/lifecycle-policy.js')
+            const requester = String(getExecutionPolicyContext().userId || '').trim() || undefined
+            const requestedWait = Number(params.wait_seconds)
+            const budgetMs = Math.min(240, Number.isFinite(requestedWait) && requestedWait > 0 ? requestedWait : 90) * 1000
+            const result = await delegateTask(String(params.node_id), String(params.task), { userId: requester, timeoutMs: budgetMs })
             if (!result) return '❌ Nicht an den Knoten übergeben: Knoten nicht erreichbar.'
             const handedOver = `An Knoten übergeben.\nID: ${result.id}\nKnoten: ${result.to_node}\nStatus: ${result.status}\nTransport: ${result.transport || 'legacy'}`
             // 2.89.12 (Telegram 28.10., ns2: uptime + df): the tool returned "pending" and the run went on

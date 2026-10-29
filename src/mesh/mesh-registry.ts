@@ -930,7 +930,10 @@ export function missionIdFromCheckpoint(serialized: string): string | null {
 
 export async function delegateTask(
     targetNodeId: string,
-    task: string
+    task: string,
+    // 2.89.15: the requesting principal and budget, like spawn_subagent with mesh_node. Without a user id
+    // the peer ran the task as `node:<main>` - an unknown user ("Du bist als Gast verbunden", live 29.10.).
+    options: { userId?: string; timeoutMs?: number } = {},
 ): Promise<TaskDelegation | null> {
     const delegation: TaskDelegation = {
         id: randomUUID().slice(0, 8),
@@ -945,7 +948,11 @@ export async function delegateTask(
     // This transports an agent contract and never a free shell string.
     try {
         const { sendAgentRequest } = await import('./mesh-transport-runtime.js')
-        const sent = await sendAgentRequest(targetNodeId, task, { idempotencyKey: `mesh-task:${delegation.id}` })
+        const sent = await sendAgentRequest(targetNodeId, task, {
+            idempotencyKey: `mesh-task:${delegation.id}`,
+            ...(options.userId ? { userId: options.userId } : {}),
+            ...(options.timeoutMs ? { budget: { timeoutMs: options.timeoutMs } } : {}),
+        })
         delegation.id = sent.requestId
         delegation.transport = sent.ack.transport
         const local = loadMeshData()
