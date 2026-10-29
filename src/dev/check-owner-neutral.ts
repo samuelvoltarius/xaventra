@@ -1,6 +1,5 @@
-import { execFileSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import ts from 'typescript'
 
@@ -38,9 +37,21 @@ export function ownerNameLeaks(path: string, source: string): OwnerNameLeak[] {
     return leaks
 }
 
+/** Walks the source folders directly: the repair sandbox runs the suite without a git checkout. */
 export function runtimeSourceFiles(root: string): string[] {
-    return execFileSync('git', ['ls-files', 'src', 'desktop', 'scripts'], { cwd: root, encoding: 'utf8' })
-        .split(/\r?\n/).filter(path => SOURCE.test(path) && !NOT_RUNTIME.test(path))
+    const files: string[] = []
+    const walk = (relative: string) => {
+        const absolute = join(root, relative)
+        if (!existsSync(absolute)) return
+        for (const entry of readdirSync(absolute, { withFileTypes: true })) {
+            if (entry.name === 'node_modules' || entry.name === 'dist' || entry.name.startsWith('.')) continue
+            const path = `${relative}/${entry.name}`
+            if (entry.isDirectory()) walk(path)
+            else if (SOURCE.test(path) && !NOT_RUNTIME.test(path)) files.push(path)
+        }
+    }
+    for (const folder of ['src', 'desktop', 'scripts']) walk(folder)
+    return files.sort()
 }
 
 export function scanOwnerNeutral(root = process.cwd()): OwnerNameLeak[] {
