@@ -296,7 +296,11 @@ Namespace, Quota, LimitRange und Rechte legt der Owner einmal selbst an:
 `kubectl apply -f deploy/kubernetes/xaventra-test-rbac.yaml` (Role nur in
 `xaventra-test`: `pods` create/get/list/watch/delete, `pods/log` get; keine
 ClusterRole; RoleBinding auf `xaventra/xaventra-control`; Pod Security
-`baseline` erzwungen; höchstens 5 Pods, 2 CPU, 2Gi). Rückweg:
+`baseline` erzwungen; höchstens 5 Pods, 2 CPU, 2Gi). Netz per NetworkPolicy
+`xaventra-test-egress` (k3s setzt sie mit kube-router durch): nichts von außen
+herein; hinaus nur DNS zu CoreDNS und Internet — keine privaten Netze
+(10/8, 172.16/12, 192.168/16), kein Tailnet (100.64/10), kein Link-Local, kein
+Pod-/Service-Netz des Clusters. Rückweg:
 `kubectl delete -f deploy/kubernetes/xaventra-test-rbac.yaml`.
 
 ## Sandbox mit `kata-clh`

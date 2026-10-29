@@ -79,3 +79,43 @@ subjects:
   - kind: ServiceAccount
     name: xaventra-control
     namespace: xaventra
+---
+# Netz (Alfred „ja“ 29.10.): Namensauflösung und Internet ja, private Netze,
+# Tailnet und Cluster nein, nichts von außen herein. k3s setzt das über den
+# eingebauten kube-router-Netpol-Controller durch.
+# Rückweg nur für diese Regel:
+#   kubectl -n xaventra-test delete networkpolicy xaventra-test-egress
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: xaventra-test-egress
+  namespace: xaventra-test
+spec:
+  podSelector: {}
+  policyTypes: ["Ingress", "Egress"]
+  # Ingress: keine Regel = nichts herein.
+  egress:
+    # DNS nur zu CoreDNS (kube-dns) in kube-system.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    # Internet, aber keine privaten Netze, kein Tailnet/CGNAT, kein Link-Local
+    # (Cloud-Metadaten), kein Pod-/Service-Netz von k3s (10.42/16, 10.43/16).
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 100.64.0.0/10
+              - 169.254.0.0/16
+              - 10.42.0.0/16
+              - 10.43.0.0/16
