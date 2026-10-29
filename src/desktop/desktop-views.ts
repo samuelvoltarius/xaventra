@@ -242,6 +242,8 @@ export async function collectArbeit(): Promise<Record<string, unknown>> {
         aktuell: Number(mission.currentStep) || 0, createdAt: iso(mission.createdAt), finishedAt: iso(mission.finishedAt),
         fortschritt: (mission.progressUpdates || []).slice(-5).map((line: unknown) => clean(line, 240)),
     } : null
+    // 2.90.x: remembered /freigabe approvals (trust.json `gemerkt`); revoke with /freigaben widerruf <id> in the chat.
+    const remembered = await attempt('Gemerkte Freigaben', async () => (await import('../core/action-policy.js')).rememberedApprovals(), problems)
     const delegations = await attempt('Delegationen', async () => (await import('../core/delegation.js')).getDelegationService().list({ limit: 15 }), problems)
     const planner = await attempt('Planer', async () => (await import('../planner/runtime.js')).getPlannerRuntime(), problems)
     // Only title, rhythm and times; never the job payload (reminder texts stay in the planner).
@@ -265,6 +267,10 @@ export async function collectArbeit(): Promise<Record<string, unknown>> {
         geplant: planner ? jobs : null,
         vertrauen: (state?.promoted || []).map(item => ({ art: clean(item.kind, 60), text: clean(item.text, 200), seit: iso(item.promotedAt) })),
         erlaubt: (state?.grants || []).map(item => ({ art: clean(item.kind, 60), was: clean(item.subject, 120), seit: iso(item.grantedAt) })),
+        gemerkteFreigaben: (remembered || []).map(item => ({
+            id: clean(item.id, 12), ziel: clean(item.target, 200), seit: iso(item.grantedAt), genutzt: Number(item.uses) || 0,
+            zuletzt: iso(item.lastUsedAt), widerrufen: `/freigaben widerruf ${clean(item.id, 12)}`,
+        })),
         probleme: problems,
     }
 }

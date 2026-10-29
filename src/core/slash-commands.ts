@@ -122,6 +122,7 @@ export const COMMAND_MENU: ReadonlyArray<CommandMenuEntry> = Object.freeze([
     { command: 'prozeduren', description: '📚 Gelernte Prozeduren, einzeln an/aus (Owner)', gruppe: 'Gelerntes' },
     { command: 'werkzeuge', description: '🧰 Selbst gebaute Werkzeuge (Owner)', gruppe: 'Gelerntes' },
     { command: 'entscheidungen', description: '🧾 Gemerkte Entscheidungen & Warum (Owner)', gruppe: 'Gelerntes' },
+    { command: 'freigaben', description: '📌 Gemerkte Freigaben ohne Code, widerrufen (Owner)', gruppe: 'Gelerntes' },
     { command: 'memory', description: '💾 Memory-Status', gruppe: 'Gelerntes' },
     // Aufträge
     { command: 'auftrag', description: '🎯 Auftrag starten/verwalten', gruppe: 'Aufträge' },
@@ -3405,7 +3406,10 @@ _Deaktivieren: /verbose off_`
             // Not in COMMAND_MINIMUM_ROLE, so owner-only; checked again here.
             if (requestPermission !== 'owner') return '🔒 Freigaben kann nur der Owner erteilen.'
             // 2.89.13 (Quiet-Hub relay): only the first line - an appended "(Antworte knapp …)" must not join the detail.
-            const [toolName, ...rest] = (args.trim().split(/\r?\n/)[0] || '').split(/\s+/).filter(Boolean)
+            const firstLine = (args.trim().split(/\r?\n/)[0] || '').split(/\s+/).filter(Boolean)
+            // 2.90.x: `/freigabe merken <werkzeug> <detail>` = the „📌 merken“ button as text (Desktop, Hub, any channel).
+            const remember = firstLine[0] === 'merken'
+            const [toolName, ...rest] = remember ? firstLine.slice(1) : firstLine
             const detail = rest.join(' ').trim()
             // P9: a code is always bound to a concrete detail (file, entity, host or the
             // `#hash` the refusal names) — a tool-wide code would approve every call.
@@ -3413,11 +3417,40 @@ _Deaktivieren: /verbose off_`
                 return 'Nutzung: /freigabe <werkzeug> <detail> — gibt einen Einmal-Code aus (5 min, einmal, nur für dich, nur für genau dieses Detail). ' +
                     'Das Detail nennt die Ablehnung des Werkzeugs, z. B. /freigabe printer_start benchy.gcode, /freigabe execute_python #a1b2c3d4e5f6, /freigabe register_llm_provider <name>@<https-url>'
             }
-            const { toolApprovalTarget } = await import('../tools/owner-approval.js')
+            const { toolApprovalTarget, approvalDetail, rememberToolApproval, rememberRefusal, issueRememberOffer } = await import('../tools/owner-approval.js')
+            const by = `owner:${principalContext?.channel || 'chat'}:${principalContext?.principalId || from}`
+            if (remember) return (await rememberToolApproval(toolName, detail, by)).message
             const target = toolApprovalTarget(toolName, detail)
-            const token = issueSetupConfirmation(setupConfirmationPrincipal(principalContext?.channel, principalContext?.principalId || from), target)
-            return `🔓 Einmal-Freigabe für ${target} (5 min, nur einmal, nur für dich): ${token}
-Schick mir jetzt den Code in der nächsten Nachricht, z. B. „… Freigabecode ${token}“. Erneutes /freigabe erzeugt denselben Code.`
+            const principal = setupConfirmationPrincipal(principalContext?.channel, principalContext?.principalId || from)
+            const token = issueSetupConfirmation(principal, target)
+            const never = await rememberRefusal(toolName, detail)
+            const text = `🔓 Einmal-Freigabe für ${target} (5 min, nur einmal, nur für dich): ${token}
+Schick mir jetzt den Code in der nächsten Nachricht, z. B. „… Freigabecode ${token}“. Erneutes /freigabe erzeugt denselben Code.
+${never ? `🔒 Nicht merkbar (${never}) — braucht jedes Mal einen Code.` : `📌 Dauerhaft merken (nur genau dieses Ziel): Knopf „merken“ oder /freigabe merken ${toolName} ${approvalDetail(detail)}`}`
+            if (!never) {
+                try {
+                    const tg = await telegramForRequest(principalContext)
+                    const offer = tg ? await issueRememberOffer(principal, toolName, detail) : null
+                    if (tg && offer) {
+                        await tg.sendWithButtons(from, text, [[{ text: '📌 merken', callback_data: offer }]])
+                        return COMMAND_HANDLED
+                    }
+                } catch (error) { telegramButtonsFailed(error) }
+            }
+            return text
+        }
+
+        case 'freigaben':
+        {
+            // Not in COMMAND_MINIMUM_ROLE, so owner-only; checked again here.
+            if (requestPermission !== 'owner') return '🔒 Gemerkte Freigaben sieht und ändert nur der Owner.'
+            const { formatRememberedApprovals, forgetToolApproval } = await import('../tools/owner-approval.js')
+            const [sub = '', id = ''] = args.trim().split(/\s+/)
+            if (!sub) return formatRememberedApprovals()
+            if (sub === 'widerruf' || sub === 'widerrufen' || sub === 'vergessen') {
+                return forgetToolApproval(id, `owner:${principalContext?.channel || 'chat'}:${principalContext?.principalId || from}`)
+            }
+            return 'Nutzung: /freigaben | /freigaben widerruf <id>'
         }
 
         case 'preflight':

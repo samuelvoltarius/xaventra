@@ -32,6 +32,8 @@ export interface ExecutionPolicyContext {
     channel?: string
     nodeId?: string
     workspaceId?: string
+    /** 2.90.x: notes of remembered approvals used during this tool call (owner-approval.ts); the executor adds them to the result. */
+    approvalNotes?: string[]
 }
 
 export interface LifecyclePayload {

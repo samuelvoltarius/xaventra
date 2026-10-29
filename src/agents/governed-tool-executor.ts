@@ -51,8 +51,10 @@ export function createGovernedToolExecutor(options: GovernedToolExecutorOptions)
                 'nova.tool.name': name, 'nova.channel': channel, 'nova.run.id': idempotencyRunId,
             }, async () => {
                 const { withExecutionPolicyContext } = await import('../core/lifecycle-policy.js')
-                return withExecutionPolicyContext({ runId: idempotencyRunId, contractId: kernel.contract.id,
-                    userId, authUserId, channel, nodeId: process.env.NOVA_NODE_ID, workspaceId }, () => options.execute(name, args))
+                const approvalNotes: string[] = []
+                const result = await withExecutionPolicyContext({ runId: idempotencyRunId, contractId: kernel.contract.id,
+                    userId, authUserId, channel, nodeId: process.env.NOVA_NODE_ID, workspaceId, approvalNotes }, () => options.execute(name, args))
+                return withApprovalNotes(result, approvalNotes)
             }),
         })
         const value = execution.result as any
@@ -63,6 +65,29 @@ export function createGovernedToolExecutor(options: GovernedToolExecutorOptions)
         if (callId) options.record(callId, { idempotencyKey: key, executionInputHash })
         return execution.replayed ? markReplayed(execution.result) : execution.result
     }
+}
+
+/** 2.90.x: a call that ran on a remembered approval says so in its result
+ * (`gemerkteFreigabe`), so the answer can name it; other results stay as they are. */
+export function withApprovalNotes(result: unknown, notes: readonly string[]): unknown {
+    if (!notes.length) return result
+    const gemerkteFreigabe = notes.join('\n')
+    if (result && typeof result === 'object' && !Array.isArray(result)) return { ...(result as Record<string, unknown>), gemerkteFreigabe }
+    return { result, gemerkteFreigabe }
+}
+
+const REMEMBERED_NOTE = /📌 gemerkte Freigabe \[(f-[a-f0-9]{8})\] für (.{1,180}?) — ohne Code ausgeführt/g
+
+/** 2.90.x: the answer always names a remembered approval this turn used (never left to the model). */
+export function appendApprovalNotes(reply: string, executions: ReadonlyArray<{ result?: unknown; success?: boolean }>): string {
+    const seen = new Map<string, string>()
+    for (const execution of executions || []) {
+        if (execution?.success === false) continue
+        for (const match of String(execution?.result ?? '').matchAll(REMEMBERED_NOTE)) seen.set(match[1], match[2])
+    }
+    const lines = [...seen].filter(([id]) => !String(reply || '').includes(id))
+        .map(([id, target]) => `📌 Gemerkte Freigabe genutzt: ${target} [${id}] — widerrufen: /freigaben widerruf ${id}`)
+    return lines.length ? `${String(reply || '').trimEnd()}\n\n${lines.join('\n')}` : reply
 }
 
 /** A result served from the idempotency cache must never look like a fresh
