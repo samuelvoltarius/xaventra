@@ -12,6 +12,36 @@
   helpers on nodes with a screen, maps and routes, music, a maker helper for
   boards and sensors.
 
+## [2.90.2] — 2026-10-29
+
+Fixes from the Telegram acceptance of 2.90.0 and 2.90.1, plus remembered
+approvals. Contains everything of 2.90.1 (rolled back after its acceptance).
+
+### Added
+
+- **Freigaben merken.** Under every `/freigabe` answer there is a
+  „📌 merken“ button (Desktop/Hub: `/freigabe merken <werkzeug> <detail>`).
+  Exactly that target then runs without a one-time code; every use is
+  recorded and named in the answer. `/freigaben` lists them,
+  `/freigaben widerruf <id>` takes one back. Never rememberable: the car,
+  locks, doors, gates, alarm, scripts and automations, printing, deleting,
+  money, messages to others, Proxmox/Kubernetes, code/shell/restart, any
+  Home Assistant service, and any approval whose detail is only a hash.
+
+### Fixed
+
+- **"Wie geht's dir?" right after an update.** "Ich wurde gerade neu
+  gestartet" no longer counts as a claimed action; the answer is no longer
+  replaced by "Das habe ich gerade nicht hinbekommen".
+- **A refused hand-over ends at once.** When a node rejects a task, the
+  answer says "abgelehnt" with the reason (not "nicht erreichbar") and the
+  task ends there — no second hand-over, no wandering through status tools.
+- **A Telegram reply lost to a network failure is resent twice**, then
+  announced once with the next message ("bitte Frage wiederholen").
+- **The answer to an approval request keeps the asking tool.** Sending the
+  detail or the one-time code after a refusal offers that tool again (it was
+  missing, and the run wandered off).
+
 ## [2.90.1] — 2026-10-29
 
 Reliability after the Telegram acceptance of 2.89.15 and the peer test of
