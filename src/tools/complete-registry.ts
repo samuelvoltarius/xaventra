@@ -2756,6 +2756,11 @@ const meshTools: NovaTool[] = [
             while (Date.now() < deadline) {
                 await new Promise(resolve => setTimeout(resolve, 2_000))
                 const state = await getTaskResult(result.id)
+                // 2.89.16 (Abnahmen 2.89.12–15): ns1/ns2 answered with their own runner timeout sentence; that is
+                // no result of the task but a failed delegation.
+                if (state?.status === 'done' && /Das hat zu lange gedauert, ich war nicht rechtzeitig fertig/.test(String(state.result ?? ''))) {
+                    return { success: false, error: `Knoten ${result.to_node} ist mit der Aufgabe nicht rechtzeitig fertig geworden (Zeitlimit des Knotens) — kein Ergebnis.` }
+                }
                 if (state?.status === 'done') return `Ergebnis von ${result.to_node}:\n${String(state.result ?? '').slice(0, 6000)}`
                 if (state?.status === 'failed') return { success: false, error: `Knoten ${result.to_node} meldet Fehler: ${String(state.result ?? 'ohne Angabe').slice(0, 1000)}` }
             }
