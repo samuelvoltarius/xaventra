@@ -96,13 +96,18 @@ Entscheidung fast/balanced/deep/research), `src/core/prompt-budget.ts`,
 **Veraltet:** `/mission` ist Alias von `/auftrag`. `src/core/complexity-router.ts`
 ist nur noch Fassade von `context-policy.ts` ohne Importeur.
 
-**In Arbeit (2.90.0, noch nicht auf main):** „Kontext je Aufgabe" bringt
-`src/core/context-metrics.ts` (`/kontext`), `src/core/task-prompt.ts`
-(Prompt-Blöcke je Werkzeug-Route, Schalter off/shadow/on) und
-`src/core/lagebild.ts` (`/lage`), `src/core/turn-context.ts` (der eine
-Einhängepunkt vor der Prompt-Kappung plus Messzeile nach dem Lauf) und
-`src/core/context-switches.ts` (Schalter `context.*`). Wer das merged, trägt
-es hier als festen Teil der Pipeline ein.
+**Kontext je Aufgabe (2.90.0):** der eine Einhängepunkt vor der
+Prompt-Kappung ist `src/core/turn-context.ts` `prepareTurnPrompt` (Aufruf in
+`message-pipeline.ts` direkt vor `applySystemPromptBudget`, Messzeile `record`
+im `finally` nach dem Agentenlauf). Dahinter:
+`src/core/task-prompt.ts` (Prompt-Blöcke je Thema der Werkzeug-Route; lädt den
+Router erst im abgesicherten Schritt), `src/core/lagebild.ts` (gemessenes
+Selbstbild, `/lage`, Block `## LAGEBILD` geschützt), `src/core/context-metrics.ts`
+(`.nova-data/context-metrics.jsonl`, `/kontext`; die echte Modelleingabe misst
+`nova-runner.ts` als `contextStats`) und `src/core/context-switches.ts`
+(Schalter `context.metrics|taskPrompt|lagebild`, Umgebung `XAVENTRA_*` gewinnt).
+Neue Prompt-Blöcke bekommen ihr Thema über die Überschrift
+(`task-prompt.ts` `TOPIC_RULES`); ohne Thema bleiben sie immer drin.
 
 ### 3. Runner und Agenten
 
@@ -238,7 +243,12 @@ Nachfolge, Relay, Aufgaben auf anderen Knoten.
 `initMeshTransportRuntime` (Modus ha/direct/standalone). Register
 `src/mesh/mesh-registry.ts`. Leiter `src/mesh/leader-election.ts`. Ereignis-Hub
 `src/mesh/event-hub.ts` `startMeshHub`. Aufgaben auf anderem Knoten:
-`spawn_subagent` mit `mesh_node` (Bereich 3).
+`spawn_subagent` mit `mesh_node` (Bereich 3). Übergabe an einen im Satz
+genannten Knoten („gib … an ns1“, 2.90.0): `src/mesh/known-node-names.ts`
+`handoffTargetNode` (nur echte Knoten aus `mesh.json` und Peer-Profilen) →
+Live-Route `mesh-handoff` in `tool-router.ts` bietet `spawn_subagent` an,
+Pipeline-Block `## ÜBERGABE AN KNOTEN` nennt node_id und `handoffWaitSeconds`
+(bleibt unter der Werkzeug- und Laufgrenze).
 
 **Wichtige Dateien:** `mesh-transport-router.ts`, `transport-contracts.ts`,
 `mesh-policy.ts`, `mesh-identity.ts`, `relay-server.ts`,
@@ -462,6 +472,8 @@ streicht sie hier im selben Commit (oder markiert sie als erledigt mit Version).
 - **Empfehlung:** `spawn_subagent` mit `mesh_node` ist der Weg.
   `mesh_delegate` als dünnen Alias darauf umbauen (oder entfernen); „auto" an
   einer Stelle auflösen (`subagent-orchestrator`), nicht im Werkzeug.
+- 2.90.0 hält sich daran: die Übergabe-Route `mesh-handoff` bietet nur
+  `spawn_subagent` an, nicht `mesh_delegate`.
 
 ### D2 Zwei Werkzeug-Registries
 
