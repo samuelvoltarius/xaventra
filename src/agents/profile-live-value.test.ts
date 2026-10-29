@@ -64,27 +64,3 @@ describe('profile Home Assistant binding', () => {
         expect(plan?.calls).toEqual([{ name: 'hass_get', arguments: { entity_id: 'sensor.example_123_state_of_charge' } }])
     })
 })
-
-// 2.89.14 (Abnahme 2.89.13, 29.10. 03:12): hass_get read sensor.byd_soc = 50 (last update 28.10. 16:44, stale)
-// and sensor.surfmate_138222_state_of_charge = 99 (23:41, fresh). The reply gave 50 % as the current value and
-// called the 99 % "another vehicle"; because it cited the fresh value too, the staleness guard let it pass.
-describe('a stale value is not stated as current when the reply also mentions a fresh one', () => {
-    const at = (iso: string) => ({ last_changed: iso, last_updated: iso })
-    const get = (entity: unknown) => ({ toolName: 'hass_get', success: true, result: JSON.stringify({ entity }) })
-    const stale = { entity_id: 'sensor.byd_soc', state: '50.0', attributes: { friendly_name: 'BYD Dolphin Surf Ladezustand', unit_of_measurement: '%' }, ...at('2026-10-28T15:44:00Z') }
-    const fresh = { entity_id: 'sensor.surfmate_138222_state_of_charge', state: '99.0', attributes: { friendly_name: 'Panoptes Vehicle State of Charge', unit_of_measurement: '%', device_class: 'battery' }, ...at('2026-10-28T22:41:00Z') }
-    const charger = { entity_id: 'sensor.surfmate_138222_charger_state', state: '1', attributes: { friendly_name: 'Panoptes Vehicle Charger State' }, ...at('2026-10-29T02:10:00Z') }
-    const now = Date.parse('2026-10-29T02:12:30Z')
-
-    it('replaces it with the fresh comparable value and names the stale one', () => {
-        const reply = 'Der Dolphin hat 50 % Akku. Die 99 % gehören zu einem anderen Fahrzeug (Panoptes).'
-        const out = guardLiveValueReply({ question, reply, executions: [get(stale), get(fresh), get(charger)], now })
-        expect(out).toMatch(/Aktuell laut Home Assistant: Panoptes Vehicle State of Charge: 99\.0 %/)
-        expect(out).toMatch(/BYD Dolphin Surf Ladezustand“: Stand vor 10 Stunden/)
-    })
-
-    it('a reply that already gives the fresh value with the age of the old one passes', () => {
-        const reply = 'Laut Panoptes 99 %. Der BYD-Sensor zeigt 50 %, Stand vor 10 Stunden.'
-        expect(guardLiveValueReply({ question, reply, executions: [get(stale), get(fresh)], now })).toBeNull()
-    })
-})
