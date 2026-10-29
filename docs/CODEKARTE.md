@@ -336,6 +336,9 @@ Host-Agenten.
 Principal immer der Desktop-Besitzer). Direkt-Sitzungen
 `src/desktop-direct/runtime.ts` `startDesktopDirect` (standardmäßig aus).
 Bildschirm/Lenken: `src/sehen/` (`sehen-api.ts`). Host-Agenten: `src/host/`.
+Computer Use auf einem Knoten-Arbeitsplatz (eigener Labor-Computer): Arbeitsplatz
+`src/host/workstation-main.ts`, Mesh-Operation `input` in `src/mesh/node-capture.ts`,
+Werkzeuge `mesh_screenshot` + `mesh_desktop_input` (`docs/COMPUTER_USE.md`).
 
 **Relay:** Das Hub-Relay (Art `xaventra`) liegt **nicht** in diesem Repo; es
 spricht nur `/api/desktop` an. „Relay" in diesem Repo = Mesh-Relay
@@ -677,7 +680,8 @@ Belegte Widersprüche:
 | `list_sub_agents` / `list_subagents` | L8 (Kompatibilität) vs. Orchestrator | `list_subagents` |
 | `evolve_self` / `self_evolve` | gleiche Funktion; `evolve_self` verspricht Build/Merge und meldet einen eingereihten Patch als „fehlgeschlagen"; `soul.ts` nennt noch `evolve_self` | `self_evolve` |
 | `screen_capture` / `desktop_screenshot` | lokal scrot vs. authentifizierter Desktop-Client | `desktop_screenshot` |
-| `desktop_control` / `desktop_input` | App-Oberfläche vs. Betriebssystem-Eingabe — verschieden; Pipeline-Retry-Prompt (~2438) nennt fälschlich `desktop_control` für Klicken/Tippen | beide, Prompt korrigieren |
+| `desktop_control` / `desktop_input` | App-Oberfläche vs. Betriebssystem-Eingabe — verschieden; Retry-Prompt jetzt `ACTION_RETRY_PROMPT` in `src/core/unverified-claims.ts` (Klicken/Tippen → `desktop_input`/`mesh_desktop_input`) | beide |
+| `desktop_input` / `mesh_desktop_input` | lokal freigegebener Desktop vs. Arbeitsplatz eines Knotens (Mesh, frische Aufnahme als Beleg) — verschieden | beide |
 | `web_search` / `searxng_search` / `google_search` / `browser_search` / `brave_search` / `tavily_search` | sechs Suchwege | `web_search` als Einstieg |
 | `remember` / `kg_remember` / `knowledge_store` | siehe D4 | Governance |
 | `check_updates` / `pull_update` / `mesh_update` | `pull_update` Stub | `check_updates`, `mesh_update` |
@@ -701,7 +705,7 @@ verantwortet. Der Check (unten) schlägt fehl, wenn ein Werkzeug fehlt.
 - **Mesh/Knoten (Bereich 8):** `mesh_delegate` `mesh_route` `mesh_repo_task`
   `mesh_capabilities` `mesh_deploy` `mesh_download_file` `mesh_exchange_list`
   `mesh_exchange_send` `mesh_exchange_write` `mesh_inspect_url` `mesh_nodes`
-  `mesh_recommendations` `mesh_scan` `mesh_screenshot` `mesh_services`
+  `mesh_recommendations` `mesh_scan` `mesh_screenshot` `mesh_desktop_input` `mesh_services`
   `mesh_status` `mesh_strengths` `mesh_transport_status` `mesh_update`
 - **Infra (Bereich 9):** `proxmox_vm` `cluster_status` `docker_control` `docker_logs`
   `docker_ps` `docker_status` `ssh_command` `port_scan` `network_info`

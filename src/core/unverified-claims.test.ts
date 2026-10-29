@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
     describesScreenWithoutActing, guardUnverifiedClaims, observationOnlyRun,
-    SCREEN_ONLY_ACTION_REPLY,
+    SCREEN_ONLY_ACTION_REPLY, ACTION_RETRY_PROMPT,
 } from './unverified-claims.js'
 
 // 2.88.2 (live 07.10.2026, Telegram 03:00): "Ich habe gerade http://localhost:8080 und
@@ -46,5 +46,16 @@ describe('a screenshot is not a handlung', () => {
     it('has an honest sentence, not another screen description', () => {
         expect(SCREEN_ONLY_ACTION_REPLY).toMatch(/keine Handlung|nichts geöffnet/)
         expect(describesScreenWithoutActing(SCREEN_ONLY_ACTION_REPLY)).toBe(false)
+    })
+})
+
+describe('action retry prompt (Codekarte D13)', () => {
+    it('sends clicking and typing to the input tools, including the node workstation', () => {
+        expect(ACTION_RETRY_PROMPT).toMatch(/Klicken, Tippen oder Seite-Öffnen auf dem eigenen Arbeitsplatz eines Knotens mesh_desktop_input/)
+        expect(ACTION_RETRY_PROMPT).toMatch(/lokal freigegebenen Desktop desktop_input/)
+        // desktop_control steers the Xaventra app UI only, never OS clicks/typing.
+        expect(ACTION_RETRY_PROMPT).toMatch(/desktop_control nur für die Xaventra-App-Oberfläche/)
+        expect(ACTION_RETRY_PROMPT).not.toMatch(/\(desktop_control oder desktop_input\)/)
+        expect(ACTION_RETRY_PROMPT).toMatch(/Screenshot allein ist keine Handlung/)
     })
 })
