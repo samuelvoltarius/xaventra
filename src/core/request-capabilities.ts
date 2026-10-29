@@ -85,11 +85,19 @@ export function isKubernetesQuestion(text: string): boolean {
     return /\b(?:kubernetes|k8s|kube|clusters?|pods?|daemonsets?|statefulsets?|workloads?|workers?|kubectl|helm)\b/i.test(value)
 }
 
+/** 2.89.15: test pods in xaventra-test — create, delete, list (tool cluster_test_pod). */
+export function isKubernetesTestPodRequest(text: string): boolean {
+    const value = String(text ?? '').trim()
+    if (!value || value.startsWith('/') || !isKubernetesQuestion(value)) return false
+    return /\b(?:test-?pods?|xaventra-test)\b/i.test(value)
+        || (/\bpods?\b/i.test(value) && /\b(?:anleg\w*|leg(?:e|t)?|erstell\w*|erzeug\w*|lösch\w*|loesch\w*|entfern\w*)(?![äöüß\w])/i.test(value))
+}
+
 /** Read-only cluster status/pods/events — the deterministic first tool (like hass_status). */
 export function isKubernetesStatusQuestion(text: string): boolean {
     const value = String(text ?? '').trim()
     if (!value || value.startsWith('/') || containsHttpUrl(value) || mentionsScreenshot(value)) return false
-    if (!isKubernetesQuestion(value)) return false
+    if (!isKubernetesQuestion(value) || isKubernetesTestPodRequest(value)) return false
     if (!/\b(?:l(?:ä|ae)uft|laufen|l(?:ä|ae)uf|status|welche[nrs]?|was\b|wo\b|zeig\w*|list\w*|event\w*|pod\w*|ereignis\w*|neustarts?|restarts?)\b/i.test(value)) return false
     return !/\b(?:neustart\w*|restart\w*|starte?|stoppe?|beende|installier\w*|deinstallier\w*|lösch\w*|loesch\w*|entfern\w*|skalier\w*|scale|update\w*|aktualisier\w*|deploy\w*|exec|shell|ssh|kubectl|helm|konfigurier\w*|label\w*|patch\w*|schalt\w*|reparier\w*)\b/i.test(value)
 }

@@ -16,6 +16,10 @@
  *   the transport: foreign namespaces, cluster-scoped paths, Secrets,
  *   pods/exec|attach|portforward|proxy, tokens, RBAC, PVCs, scale, DELETE and
  *   POST are refused without a request.
+ * - One write exception (2.89.15): Pods in exactly the namespace
+ *   `xaventra-test` — create from the fixed template, delete only own
+ *   labelled pods, every create with the owner's approval. Rules and template:
+ *   src/infra/kubernetes-test-pods.ts.
  * - Workers are DaemonSets (one pod per owner-labelled node). There is no
  *   replica count to scale and no autoscaler: more workers = the owner labels
  *   one more node. Actions:
@@ -32,6 +36,7 @@ import { request as httpsRequest } from 'node:https'
 import { resolveConfigPath } from '../config/config-path.js'
 import { redactSecrets } from '../security/secret-redaction.js'
 import { SERVICE_ACCOUNT_DIR, detectKubernetes } from './kubernetes-node.js'
+import { KUBE_TEST_NAMESPACE, TEST_POD_LABEL, TEST_POD_SELECTOR, checkTestNamespaceRequest } from './kubernetes-test-pods.js'
 
 export const DEFAULT_CONTROL_FILE = '/etc/xaventra/cluster/control.json'
 export const RESTARTED_AT_ANNOTATION = 'kubectl.kubernetes.io/restartedAt'
@@ -42,7 +47,7 @@ const MAX_LOG_LINES = 500
 /** Documented, refused, and without any code path. */
 export const KUBERNETES_NEVER: readonly string[] = Object.freeze([
     'rohes kubectl (Nie-Liste) — nur feste Aktionen über die API',
-    'fremde Namespaces und cluster-weite Objekte (Nodes, Labels, Namespaces, RBAC)',
+    'fremde Namespaces und cluster-weite Objekte (Nodes, Labels, Namespaces, RBAC) — einzige Ausnahme: Test-Pods in xaventra-test',
     'Secrets lesen, auflisten oder ändern; Tokens anfordern',
     'pods/exec, attach, portforward, proxy',
     'PersistentVolumeClaims, Daten oder Namespaces löschen',
@@ -120,7 +125,7 @@ export interface KubeRequest {
     method: 'GET' | 'PATCH' | 'POST' | 'PUT' | 'DELETE'
     path: string
     body?: unknown
-    contentType?: 'application/merge-patch+json' | 'application/strategic-merge-patch+json'
+    contentType?: 'application/merge-patch+json' | 'application/strategic-merge-patch+json' | 'application/json'
 }
 export interface KubeResponse { status: number; data: any }
 export type KubeTransport = (request: KubeRequest) => Promise<KubeResponse>
@@ -159,11 +164,14 @@ export function checkKubeRequest(request: KubeRequest, policy: ControlPolicy): s
     else if (segments[0] === 'apis' && segments.length >= 3) { group = segments[1]; rest = segments.slice(3); if (segments[2] !== 'v1') return 'API-Version nicht erlaubt' }
     else return 'Pfad nicht erlaubt'
     if (rest[0] !== 'namespaces' || rest.length < 3) return 'cluster-weite Objekte sind tabu'
-    if (rest[1] !== policy.namespace) return `fremder Namespace (${rest[1]}) ist tabu`
+    const testNamespace = rest[1] === KUBE_TEST_NAMESPACE && rest[1] !== policy.namespace
+    if (rest[1] !== policy.namespace && !testNamespace) return `fremder Namespace (${rest[1]}) ist tabu`
     const [resource, name, sub, ...extra] = rest.slice(2)
     if (extra.length) return 'Pfad nicht erlaubt'
     if (name !== undefined && !DNS_SUBDOMAIN.test(name)) return 'ungültiger Objektname'
     const method = request.method
+    // 2.89.15: the only namespace with create/delete — and there only pods.
+    if (testNamespace) return checkTestNamespaceRequest(method, group, resource, name, sub, request.body)
 
     if (group === 'core' && resource === 'pods') {
         if (method !== 'GET') return 'Pods werden nie gelöscht oder geändert'
@@ -210,7 +218,7 @@ export function createKubeTransport(options: { server: string; caPem: string; to
         const body = req.body === undefined ? undefined : JSON.stringify(req.body)
         const headers: Record<string, string> = { Authorization: `Bearer ${token}`, Accept: 'application/json' }
         if (body !== undefined) {
-            headers['Content-Type'] = req.contentType || 'application/merge-patch+json'
+            headers['Content-Type'] = req.contentType || (req.method === 'PATCH' ? 'application/merge-patch+json' : 'application/json')
             headers['Content-Length'] = String(Buffer.byteLength(body))
         }
         const request = httpsRequest({ host, port, method: req.method, path: req.path, headers, ca: options.caPem, servername: host, rejectUnauthorized: true }, response => {
@@ -250,6 +258,8 @@ export interface WorkloadStatus {
 export interface PodStatus { name: string; workload: string; phase: string; ready: boolean; restarts: number; node: string }
 export interface ClusterEvent { type: string; reason: string; message: string; object: string; at: string; count: number }
 export interface ClusterStatus { namespace: string; release: string; workerNodeLabel: string; workloads: WorkloadStatus[]; pods: PodStatus[] }
+
+export interface TestPodStatus { name: string; phase: string; node: string; created: string; image: string }
 
 export interface ChartChange { path: string; value: string }
 export interface ChartPlan {
@@ -405,6 +415,55 @@ export class KubernetesClient {
                 ? `${w.name}: Neustart angestoßen (Kubernetes tauscht den Pod je Knoten nacheinander; nie zwei gleichzeitig auf einem Knoten).`
                 : `${w.name}: Neustart angestoßen.`,
         }
+    }
+
+    // -- Test pods (only xaventra-test) ---------------------------------------
+
+    private testPodPath(name?: string, sub?: string): string {
+        return [`/api/v1/namespaces/${KUBE_TEST_NAMESPACE}/pods`, name, sub].filter(Boolean).join('/')
+    }
+
+    /** Own labelled pods in xaventra-test. */
+    async listTestPods(): Promise<TestPodStatus[]> {
+        const response = await this.request({ method: 'GET', path: `${this.testPodPath()}?labelSelector=${encodeURIComponent(TEST_POD_SELECTOR)}` })
+        return (response.data?.items || [])
+            .filter((pod: any) => pod?.metadata?.labels?.[TEST_POD_LABEL.key] === TEST_POD_LABEL.value)
+            .map((pod: any): TestPodStatus => ({
+                name: text(pod?.metadata?.name, 63), phase: text(pod?.status?.phase, 20) || 'Unknown', node: text(pod?.spec?.nodeName, 253),
+                created: text(pod?.metadata?.creationTimestamp, 40), image: text(pod?.spec?.containers?.[0]?.image, 200),
+            }))
+    }
+
+    /** POST of a template pod (the guard re-validates the body). Only after the owner's approval. */
+    async createTestPod(pod: any): Promise<KubeActionResult> {
+        const response = await this.request({ method: 'POST', path: this.testPodPath(), body: pod, contentType: 'application/json' })
+        const name = text(response.data?.metadata?.name || pod?.metadata?.name, 63)
+        this.log(`[Kubernetes] Test-Pod ${name} in ${KUBE_TEST_NAMESPACE} angelegt`)
+        return { ok: true, requested: true, message: `Test-Pod ${name} in ${KUBE_TEST_NAMESPACE} angelegt (Phase ${text(response.data?.status?.phase, 20) || 'Pending'}).` }
+    }
+
+    /** Deletes only an own labelled pod: read first, then delete exactly that uid. */
+    async deleteTestPod(name: string): Promise<KubeActionResult> {
+        if (!DNS_SUBDOMAIN.test(String(name || ''))) return { ok: false, requested: false, message: 'Ungültiger Pod-Name.' }
+        const current = await this.request({ method: 'GET', path: this.testPodPath(name) })
+        const labels = current.data?.metadata?.labels || {}
+        if (labels[TEST_POD_LABEL.key] !== TEST_POD_LABEL.value) {
+            return { ok: false, requested: false, message: `Pod ${text(name, 63)} trägt nicht das Label ${TEST_POD_SELECTOR} — Xaventra löscht nur eigene Pods. Nichts gelöscht.` }
+        }
+        const uid = String(current.data?.metadata?.uid || '')
+        if (!uid) return { ok: false, requested: false, message: 'Pod ohne uid — nichts gelöscht.' }
+        await this.request({ method: 'DELETE', path: this.testPodPath(name), contentType: 'application/json', body: { apiVersion: 'v1', kind: 'DeleteOptions', preconditions: { uid } } })
+        this.log(`[Kubernetes] Test-Pod ${name} in ${KUBE_TEST_NAMESPACE} gelöscht`)
+        return { ok: true, requested: true, message: `Test-Pod ${text(name, 63)} in ${KUBE_TEST_NAMESPACE} gelöscht.` }
+    }
+
+    async testPodLogs(name: string, tailLines = 100): Promise<string> {
+        if (!DNS_SUBDOMAIN.test(String(name || ''))) throw new Error('Ungültiger Pod-Name')
+        const current = await this.request({ method: 'GET', path: this.testPodPath(name) })
+        if (current.data?.metadata?.labels?.[TEST_POD_LABEL.key] !== TEST_POD_LABEL.value) throw new Error(`Pod ${name} ist kein eigener Test-Pod.`)
+        const tail = Math.min(MAX_LOG_LINES, Math.max(1, Math.round(Number(tailLines) || 100)))
+        const response = await this.request({ method: 'GET', path: `${this.testPodPath(name, 'log')}?tailLines=${tail}` })
+        return redactSecrets(String(typeof response.data === 'string' ? response.data : JSON.stringify(response.data ?? ''))).slice(-64 * 1024)
     }
 
     // -- Chart update ---------------------------------------------------------

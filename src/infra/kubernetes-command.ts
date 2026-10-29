@@ -11,6 +11,9 @@
  *   owner labelled. Switching workers on/off or adding nodes is the owner's
  *   job (helm, node labels); /cluster explains it and sends nothing.
  * - Workers (NOVA_NODE_ONLY=true) never act and never talk to the owner.
+ * - 2.89.15: test pods in xaventra-test (runTestPodAction, tool
+ *   cluster_test_pod) — create only with the owner's approval for exactly this
+ *   pod, delete only own labelled pods, both only with the Main lease.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -19,6 +22,8 @@ import {
 } from '../core/approval-cards.js'
 import type { NodeProfile } from '../core/node-profile.js'
 import { formatLabelSuggestions } from './kubernetes-node.js'
+import { KUBE_TEST_NAMESPACE, buildTestPod, type TestPodInput } from './kubernetes-test-pods.js'
+import { approvalDetailOf } from '../tools/owner-approval.js'
 import {
     KUBERNETES_NEVER, loadKubernetesRuntime, parseChartChanges, readKubernetesRawConfig, scaleExplanation,
     type ChartPlan, type ClusterEvent, type ClusterStatus, type KubernetesRuntime,
@@ -216,6 +221,54 @@ export async function startClusterControl(deps: ClusterDeps = {}): Promise<{ sta
     registerKubernetesCardExecutors(deps)
     const workers = Object.values(runtime.policy.workloads).filter(w => w.kind === 'DaemonSet').map(w => w.name)
     return { started: true, reason: `Steuerung aktiv (Namespace ${runtime.policy.namespace}; Worker-DaemonSets: ${workers.join(', ') || 'keine'}; keine Auto-Skalierung)` }
+}
+
+// ---------------------------------------------------------------------------
+// Test pods (xaventra-test)
+// ---------------------------------------------------------------------------
+
+export type TestPodAction =
+    | { art: 'liste' }
+    | { art: 'logs'; name: string; zeilen?: number }
+    | { art: 'loeschen'; name: string }
+    /** approve(detail) returns null when the owner approved exactly this pod, else the refusal. */
+    | { art: 'anlegen'; input: TestPodInput; approve: (detail: string, summary: string) => Promise<string | null> }
+
+/**
+ * Order for writes: worker? → valid template? → runtime → Main lease → owner
+ * approval (create) or own-label check (delete) → one request. A refusal at any
+ * step sends nothing.
+ */
+export async function runTestPodAction(action: TestPodAction, deps: ClusterDeps = {}): Promise<{ ok: boolean; message: string }> {
+    if (isWorker(deps)) return { ok: false, message: WORKER_ONLY_TEXT }
+    let build: ReturnType<typeof buildTestPod> | null = null
+    if (action.art === 'anlegen') {
+        build = buildTestPod(action.input)
+        if (build.ok === false) return { ok: false, message: `${build.reason} Nichts angelegt.` }
+    }
+    const runtime = await runtimeOf(deps)
+    if (runtime.ok === false) return { ok: false, message: `Kubernetes-Steuerung ist aus: ${runtime.reason}` }
+    try {
+        if (action.art === 'liste') {
+            const pods = await runtime.client.listTestPods()
+            if (!pods.length) return { ok: true, message: `Keine eigenen Test-Pods in ${KUBE_TEST_NAMESPACE}.` }
+            return { ok: true, message: [`*Test-Pods in ${KUBE_TEST_NAMESPACE}*`, ...pods.map(pod => `• ${pod.name}: ${pod.phase}${pod.node ? ` auf ${pod.node}` : ''} · ${pod.image}`)].join('\n') }
+        }
+        if (action.art === 'logs') {
+            const text = await runtime.client.testPodLogs(action.name, action.zeilen ?? 100)
+            return { ok: true, message: `*Logs ${action.name}* (letzte Zeilen, Geheimnisse geschwärzt)\n${text.slice(-3500)}` }
+        }
+        const fence = await fenced(deps, action.art === 'anlegen' ? 'k8s:test-pod-create' : 'k8s:test-pod-delete')
+        if (!fence.ok) return { ok: false, message: `Keine Main-Lease (${fence.reason}) — nichts geändert.` }
+        if (action.art === 'loeschen') return await runtime.client.deleteTestPod(action.name)
+        const { pod, summary } = build as Extract<typeof build, { ok: true }>
+        const refusal = await action.approve(approvalDetailOf(pod), summary)
+        if (refusal) return { ok: false, message: `${refusal}\nGeplant: ${summary}` }
+        const result = await runtime.client.createTestPod(pod)
+        return { ok: result.ok, message: `${result.message}\n${summary}` }
+    } catch (error) {
+        return { ok: false, message: safe(error) }
+    }
 }
 
 // ---------------------------------------------------------------------------

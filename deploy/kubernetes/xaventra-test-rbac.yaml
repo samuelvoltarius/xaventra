@@ -1,0 +1,81 @@
+# Test-Pods für Xaventra (2.89.15) — Namespace xaventra-test.
+#
+# Einmal vom Owner angelegt (nicht Teil des Helm-Charts, das nur den eigenen
+# Namespace kennt):
+#   kubectl apply -f deploy/kubernetes/xaventra-test-rbac.yaml
+# Zurück: kubectl delete -f deploy/kubernetes/xaventra-test-rbac.yaml
+#
+# Das Steuer-Konto xaventra/xaventra-control darf hier NUR Pods anlegen,
+# lesen, Logs lesen und löschen. Keine Secrets, kein exec/attach/portforward/
+# proxy, keine anderen Ressourcen, keine ClusterRole. RBAC kann das Löschen
+# nicht auf ein Label einschränken: dass nur Pods mit managed-by=xaventra
+# gelöscht werden, prüft der Adapter (src/infra/kubernetes-test-pods.ts) vor
+# jedem DELETE (und löscht mit uid-Vorbedingung genau den geprüften Pod).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: xaventra-test
+  labels:
+    app.kubernetes.io/part-of: xaventra
+    # Zweite Sperre neben dem Code: kein hostNetwork/hostPID/hostPath/privileged.
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/warn: restricted
+---
+# Obergrenze für alles im Namespace, auch wenn der Code versagt.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: xaventra-test-quota
+  namespace: xaventra-test
+spec:
+  hard:
+    pods: "5"
+    requests.cpu: "2"
+    requests.memory: 2Gi
+    limits.cpu: "2"
+    limits.memory: 2Gi
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: xaventra-test-limits
+  namespace: xaventra-test
+spec:
+  limits:
+    - type: Container
+      max:
+        cpu: "1"
+        memory: 1Gi
+      default:
+        cpu: 250m
+        memory: 128Mi
+      defaultRequest:
+        cpu: 250m
+        memory: 128Mi
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: xaventra-test-pods
+  namespace: xaventra-test
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["create", "get", "list", "watch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: xaventra-test-pods
+  namespace: xaventra-test
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: xaventra-test-pods
+subjects:
+  - kind: ServiceAccount
+    name: xaventra-control
+    namespace: xaventra
