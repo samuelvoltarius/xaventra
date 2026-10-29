@@ -12,6 +12,30 @@
   helpers on nodes with a screen, maps and routes, music, a maker helper for
   boards and sensors.
 
+## [2.90.0] — 2026-10-29
+
+Context per task, step 1: measure, and build the smaller prompts in shadow.
+Nothing the model sees changes with the defaults.
+
+### Added
+
+- **Context measurement per turn.** One line per turn with a model:
+  system prompt as built and as sent, whether and which blocks the budget
+  cut, the whole model input (all system messages, history, tool schemas),
+  model calls, tool calls and self-description calls. Sizes and headings
+  only, never text. Owner view: `/kontext`. Switch `context.metrics`.
+- **Task prompt (shadow).** Every prompt block gets a topic from its heading;
+  a turn keeps the core blocks plus the blocks that match its tool route
+  (smart home, nodes, files, self, memory, social). In `shadow` it is built
+  and measured next to the old prompt — including which blocks the old cut
+  removed that it would keep. `on` sends it. Switch `context.taskPrompt`.
+- **Lagebild (shadow).** One measured picture instead of the fixed soul text
+  "you run on the user's PC": where Xaventra runs (VM on Proxmox), which
+  model, the nodes with version and skills, the Proxmox pool with free room,
+  whether Kubernetes is connected, what is missing. `/lage` shows it. With
+  `on` it goes into the prompt, protected from the cut. Switch
+  `context.lagebild`.
+
 ## [2.89.15] — 2026-10-29
 
 Reliability after the Telegram acceptance of 2.89.14.
