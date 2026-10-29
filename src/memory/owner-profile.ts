@@ -246,9 +246,43 @@ export function contradictsProfile(profile: OwnerProfile, content: string): { en
             if (typeof fact === 'string') continue
             const terms = [fact.attribute, ...(fact.alsoMatches || [])].map(norm).filter(Boolean)
             if (terms.some(term => text.includes(term)) && !text.includes(norm(fact.value))) return { entity, fact }
+            if (breedContradicts(entity, fact, content)) return { entity, fact }
         }
     }
     return null
+}
+
+/** Common dog and cat breeds (lower case, hyphens as spaces); only used against a profile "Rasse". */
+const BREEDS = [
+    'labrador', 'retriever', 'golden retriever', 'schäferhund', 'beagle', 'pudel', 'dackel', 'collie', 'border collie',
+    'husky', 'boxer', 'dobermann', 'rottweiler', 'chihuahua', 'mops', 'terrier', 'jack russell', 'yorkshire', 'spitz',
+    'malteser', 'havaneser', 'bulldogge', 'australian shepherd', 'aussie', 'sennenhund', 'dalmatiner', 'windhund',
+    'greyhound', 'whippet', 'spaniel', 'setter', 'weimaraner', 'vizsla', 'shih tzu', 'labradoodle', 'goldendoodle',
+    'malinois', 'akita', 'shiba', 'samojede', 'neufundländer', 'bernhardiner', 'dogge', 'ridgeback', 'podenco', 'galgo',
+    'pinscher', 'schnauzer', 'mischling',
+    'perser', 'maine coon', 'siam', 'bengal', 'britisch kurzhaar', 'kartäuser', 'ragdoll', 'sphynx', 'waldkatze',
+]
+const fold = (value: string) => norm(value).replace(/-/g, ' ')
+const BREED_SUFFIX = '(?: ?(?:katze|kater|hund|hündin|rüde|mix|welpe))?'
+
+/**
+ * 2.90.1: "Luna ist ein Labrador" contradicts the profile's "Rasse: Collie" without the word "Rasse". Only an
+ * is-a statement about the same animal in one sentence counts ("<Name> ist ein [bis zu drei Wörter] <Rasse>"),
+ * so a colour ("ein grauer Hund") or another dog mentioned in passing is never one; a breed that is part of the
+ * profile value (Labrador → "Labrador-Mischling") neither.
+ */
+function breedContradicts(entity: ProfileEntity, fact: ProfileAttribute, content: string): boolean {
+    if (norm(fact.attribute) !== 'rasse') return false
+    const value = fold(fact.value)
+    const sentences = String(content || '').split(/[.!?\n]+/).map(fold).filter(Boolean)
+    const names = [entity.name, ...entity.aliases].map(fold).filter(Boolean).map(escapeRe).join('|')
+    for (const breed of BREEDS) {
+        // A breed inside the profile value or around it is a refinement (Collie / Border Collie), not a contradiction.
+        if (value.includes(breed) || breed.includes(value)) continue
+        const isA = new RegExp(`(?<![\\p{L}\\p{N}])(?:${names}) (?:ist|war) (?:ein |eine )?(?:[\\p{L}]+ ){0,3}?${escapeRe(breed)}${BREED_SUFFIX}(?![\\p{L}\\p{N}])`, 'u')
+        if (sentences.some(sentence => isA.test(sentence))) return true
+    }
+    return false
 }
 
 let reconciledSignature = ''

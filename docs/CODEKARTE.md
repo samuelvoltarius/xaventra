@@ -566,7 +566,9 @@ Belegte Widersprüche:
 - Derselbe Fakt (z. B. Hunde des Besitzers) kann im Profil, in Governance
   (+Projektionen), als Graph-Kante und im Wissensspeicher mit verschiedenen
   Werten stehen. `reconcileProfileWithMemory` (`owner-profile.ts:260`) läuft nur
-  in der Pipeline und `/memory recall`, prüft nur strukturierte Fakten; die
+  in der Pipeline und `/memory recall`, prüft nur strukturierte Fakten (seit
+  2.90.1 erkennt `contradictsProfile` bei „Rasse“ auch „<Name> ist ein
+  <Rasse>“ ohne das Wort Rasse, `breedContradicts`); die
   Werkzeuge `recall`, `kg_search`, `knowledge_recall` lesen ohne Profilvorrang.
 - Beschreibungen stimmen nicht: `update_user_profile` behauptet `USER.md` zu
   ersetzen, `recall` nennt LanceDB.
