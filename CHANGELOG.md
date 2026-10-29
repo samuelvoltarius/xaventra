@@ -35,6 +35,16 @@ gets a topic. Nothing the model sees changes with the default.
   (`XAVENTRA_THREADS`). Stored per thread: name, times, counts and at most 12
   keywords — never a sentence.
 
+### Fixed
+
+- **Telegram: an answer that starts like a progress line arrives.** An answer
+  such as „Ich arbeite noch nicht mit Docker auf dieser VM …“ was taken for a
+  progress line and disappeared into the status card. Only what the run
+  itself emits (a ⏳ status line, a ⚙️ step, a tool label) is progress now.
+- A non-blocking channel-parity report runs with the tests: the HUD still
+  shows only the last part of a multi-part answer and the screenshot fallback
+  is Telegram-only (planned for 2.91.1/2.91.2).
+
 ## [2.90.2] — 2026-10-29
 
 Fixes from the Telegram acceptance of 2.90.0 and 2.90.1, plus remembered

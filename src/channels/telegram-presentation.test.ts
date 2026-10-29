@@ -29,6 +29,10 @@ describe('Telegram presentation', () => {
         expect(isTelegramProgress('⚙️ *Auftrags-Konfiguration*\n\nSchritte: 3')).toBe(false)
         expect(isTelegramProgress('🔍 *Xaventra Self-Check*')).toBe(false)
         expect(isTelegramProgress('suche im Web …')).toBe(true)
+        // 2.91.0: progress is only what the run itself emits (⏳ notice, ⚙️ step, tool label) — never an answer that starts alike.
+        expect(isTelegramProgress('Ich arbeite noch nicht mit Docker auf dieser VM.')).toBe(false)
+        expect(isTelegramProgress('Ich arbeite noch daran')).toBe(false)
+        expect(isTelegramProgress('⏳ Das dauert länger (65 s) — suche im Web …')).toBe(true)
     })
 
     it('edits one progress bubble and removes it before the final answer', async () => {

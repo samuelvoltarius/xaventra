@@ -35,8 +35,8 @@ describe('2.91.0 Kanal-Gleichheit (Bericht: bekannte Abweichungen, nicht blockie
         for (const part of PARTS) expect(answer).toContain(part)
     }, 60_000)
 
-    // Abweichung 2: channels/telegram-presentation.ts:90–97 — a real answer that starts like progress is swallowed into the card.
-    it.fails('Ziel 2: Telegram schickt eine echte Antwort immer als Nachricht (heute schluckt die Statuskarte „Ich arbeite noch …“)', async () => {
+    // Abweichung 2 (behoben in 2.91.0): a real answer that started like progress was swallowed into the status card.
+    it('Ziel 2: Telegram schickt eine echte Antwort immer als Nachricht, auch wenn sie mit „Ich arbeite noch …“ beginnt', async () => {
         const sent: string[] = []
         const adapter = {
             send: async (message: { content: string }) => { sent.push(message.content) },
@@ -48,6 +48,20 @@ describe('2.91.0 Kanal-Gleichheit (Bericht: bekannte Abweichungen, nicht blockie
         const answer = 'Ich arbeite noch nicht mit Docker auf dieser VM, der Zugriff ist nicht eingerichtet.'
         await session.deliver(answer)
         expect(sent).toContain(answer)
+    })
+    it('Gegenprobe 2: eine echte Fortschrittsmeldung aus dem Lauf bleibt in der Statuskarte', async () => {
+        const sent: string[] = [], progress: string[] = []
+        const adapter = {
+            send: async (message: { content: string }) => { sent.push(message.content) },
+            sendProgress: async (_chat: string, text: string) => { progress.push(text); return 1 },
+            editMessage: async () => undefined,
+            deleteMessage: async () => undefined,
+        }
+        const session = new TelegramPresentationSession(adapter as any, '1', { statusCard: true, minEditIntervalMs: 0 })
+        expect(await session.deliver('⏳ Ich arbeite noch daran (20 s) …')).toBe('progress')
+        expect(await session.deliver('⏳ Das dauert länger (65 s) — suche im Web …')).toBe('progress')
+        expect(sent).toEqual([])
+        expect(progress.length).toBeGreaterThan(0)
     })
 
     // Abweichung 6: core/message-pipeline.ts:422 — the screenshot fallback only runs for Telegram.
