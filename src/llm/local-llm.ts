@@ -236,6 +236,13 @@ export function dedupeDiscoveryCandidates<T extends DiscoveryCandidate>(candidat
     return out
 }
 
+function localProviderDisabled(): boolean {
+    try {
+        const cfgPath = resolveConfigPath()
+        return existsSync(cfgPath) && JSON.parse(readFileSync(cfgPath, 'utf-8'))?.providers?.local?.enabled === false
+    } catch { return false }
+}
+
 function getDiscoveryCandidates(): DiscoveryCandidate[] {
     const candidates: Array<{ name: string; baseUrl: string; source: 'preset' | 'config' | 'env'; nodeName?: string }> = []
 
@@ -749,6 +756,9 @@ export function createLocalLLM(config: LocalLLMConfig): LocalLLM {
  * Scan for available local LLM servers
  */
 export async function detectLocalLLMs(): Promise<LocalLLMDiscovery[]> {
+    // 2.90.1: providers.local.enabled = false means no local model at all - no probe, nothing for the router
+    // (2.89.14 did the same for the fallback in llm-factory). Model discovery and setup read this function.
+    if (localProviderDisabled()) return []
     const timeoutMs = Math.max(250, Number(process.env.NOVA_LOCAL_DISCOVERY_TIMEOUT_MS || 1800))
     const probes = getDiscoveryCandidates().map(async candidate => {
         const client = new LocalLLM({

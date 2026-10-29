@@ -177,6 +177,10 @@ nur über `createAgentBackend` aus dem Benchmark erreichbar);
 `src/core/model-resolver.ts` `resolveModel`. Fallback nur über
 `fallbackModels` (`llm-factory.ts` `configuredCloudFallbacks`).
 Schlüssel: `llm-factory.ts:490` `cloudProviderKey` (siehe D5).
+Lokale Modelle: `providers.local.enabled === false` schaltet sie ganz ab —
+kein Rückfall (`llm-factory.ts`, 2.89.14) und keine Erkennung
+(`src/llm/local-llm.ts` `detectLocalLLMs`, 2.90.1; Modell-Discovery und
+Doctor lesen nur diese Funktion).
 
 **Wichtige Dateien:** `nova-llm-sdk.ts`, `llm-factory.ts`, `model-resolver.ts`,
 `src/llm/model-fallback.ts`, `src/llm/provider-manifest.ts`,
