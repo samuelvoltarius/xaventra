@@ -27,6 +27,13 @@ Reliability after the Telegram acceptance of 2.89.13.
   local model until the run deadline; it uses the configured cloud fallbacks
   or answers at once with a clear sentence.
 - **Telegram handler failures keep their cause in the log** (redacted).
+- **The fact check sees enough of each tool result.** It judged a correct
+  heise headline as invented because it only saw the first 200 characters.
+- **No double answer after a verification note.** A "Nicht vollständig
+  belegt" note in front of an answer closed the Telegram status card as
+  "❌ Abgebrochen" and the answer came twice.
+- **Home Assistant times in local time.** "zuletzt geändert" is given in the
+  system time zone instead of UTC ("02:32" for 03:32).
 
 ## [2.89.13] — 2026-10-29
 
