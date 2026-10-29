@@ -12,6 +12,21 @@
   helpers on nodes with a screen, maps and routes, music, a maker helper for
   boards and sensors.
 
+## [2.90.3] — 2026-10-29
+
+Fixes from the Telegram acceptance of 2.90.2.
+
+### Fixed
+
+- **A superfluous failed last step no longer hides what was done.** A test pod
+  was created, checked and deleted; one extra, invalid call at the end turned
+  the whole answer into "Die Aktion ist nicht gelungen … es wurde keine
+  Änderung ausgeführt". The answer now names the done steps (angelegt,
+  gelöscht, …) and mentions the failed step only as a side note. "Keine
+  Änderung" / "nichts verändert" is never said when a change is proven.
+- **A failure answer appears once.** The Telegram status card closes as one
+  "❌ Abgebrochen · N s" line instead of repeating the answer below it.
+
 ## [2.90.2] — 2026-10-29
 
 Fixes from the Telegram acceptance of 2.90.0 and 2.90.1, plus remembered
