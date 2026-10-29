@@ -4,8 +4,9 @@
  * Live 29.10. 14:00 „Gib diese Aufgabe an ns1: Sag mir, wie spät es dort ist
  * und wer ich bin.“ ended after 9 tools (nova_capabilities twice, mesh_nodes,
  * mesh_services …) without a delegation: the sentence reached only the live
- * route `mesh` (status, nodes, strengths), mesh_delegate sits in the pack
- * `mesh-network` whose keywords this sentence does not contain.
+ * route `mesh` (status, nodes, strengths); no hand-over tool was offered.
+ * The hand-over goes the signed mesh path, spawn_subagent with mesh_node (D1:
+ * cancellable, carries the requester and allowed tools), never mesh_delegate.
  *
  * Only real nodes count: ids and hostnames from the local registry file and
  * the signed peer profiles. A hand-over needs a hand-over form („gib … an X“,
@@ -15,6 +16,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { getNovaDataDir } from '../core/data-root.js'
+import { runLimits, type RunLimits } from '../core/run-limits.js'
 
 export interface KnownNodeName { nodeId: string; hostname?: string }
 
@@ -87,4 +89,21 @@ export function handoffTargetNode(text: string, nodes: readonly KnownNodeName[] 
     if (hits.size !== 1) return null
     const [[nodeId, alias]] = [...hits]
     return { nodeId, alias }
+}
+
+/** Time for the final answer after the node returns (one follow-up model call, nova-runner TIMEOUT_FOLLOWUP). */
+const FINAL_ANSWER_MS = 60_000
+const RESERVE_MS = 20_000
+const MAX_WAIT_S = 180
+const MIN_WAIT_S = 15
+
+/**
+ * How long the hand-over may wait for the node: under the spawn_subagent tool
+ * limit and the whole run limit, minus the final answer and a reserve — the
+ * peer test with a ~110 s limit and a 90 s wait ended without any answer.
+ */
+export function handoffWaitSeconds(limits: RunLimits = runLimits()): number {
+    const bound = Math.min(limits.toolTimeoutMs.slow, limits.totalTimeoutMs)
+    const seconds = Math.floor((bound - FINAL_ANSWER_MS - RESERVE_MS) / 1000)
+    return Math.max(MIN_WAIT_S, Math.min(MAX_WAIT_S, seconds))
 }

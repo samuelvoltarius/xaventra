@@ -36,4 +36,16 @@ describe('mesh strength tools', () => {
         await tool('spawn_subagent').handler({ task: 'Fasse den Text zusammen', mesh_node: 'auto' })
         expect(orchestrator.spawnSubagent.mock.calls[0][0].meshNode).toBeUndefined()
     })
+
+    it('2.90.0: a node that does not answer in time gives one clear sentence, not a raw timeout', async () => {
+        orchestrator.spawnSubagent.mockResolvedValueOnce({ id: 'sa-2', status: 'timeout', output: '', durationMs: 30_000, toolsUsed: [], mode: 'mesh', meshNode: 'xaventra-ns1', error: 'Mesh result timeout after 30000ms' } as any)
+        const text = await tool('spawn_subagent').handler({ task: 'Wie spät ist es?', mesh_node: 'xaventra-ns1', timeout_seconds: 30 })
+        expect(text).toContain('Knoten xaventra-ns1 hat in 30 s kein Ergebnis geliefert')
+        expect(text).not.toContain('Mesh result timeout')
+    })
+    it('2.90.0: an unreachable node is named in one sentence', async () => {
+        orchestrator.spawnSubagent.mockResolvedValueOnce({ id: 'sa-3', status: 'failed', output: '', durationMs: 5, toolsUsed: [], mode: 'mesh', meshNode: 'xaventra-ns1', error: 'Mesh request unreachable: no route' } as any)
+        const text = await tool('spawn_subagent').handler({ task: 'uptime', mesh_node: 'xaventra-ns1' })
+        expect(text).toContain('Knoten xaventra-ns1 ist nicht erreichbar')
+    })
 })

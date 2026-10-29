@@ -42,8 +42,12 @@ Nothing the model sees changes with the defaults.
   task to a named node got only status tools, never `mesh_delegate`; live it
   asked itself nine times and ran out of budget. A hand-over form ("gib … an
   X", "lass X machen", "auf X: …") to a node that really exists in the
-  registry now offers `mesh_delegate`, and the model is told that node's id.
-  A question about a node ("wie geht es ns1?") stays a status question.
+  registry now offers the signed mesh path (`spawn_subagent` with
+  `mesh_node`, cancellable, carries the requester), and the model is told that
+  node's id and how long to wait — always short enough under the run limit to
+  leave time for an answer. A node that does not answer in time or is not
+  reachable becomes one clear sentence. A question about a node ("wie geht es
+  ns1?") stays a status question.
 
 ## [2.89.15] — 2026-10-29
 

@@ -3187,6 +3187,13 @@ export const ALL_TOOLS: NovaTool[] = [
                 })
                 if (result.status === 'completed') {
                     return `${placement}✅ Subagent ${result.id} fertig (${result.durationMs}ms):\n${result.output}`
+                }
+                // 2.90.0: a hand-over to a node that did not answer is one clear sentence for the owner, not a raw timeout.
+                if (result.mode === 'mesh' && result.meshNode && result.status === 'timeout') {
+                    return `${placement}⚠️ Der Knoten ${result.meshNode} hat in ${Number(params.timeout_seconds) || 60} s kein Ergebnis geliefert; die Aufgabe dort ist abgebrochen. Sag das dem Nutzer in einem Satz.`
+                }
+                if (result.mode === 'mesh' && result.meshNode && result.status === 'failed' && /unreachable|rejected|no route/i.test(String(result.error || ''))) {
+                    return `${placement}⚠️ Der Knoten ${result.meshNode} ist nicht erreichbar (${String(result.error).slice(0, 120)}). Sag das dem Nutzer in einem Satz.`
                 } else {
                     return `${placement}⚠️ Subagent ${result.id}: ${result.status}${result.error ? ' — ' + result.error : ''}`
                 }
