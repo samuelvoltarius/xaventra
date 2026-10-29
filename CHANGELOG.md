@@ -36,6 +36,15 @@ Nothing the model sees changes with the defaults.
   `on` it goes into the prompt, protected from the cut. Switch
   `context.lagebild`.
 
+### Fixed
+
+- **"Give this task to ns1" really hands it over.** A sentence that hands a
+  task to a named node got only status tools, never `mesh_delegate`; live it
+  asked itself nine times and ran out of budget. A hand-over form ("gib … an
+  X", "lass X machen", "auf X: …") to a node that really exists in the
+  registry now offers `mesh_delegate`, and the model is told that node's id.
+  A question about a node ("wie geht es ns1?") stays a status question.
+
 ## [2.89.15] — 2026-10-29
 
 Reliability after the Telegram acceptance of 2.89.14.

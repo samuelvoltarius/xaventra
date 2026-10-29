@@ -1690,6 +1690,17 @@ Passender Knoten: dieser (${decision.reason}).`
         }
     } catch (err) { console.debug('[Pipeline] mesh router not available:', err) }
 
+    // 2.90.0 (live 29.10. „Gib diese Aufgabe an ns1: …“): a hand-over to a real, named node is
+    // done with mesh_delegate and that node's id — no self-description first, no lookup of the id.
+    if (!isSystemAuthored) try {
+        const { handoffTargetNode } = await import('../mesh/known-node-names.js')
+        const target = handoffTargetNode(content)
+        if (target) systemPrompt += `
+
+## ÜBERGABE AN KNOTEN
+Der Auftrag geht an den Knoten „${target.alias}“ (node_id \`${target.nodeId}\`). Rufe mesh_delegate mit node_id="${target.nodeId}" und dem Auftrag auf und warte auf das Ergebnis; keine Selbstauskunft vorher. Antworte mit dem Ergebnis des Knotens oder in einem Satz, warum es nicht ging.`
+    } catch (err) { console.debug('[Pipeline] hand-over target not available:', err) }
+
     // Companion Personality Directive + Workspace Awareness
     try {
         const cfgPath = join(process.cwd(), 'config.json')

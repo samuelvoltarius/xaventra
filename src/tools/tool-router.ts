@@ -26,6 +26,7 @@ import { decideMemoryTurn } from '../memory/memory-quality.js'
 import { detectActionIntent, isWorkstationAction, WORKSTATION_ACTION, type ActionIntent } from '../core/action-intent.js'
 import { isDirectUrlCheck } from '../core/tool-evidence-binding.js'
 import { loadOwnerProfile, profileRouteTools } from '../memory/owner-profile.js'
+import { handoffTargetNode } from '../mesh/known-node-names.js'
 import { compoundRemainder, containsTailnetUrl, isKubernetesQuestion, isMeshWideInventoryRequest, isNodeScreenshotRequest, mentionsMesh, mentionsEnvironment } from '../core/request-capabilities.js'
 
 // ============================================
@@ -421,6 +422,8 @@ const LIVE_ROUTES: readonly LiveRoute[] = [
     { name: 'owner-profile', tools: ['owner_profile'], applies: text => /\b(?:mein|meinem|meinen|dein)\s+(?:owner[- ]?)?(?:profil|steckbrief)\b|\bowner[- ]?profil\b/i.test(text) },
     { name: 'open-site', tools: ['fetch_url', 'browser_open', 'browser_navigate', 'browser_extract', 'browser_get_links', 'browser_search'], applies: text => isWebPageReadRequest(text) },
     { name: 'mesh', tools: ['mesh_status', 'mesh_nodes', 'mesh_strengths'], applies: text => mentionsMesh(text) || isMeshWideInventoryRequest(text) },
+    // 2.90.0 (live 29.10. „Gib diese Aufgabe an ns1: …“): a hand-over to a real, named node gets mesh_delegate.
+    { name: 'mesh-handoff', tools: ['mesh_delegate'], applies: text => handoffTargetNode(text) !== null },
     // 2.89.4: mesh-wide inventory ("Inventur", "was läuft wo", "was … installieren können")
     // must reach the model with the inventory tools, including mesh_strengths.
     { name: 'environment', tools: ['environment_inventory', 'scan_now', 'mesh_services', 'mesh_status', 'mesh_nodes', 'mesh_strengths'], applies: text => mentionsEnvironment(text) },

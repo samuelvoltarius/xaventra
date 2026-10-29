@@ -110,3 +110,17 @@ describe('2.90.0 Kontext je Aufgabe über den Telegram-Eingang', () => {
         expect(metrics.taskPromptChars).toBeUndefined()
     }, 120_000)
 })
+
+describe('2.90.0 Übergabe an einen benannten Knoten über den Telegram-Eingang (live 29.10. 14:00)', () => {
+    it('„Gib diese Aufgabe an ns1: …“ tells the model to use mesh_delegate with the real node id', async () => {
+        const { setKnownNodeNamesForTests } = await import('../mesh/known-node-names.js')
+        setKnownNodeNamesForTests([{ nodeId: 'xaventra-ns1', hostname: 'ns1' }])
+        try {
+            const { prompt } = await ask('Gib diese Aufgabe an ns1: Sag mir, wie spät es dort ist und wer ich bin.')
+            expect(prompt).toContain('## ÜBERGABE AN KNOTEN')
+            expect(prompt).toContain('node_id="xaventra-ns1"')
+            const status = await ask('wie geht es ns1?')
+            expect(status.prompt).not.toContain('## ÜBERGABE AN KNOTEN')
+        } finally { setKnownNodeNamesForTests(null) }
+    }, 120_000)
+})
