@@ -5722,6 +5722,7 @@
       "module": "src/mesh/node-capture.ts",
       "imports": [
         "../host/capture-agent.js",
+        "../host/desktop-input.js",
         "node:crypto"
       ]
     },
@@ -7607,6 +7608,7 @@
         "./environment-inventory-tool.js",
         "./homeassistant.js",
         "./knowledge-system.js",
+        "./mesh-desktop-input-tool.js",
         "./mesh-exchange-tools.js",
         "./mesh-inspect-url.js",
         "./mesh-screenshot-tool.js",
@@ -7768,6 +7770,18 @@
       "imports": [
         "node:fs",
         "node:path"
+      ]
+    },
+    {
+      "module": "src/tools/mesh-desktop-input-tool.ts",
+      "imports": [
+        "../core/lifecycle-policy.js",
+        "../host/desktop-input.js",
+        "../mesh/capture-reason.js",
+        "../users/multi-user-middleware.js",
+        "./complete-registry.js",
+        "./mesh-screenshot-tool.js",
+        "node:crypto"
       ]
     },
     {

@@ -101,3 +101,10 @@ export function assertDedicatedWorkstationAccount(facts: {
     const personal = facts.sessions.find(s => s.uid === facts.uid && GRAPHICAL.has(s.type) && s.state !== 'closing')
     if (personal) throw Error(`Account owns graphical login session ${personal.id} (${personal.type}); refusing to run as a personal desktop user`)
 }
+
+/** The workstation browser is operator-installed: root-owned regular file that the
+ * workstation account cannot replace (no group/other write). Never a model argument. */
+export function assertTrustedBrowser(path: string, facts: PathFacts): void {
+    if (!path || !path.startsWith('/')) throw Error('Workstation browser must be an absolute operator path')
+    if (facts.isSymbolicLink() || !facts.isFile() || facts.uid !== 0 || (facts.mode & 0o022)) throw Error('Workstation browser must be a root-owned, non-writable regular file')
+}

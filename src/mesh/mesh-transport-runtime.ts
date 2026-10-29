@@ -21,7 +21,7 @@ import { checkDelegatedFence } from './fence-highwater.js'
 import { collectLiveLoad, heartbeatProfileFields, peerWantsProfile, sanitizeLiveLoad, sanitizeNodeProfile, type NodeLiveLoad, type NodeProfile, type ProfilePublishState } from '../core/node-profile.js'
 import { sanitizeSelfHealSummary, type SelfHealMeshSummary } from '../doctor/self-heal.js'
 import { executeExchange, validExchangeRequest, validateExchangeResult, type ExchangeRequest, type ExchangeFile } from './node-exchange.js'
-import { captureEnrolledNode, validateNodeCapture, validNodeCaptureRequest, type NodeCaptureRequest, type NodeCaptureReceipt } from './node-capture.js'
+import { captureEnrolledNode, inputEnrolledNode, validateNodeCapture, validateNodeInput, validNodeCaptureRequest, type NodeCaptureRequest, type NodeCaptureReceipt, type NodeInputRequest, type NodeInputReceipt } from './node-capture.js'
 import { executeGitRequest, validateGitReceipt, validGitRequest, type GitReceipt, type GitRequest } from './mesh-git.js'
 
 
@@ -167,25 +167,42 @@ export function initMeshTransportRuntime(messageHandler?: MessageHandler): MeshT
 export function getMeshTransport(): MeshTransportRouter | null { return router }
 
 export async function requestNodeCapture(node: string, payload: NodeCaptureRequest): Promise<NodeCaptureReceipt> {
-    if (!node || node === '*' || !validNodeCaptureRequest(payload)) throw new Error('invalid capture target/context')
+    if (!node || node === '*' || !validNodeCaptureRequest(payload) || payload.operation !== 'capture') throw new Error('invalid capture target/context')
     const check = async () => { await assertFenced('nova-main', { live: true, mode: 'enforce', effect: 'mesh:capture.request' }) }
     await check()
     if (node === getLocalNodeId()) return captureEnrolledNode(node, check)
+    const reply = await sendCaptureEnvelope(node, payload, 30_000, 'Node capture timed out; no image confirmed')
+    await check()
+    return validateNodeCapture(reply, node)
+}
+
+/** One typed input on an enrolled node; the receipt carries a fresh capture as read-back. */
+export async function requestNodeInput(node: string, payload: NodeInputRequest): Promise<NodeInputReceipt> {
+    if (!node || node === '*' || !validNodeCaptureRequest(payload) || payload.operation !== 'input') throw new Error('invalid input target/context')
+    const check = async () => { await assertFenced('nova-main', { live: true, mode: 'enforce', effect: 'mesh:capture.request' }) }
+    await check()
+    if (node === getLocalNodeId()) return inputEnrolledNode(node, payload, check)
+    // Input (15 s) plus the following capture (22 s) on the node.
+    const reply = await sendCaptureEnvelope(node, payload, 45_000, 'Node input timed out; effect uncertain, do not repeat blindly')
+    await check()
+    return validateNodeInput(reply, node, payload.requestId)
+}
+
+async function sendCaptureEnvelope(node: string, payload: NodeCaptureRequest | NodeInputRequest, timeoutMs: number, timeoutError: string): Promise<unknown> {
     if (capturePending.size >= 4) throw new Error('Capture concurrency limit reached')
     const transport = router || initMeshTransportRuntime()
-    const envelope = transport.create('capture.request', node, payload, { ttlMs: 30_000, fence: currentMainMeshFence() })
+    const envelope = transport.create('capture.request', node, payload, { ttlMs: timeoutMs, fence: currentMainMeshFence() })
     let timer: ReturnType<typeof setTimeout> | undefined
     const response = new Promise<unknown>(resolve => {
         capturePending.set(envelope.id, { node, receive: resolve })
-        timer = setTimeout(() => resolve(null), 30_000)
+        timer = setTimeout(() => resolve(null), timeoutMs)
     })
     try {
         const ack = await transport.send(node, envelope)
         if (!['delivered', 'duplicate'].includes(ack.status)) throw new Error('No direct node capture path')
         const reply = await response as ResultPayload | null
-        if (reply?.success !== true) throw new Error(typeof reply?.error === 'string' ? reply.error.slice(0, 200) : 'Node capture timed out; no image confirmed')
-        await check()
-        return validateNodeCapture(reply.result, node)
+        if (reply?.success !== true) throw new Error(typeof reply?.error === 'string' ? reply.error.slice(0, 200) : timeoutError)
+        return reply.result
     } finally { clearTimeout(timer); capturePending.delete(envelope.id) }
 }
 
@@ -535,9 +552,12 @@ async function handleEnvelope(envelope: MeshEnvelope, messageHandler?: MessageHa
         }
         let result: ResultPayload
         try {
-            if (!validNodeCaptureRequest(envelope.payload)) throw new Error('Invalid capture context')
+            const request = envelope.payload
+            if (!validNodeCaptureRequest(request)) throw new Error('Invalid capture context')
             await check()
-            result = makeResult(envelope.id, true, await captureEnrolledNode(getLocalNodeId(), check))
+            result = makeResult(envelope.id, true, request.operation === 'input'
+                ? await inputEnrolledNode(getLocalNodeId(), request, check)
+                : await captureEnrolledNode(getLocalNodeId(), check))
         } catch (error) { result = makeResult(envelope.id, false, undefined, String(error).slice(0, 200)) }
         await router.send(envelope.sourceNode, router.create('capture.response', envelope.sourceNode, result, { ttlMs: 30_000 }))
         return

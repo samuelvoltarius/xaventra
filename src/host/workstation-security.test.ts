@@ -79,3 +79,10 @@ it('wires the account guard into the workstation entry point before any display 
     expect(guard).toBeLessThan(src.indexOf("start('/usr/bin/Xvfb'"))
     expect(guard).toBeLessThan(src.indexOf('writeFileSync(auth'))
 })
+
+it('accepts only a root-owned, non-writable regular browser binary for open_url', () => {
+    expect(() => ws.assertTrustedBrowser('/opt/firefox-workstation/firefox', facts('file', 0o755, 0))).not.toThrow()
+    for (const [path, f] of [['firefox', facts('file', 0o755, 0)], ['/opt/ff/firefox', facts('file', 0o775, 0)], ['/opt/ff/firefox', facts('file', 0o757, 0)],
+        ['/opt/ff/firefox', facts('file', 0o755, 1500)], ['/opt/ff/firefox', facts('file', 0o755, 0, true)], ['/opt/ff', facts('dir', 0o755, 0)], ['', facts('file', 0o755, 0)]] as const)
+        expect(() => ws.assertTrustedBrowser(path, f), path).toThrow()
+})

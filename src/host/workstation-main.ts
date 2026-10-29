@@ -2,14 +2,14 @@
 import { spawn, execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { randomBytes } from 'node:crypto'
-import { existsSync, writeFileSync, readFileSync, chmodSync, mkdirSync, unlinkSync } from 'node:fs'
+import { existsSync, writeFileSync, readFileSync, chmodSync, mkdirSync, unlinkSync, lstatSync } from 'node:fs'
 import { join } from 'node:path'
 import { userInfo } from 'node:os'
 import { createCaptureAgent } from './capture-agent.js'
-import { executeDesktopInputOnce, runDesktopInput } from './desktop-input.js'
+import { executeDesktopInputOnce, runDesktopInput, desktopActionArgs, assertOpenUrlAllowed } from './desktop-input.js'
 import { planDesktopSession } from './workstation-desktop.js'
 import { planWorkstationPaths, workstationChildEnv, checkOwnedPrivatePath, assertOutsideShellHome,
- RUNTIME_FORBIDDEN_BITS, PRIVATE_FORBIDDEN_BITS, assertDedicatedWorkstationAccount, readLogindSessions } from './workstation-security.js'
+ RUNTIME_FORBIDDEN_BITS, PRIVATE_FORBIDDEN_BITS, assertDedicatedWorkstationAccount, readLogindSessions, assertTrustedBrowser } from './workstation-security.js'
 
 const [runtime,state,tokenFile]=process.argv.slice(2)
 if(process.platform!=='linux'||process.getuid?.()===0||process.argv.length!==5
@@ -52,9 +52,18 @@ if(!ready){stop();throw Error('Virtual display readiness failed')}
 const desktop=planDesktopSession(existsSync)
 for(const program of desktop.programs)start(program.file,program.args)
 console.log(`Workstation desktop: ${desktop.kind}`)
+// open_url: operator allowlist (NOVA_WORKSTATION_OPEN_URL_ALLOW) and operator browser
+// (NOVA_WORKSTATION_BROWSER, a non-snap binary: snap refuses system-service cgroups).
+const openUrl=async(url:string)=>{
+ assertOpenUrlAllowed(url,process.env.NOVA_WORKSTATION_OPEN_URL_ALLOW)
+ const browser=process.env.NOVA_WORKSTATION_BROWSER||''
+ assertTrustedBrowser(browser,lstatSync(browser))
+ const child=start(browser,['--new-window',url])
+ await new Promise<void>((resolve,reject)=>{child.once('spawn',()=>resolve());child.once('error',reject)})
+}
 const server=createCaptureAgent(readFileSync(tokenFile,'utf8').trim(),async()=>{
  live();const path=join(paths.captureDir,`capture-${randomBytes(12).toString('hex')}.png`)
  try{await exec('/usr/bin/scrot',['--overwrite',path],{env,timeout:15000,maxBuffer:4096});live();return readFileSync(path)}finally{if(existsSync(path))unlinkSync(path)}
-},async(id,action)=>{live();return executeDesktopInputOnce(paths.journal,id,action,async args=>{live();await runDesktopInput(args);live()})})
+},async(id,action)=>{live();return executeDesktopInputOnce(paths.journal,id,action,async args=>{live();if(args[0]==='open_url')await openUrl(args[1]);else await runDesktopInput(args);live()},desktopActionArgs)})
 server.on('error',()=>{console.error('Workstation adapter failed');stop()})
 server.listen(socket,()=>{chmodSync(socket,0o660);writeFileSync(paths.ready,JSON.stringify({display,pid:x.pid,socket,kind:'owned-virtual-desktop'}),{mode:0o640});console.log('Dedicated workstation ready')})

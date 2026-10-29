@@ -2452,14 +2452,14 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             && actionOnlyIntent.requiresTool
             && actionOnlyIntent.kind !== 'screenshot'
             && actionOnlyIntent.kind !== 'system-state') {
-            const { observationOnlyRun, describesScreenWithoutActing, SCREEN_ONLY_ACTION_REPLY } = await import('./unverified-claims.js')
+            const { observationOnlyRun, describesScreenWithoutActing, SCREEN_ONLY_ACTION_REPLY, ACTION_RETRY_PROMPT } = await import('./unverified-claims.js')
             if (observationOnlyRun(result.toolsExecuted || [])) {
                 console.log(`[Pipeline] Nur Beobachtung bei Handlungsauftrag ("${content.slice(0, 50)}") — ein Handlungswerkzeug-Nachforderungslauf`)
                 try {
                     const { runNovaAgent } = await import('../agents/nova-runner.js')
                     const retryResult = await runWithAbortDeadline(agentSignal => runNovaAgent({
                         ...agentRunBase,
-                        systemPrompt: agentRunBase.systemPrompt + '\n\nPFLICHT: Der Auftrag verlangt eine Handlung (öffnen, klicken, tippen), keine reine Bild- oder Statusbeschreibung. Rufe JETZT ein Handlungswerkzeug auf (desktop_control oder desktop_input) und liefere das Ergebnis. Ein Screenshot allein ist keine Handlung.',
+                        systemPrompt: agentRunBase.systemPrompt + '\n\n' + ACTION_RETRY_PROMPT,
                         abortSignal: agentSignal,
                     }), { timeoutMs: TOTAL_TIMEOUT, parentSignal: execution?.abortSignal })
                     const retryNames = retryResult.toolsExecuted || []

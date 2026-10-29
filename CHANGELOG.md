@@ -14,8 +14,9 @@
 
 ## [2.90.0] — 2026-10-29
 
-Context per task, step 1: measure, and build the smaller prompts in shadow.
-Nothing the model sees changes with the defaults.
+Context per task, step 1: measure, and build the smaller prompts in shadow
+(nothing the model sees changes with these defaults). Plus hand-over to a
+named node, test pods in Kubernetes and computer use on the lab node.
 
 ### Added
 
@@ -35,6 +36,22 @@ Nothing the model sees changes with the defaults.
   whether Kubernetes is connected, what is missing. `/lage` shows it. With
   `on` it goes into the prompt, protected from the cut. Switch
   `context.lagebild`.
+- **Test pods in Kubernetes.** New tool `cluster_test_pod`: create, list and
+  delete pods only in the namespace `xaventra-test`, each create with the
+  owner's approval for exactly that pod. Every pod has limits, a run-time
+  limit, no service-account token, no host access, no volumes; only own
+  labelled pods can be deleted. Namespace, quota, RBAC and network rule come
+  from the owner (`deploy/kubernetes/xaventra-test-rbac.yaml`). Switch
+  `infra.kubernetes.testPods` (on; `XAVENTRA_K8S_TEST_PODS=off` turns it off).
+- **Her own computer on the lab node.** New tool `mesh_desktop_input`: Main
+  clicks, types, presses keys, scrolls or opens an allowed public web page on
+  the dedicated workstation of an enrolled node. Every action comes back with
+  a fresh capture of that node, and the effect is judged only from that image.
+  The same step is never typed twice. On by default on Main
+  (`NOVA_MESH_DESKTOP_INPUT_ENABLED=false` turns it off); the node still needs
+  input enrollment, the host allowlist and a non-snap browser on the
+  workstation, see `docs/COMPUTER_USE.md`.
+- "Öffne … auf deinem Computer" now reaches the computer-use tools.
 
 ### Fixed
 

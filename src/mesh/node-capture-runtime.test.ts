@@ -6,7 +6,8 @@ import { beforeAll, afterAll, describe, expect, it, vi } from 'vitest'
 
 const authority = vi.hoisted(() => ({ valid: true }))
 const capture = vi.hoisted(() => vi.fn())
-vi.mock('../host/capture-agent.js', () => ({ requestSessionCapture: capture }))
+const input = vi.hoisted(() => vi.fn())
+vi.mock('../host/capture-agent.js', () => ({ requestSessionCapture: capture, requestSessionInput: input }))
 vi.mock('./fence-highwater.js', () => ({ checkDelegatedFence: async () => ({ ok: authority.valid, reason: 'fixture' }) }))
 vi.mock('./fence.js', async original => ({ ...await original<typeof import('./fence.js')>(),
     assertFenced: vi.fn(async () => { if (!authority.valid) throw new Error('lease lost') }),
@@ -20,6 +21,7 @@ beforeAll(async () => {
     vi.stubEnv('NOVA_NODE_ID', 'capture-worker')
     vi.stubEnv('NOVA_MESH_CAPTURE_ENABLED', '1')
     vi.stubEnv('NOVA_CAPTURE_SOCKET', '/fixture/socket'); vi.stubEnv('NOVA_CAPTURE_TOKEN_FILE', '/fixture/token')
+    vi.stubEnv('NOVA_DESKTOP_INPUT_ENABLED', '1')
     capture.mockResolvedValue(image)
     const { MeshIdentity } = await import('./mesh-identity.js')
     const { MeshTransportRouter } = await import('./mesh-transport-router.js')
@@ -65,5 +67,30 @@ describe('signed capture through actual ephemeral runtime route', () => {
         authority.valid = true
         expect(await request(false)).toMatchObject({ success: false })
         expect(capture).not.toHaveBeenCalled()
+    })
+})
+
+describe('signed node input through the runtime route', () => {
+    const requestId = 'abcdefab-1234-1234-1234-123456789abc'
+    const payload = { operation: 'input', principalId: 'owner', runId: 'run', requestId, action: { action: 'key', key: 'Return' } }
+    async function send(withFence = true) {
+        const e = sender.create('capture.request', 'capture-worker', payload, withFence ? { fence: { service: 'nova-main', epoch: 7, token: 'fixture', authority: 'static' } } : {})
+        await sender.send('capture-worker', e)
+        await vi.waitFor(() => expect(replies.some(r => (r.payload as any).requestId === e.id)).toBe(true))
+        return replies.find(r => (r.payload as any).requestId === e.id)!.payload as any
+    }
+    it('executes the typed input once and answers with a fresh hash-bound capture', async () => {
+        authority.valid = true; input.mockReset(); input.mockResolvedValue({ requestId, status: 'completed', replayed: false })
+        const result = await send()
+        expect(result).toMatchObject({ success: true, result: { nodeId: 'capture-worker', input: { requestId, status: 'completed' }, capture: { sha256: createHash('sha256').update(image).digest('hex') } } })
+        expect(input).toHaveBeenCalledWith('/fixture/socket', '/fixture/token', requestId, { action: 'key', key: 'Return' })
+        expect(runtime.getMeshRunResult(result.requestId)).toBeUndefined()
+    })
+    it('never types without valid Main authority', async () => {
+        input.mockClear(); authority.valid = false
+        expect(await send()).toMatchObject({ success: false })
+        authority.valid = true
+        expect(await send(false)).toMatchObject({ success: false })
+        expect(input).not.toHaveBeenCalled()
     })
 })

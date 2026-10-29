@@ -55,4 +55,12 @@ export function describesScreenWithoutActing(text: string): boolean {
     return /(?:kein\w*\s+(?:browserfenster|browser|fenster|programm|app)\w*\b.{0,40}(?:offen|geoeffnet|geöffnet|sichtbar)|(?:leerer?|leeren)\s+(?:desktop|bildschirm)|ich\s+(?:sehe|erkenne)\s+(?:nur|keinen|leeren)|auf\s+(?:dem\s+)?(?:desktop|bildschirm)\s+(?:ist|sind)\b.{0,40}(?:leer|nichts|kein))/iu.test(value)
 }
 
+/** Retry instruction after a pure observation run on an action order. Clicking and
+ * typing go to the input tools (local desktop or the node workstation);
+ * desktop_control only steers the Xaventra app UI (Codekarte D13). */
+export const ACTION_RETRY_PROMPT = 'PFLICHT: Der Auftrag verlangt eine Handlung (öffnen, klicken, tippen), keine reine Bild- oder Statusbeschreibung. '
+    + 'Rufe JETZT ein Handlungswerkzeug auf: zum Klicken, Tippen oder Seite-Öffnen auf dem eigenen Arbeitsplatz eines Knotens mesh_desktop_input, '
+    + 'auf dem lokal freigegebenen Desktop desktop_input; desktop_control nur für die Xaventra-App-Oberfläche. '
+    + 'Prüfe die Wirkung mit der frischen Aufnahme und liefere das Ergebnis. Ein Screenshot allein ist keine Handlung.'
+
 export const SCREEN_ONLY_ACTION_REPLY = 'Ich habe nur auf den Bildschirm geschaut, aber nichts geöffnet oder bedient. Das war keine Handlung. Magst du es noch einmal versuchen — dann öffne oder bediene ich wirklich etwas.'

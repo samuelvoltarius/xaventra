@@ -116,6 +116,49 @@ Its idempotency scope is the server-side run: a `[NOVA_MISSION_KEY:...]` in
 the request is accepted only with the live mission fencing token. A repeated
 step returns `status: "replayed"`, `executedNow: false`; no new input ran.
 
+## Computer use on a mesh node (own lab computer)
+
+Main can operate the dedicated workstation of an enrolled mesh node, for
+example a lab VM, without a desktop of its own:
+
+- `mesh_screenshot` captures the node's workstation (unchanged).
+- `mesh_desktop_input` sends one typed action — `move`, `click`, `type`,
+  `key`, `scroll` or `open_url` — over the signed `capture.request` envelope
+  (`operation: "input"`), fenced by Main authority like a capture. The node
+  answers with the input receipt **and a fresh capture**. The tool stores that
+  image privately and returns its path; whether the action had the intended
+  effect is judged only from that capture (`analyze_image`), never from the
+  input receipt. Pixels never enter model text, queues or caches.
+- The node journal key is derived from run, owner, node and step. Repeating
+  the same step returns `status: "replayed"`, `executedNow: false`; an
+  uncertain earlier effect is refused, never repeated.
+
+Opt-ins, all operator-owned:
+
+- Main: `NOVA_MESH_DESKTOP_INPUT_ENABLED=1`. Only authenticated owner runs.
+- Node daemon: `NOVA_MESH_CAPTURE_ENABLED=1`, `NOVA_DESKTOP_INPUT_ENABLED=1`,
+  `NOVA_CAPTURE_SOCKET`, `NOVA_CAPTURE_TOKEN_FILE`.
+- Workstation unit, for `open_url` only: `NOVA_WORKSTATION_OPEN_URL_ALLOW`
+  (comma-separated host names, each also covering its subdomains; empty means
+  no page may be opened) and `NOVA_WORKSTATION_BROWSER` (absolute path to a
+  root-owned, non-writable browser binary). A snap browser does not start
+  inside a system service cgroup; install a non-snap build for the workstation.
+
+`open_url` accepts only public `http(s)` host names: no IP literals, no
+credentials in the URL, no `localhost`, `.local`, `.internal`, `.lan`,
+`.home`, `.arpa` or `.ts.net`. Also restrict the workstation account's
+outbound traffic to the internet at the host firewall (private ranges,
+CGNAT/tailnet, link-local and multicast rejected for its UID), so a page that
+resolves to a private address is still unreachable.
+
+Mounting the workstation socket into a container: mount a directory whose
+inode survives workstation restarts (for example created by `tmpfiles.d`,
+with `RuntimeDirectory=` cleared in a drop-in and stale `private/`,
+`desktop.sock` and `ready.json` removed in a privileged `ExecStartPre`). A
+bind mount of a systemd `RuntimeDirectory=` keeps pointing at the deleted
+directory after the service restarts (for example after needrestart), and
+every capture then fails.
+
 ## Acceptance and limits
 
 First verify that a locked session returns a lock error without a capture or
