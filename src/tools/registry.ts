@@ -11,6 +11,7 @@
 
 import { getSecurity } from '../resilience/security.js'
 import { runFencedTool } from '../mesh/fence.js'
+import { sshTool } from './ssh-tool.js'
 
 // ============================================
 // Types
@@ -358,6 +359,14 @@ export async function callerIsElevated(): Promise<boolean> {
     }
 }
 
+/** The runtime tool of the same name (complete-registry), loaded on first use. */
+async function runtimeTool(name: string, params: Record<string, unknown>): Promise<unknown> {
+    const { ALL_TOOLS } = await import('./complete-registry.js')
+    const tool = ALL_TOOLS.find(item => item.name === name)
+    if (!tool) throw new Error(`Werkzeug ${name} ist nicht registriert`)
+    return tool.handler(params)
+}
+
 export function registerBuiltinTools(registry: ToolRegistry): void {
     const security = getSecurity()
 
@@ -483,31 +492,8 @@ export function registerBuiltinTools(registry: ToolRegistry): void {
     })
 
     // --- SSH Tool for Remote Commands ---
-    // Delegates to ssh-tool.ts which has full self-healing (password, key setup, auto-install)
-
-    registry.register({
-        name: 'ssh_command',
-        description: 'Führe einen Befehl auf einem Remote-Server via SSH aus. Unterstützt Passwort-Authentifizierung und automatische Key-Einrichtung.',
-        category: 'system',
-        requiresElevation: true,
-        parameters: [
-            { name: 'host', type: 'string', description: 'Hostname oder IP (z.B. 192.0.2.30 oder nas.local)', required: true },
-            { name: 'command', type: 'string', description: 'Befehl der ausgeführt werden soll', required: true },
-            { name: 'user', type: 'string', description: 'SSH Benutzername', required: false },
-            { name: 'port', type: 'number', description: 'SSH Port (default: 22)', required: false },
-            { name: 'password', type: 'string', description: 'SSH Passwort (falls Key-Auth nicht möglich)', required: false },
-        ],
-        handler: async (params) => {
-            const { executeSSH } = await import('./ssh-tool.js')
-            return executeSSH({
-                host: params.host as string,
-                command: params.command as string,
-                user: params.user as string | undefined,
-                port: params.port as number | undefined,
-                password: params.password as string | undefined,
-            })
-        },
-    })
+    // 2.90.1 (Codekarte D2): the same definition as the runtime registry (confirm + identity), not a copy.
+    registry.register({ ...sshTool, requiresElevation: true })
 
     // --- Send File Tool (Telegram: Photos, Documents, any file) ---
 
@@ -751,32 +737,29 @@ export function registerBuiltinTools(registry: ToolRegistry): void {
     })
 
     // --- Memory Tools ---
-
+    // 2.90.1 (Codekarte D2): these were stubs that stored nothing. They run the runtime tools (memory governance).
     registry.register({
         name: 'remember',
-        description: 'Store something in memory for later',
+        description: 'Speichert Information über die zentrale Memory-Governance; Herkunft, Konflikte und Gültigkeit werden vor LanceDB geprüft.',
         category: 'memory',
         parameters: [
-            { name: 'key', type: 'string', description: 'Memory key', required: true },
-            { name: 'value', type: 'string', description: 'Value to remember', required: true },
+            { name: 'content', type: 'string', description: 'Was soll gemerkt werden', required: true },
+            { name: 'type', type: 'string', description: 'Typ: fact, conversation, learning, code, error_solution', required: false },
+            { name: 'scope', type: 'string', description: 'Geltungsbereich, z.B. user:sample, node:spark oder global', required: false },
         ],
-        handler: async (params) => {
-            // This would integrate with the memory system
-            return { stored: params.key }
-        },
+        handler: params => runtimeTool('remember', params),
     })
 
     registry.register({
         name: 'recall',
-        description: 'Recall something from memory',
+        description: 'Ruft Erinnerungen aus dem Langzeit-Gedächtnis ab (über die Memory-Governance).',
         category: 'memory',
         parameters: [
-            { name: 'query', type: 'string', description: 'What to recall', required: true },
+            { name: 'query', type: 'string', description: 'Wonach suchen', required: true },
+            { name: 'limit', type: 'number', description: 'Max Anzahl Ergebnisse', required: false },
+            { name: 'type', type: 'string', description: 'Filter nach Typ: fact, conversation, learning, code, error_solution', required: false },
         ],
-        handler: async (params) => {
-            // This would integrate with the memory system
-            return { query: params.query, results: [] }
-        },
+        handler: params => runtimeTool('recall', params),
     })
 
     // --- Web Search Tool (DuckDuckGo - no API key needed) ---

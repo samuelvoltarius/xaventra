@@ -705,7 +705,7 @@ function startedButFailed(err: any, cmdName: string, where: string): { output: s
 // Tool definition for registry
 export const sshTool = {
     name: 'ssh_command',
-    description: 'SSH Befehl auf Remote-Server. WICHTIG: user, port, password als SEPARATE Parameter! Nova löst SSH-Probleme SELBST (installiert fehlende Tools, richtet Keys ein).',
+    description: 'Führt einen Befehl auf einem Remote-Gerät via SSH aus (Pi, NAS, Server etc.). WICHTIG: Nutze dieses Tool für ALLE Befehle, die auf einem anderen Gerät laufen sollen — NICHT run_command! user, port, password als SEPARATE Parameter; gespeicherte Hosts/Passwörter werden automatisch verwendet. Fehlende SSH-Werkzeuge/Keys richtet es nach Owner-Freigabe (confirm) selbst ein.',
     category: 'system' as const,
     parameters: [
         { name: 'host', type: 'string' as const, description: 'SSH Host/IP z.B. 192.0.2.30', required: true },

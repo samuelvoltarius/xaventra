@@ -738,28 +738,9 @@ export const systemTools: NovaTool[] = [
             }
         },
     },
-    {
-        name: 'ssh_command',
-        description: 'Führt einen Befehl auf einem Remote-Gerät via SSH aus (Pi, NAS, Server etc.). WICHTIG: Nutze dieses Tool für ALLE Befehle die auf einem anderen Gerät laufen sollen — NICHT run_command! Gespeicherte Hosts/Passwörter werden automatisch verwendet. Anführungszeichen im Befehl werden automatisch escaped.',
-        category: 'system',
-        parameters: [
-            { name: 'host', type: 'string', description: 'Host/IP', required: true },
-            { name: 'command', type: 'string', description: 'Befehl', required: true },
-            { name: 'user', type: 'string', description: 'User z.B. abc', required: false },
-            { name: 'port', type: 'number', description: 'Port z.B. 2223', required: false },
-            { name: 'password', type: 'string', description: 'Passwort', required: false },
-        ],
-        handler: async (params) => {
-            const { executeSSH } = await import('./ssh-tool.js')
-            return executeSSH({
-                host: params.host as string,
-                command: params.command as string,
-                user: params.user as string | undefined,
-                port: params.port as number | undefined,
-                password: params.password as string | undefined,
-            })
-        },
-    },
+    // 2.90.1 (Codekarte D2): the one ssh_command - with the owner's confirm code for the self-heal and the
+    // requester's identity (the former inline copy had neither).
+    sshTool,
     {
         name: 'get_env',
         description: 'Liest eine Umgebungsvariable',

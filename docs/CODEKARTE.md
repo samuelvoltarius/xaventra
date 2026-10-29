@@ -501,19 +501,21 @@ streicht sie hier im selben Commit (oder markiert sie als erledigt mit Version).
 - `src/tools/complete-registry.ts` (`NovaToolRegistry`, ~236 Werkzeuge) —
   Laufzeit.
 - `src/tools/registry.ts` (`ToolRegistry`, `getToolRegistry` ~1233) mit
-  eigenen Definitionen gleichen Namens: `remember`/`recall` als **Stubs**
-  (`registry.ts:755–780`, speichern nichts), `ssh_command` (`:489`),
-  `mission_status` (`:1198`), `start_autonomous_mission` (`:1152`), `clarify`
+  eigenen Definitionen gleichen Namens (bis 2.90.0 `remember`/`recall` als
+  Stubs und eine dritte `ssh_command`-Kopie, siehe unten), `mission_status` (`:1198`), `start_autonomous_mission` (`:1152`), `clarify`
   (`:1121`). Genutzt von `src/llm/base.ts:179`, `src/tools/executor.ts`,
   `src/cli.ts:377`.
-- `ssh_command` gibt es dreifach: `complete-registry.ts:741` (registriert, ohne
-  `confirm`/Identität), `src/tools/ssh-tool.ts:707` `sshTool` (mit `confirm`
-  und Identität, importiert, aber nicht registriert), `registry.ts:489`.
 - `google_search` doppelt: `complete-registry.ts:963` (registriert) und
   `src/tools/google-search.ts:297` (tote Definition).
-- **Empfehlung:** nur `complete-registry.ts`. CLI/`executor.ts`/`llm/base.ts`
-  darauf umstellen, `registry.ts` auf reine Typen reduzieren. Bei
-  `ssh_command` die Fassung aus `ssh-tool.ts` registrieren.
+- 2.90.1 erledigt: `ssh_command` gibt es nur noch als `sshTool`
+  (`ssh-tool.ts`, mit `confirm` und Identität), registriert in
+  `complete-registry.ts` und von `registry.ts` übernommen;
+  `remember`/`recall` in `registry.ts` sind keine Stubs mehr, sie rufen die
+  Laufzeit-Werkzeuge (`runtimeTool`). Wächter:
+  `src/tools/registry-one-way.test.ts`.
+- **Empfehlung (offen):** nur `complete-registry.ts`. CLI/`executor.ts`/`llm/base.ts`
+  darauf umstellen, `registry.ts` auf reine Typen reduzieren; `google_search`
+  in `google-search.ts` löschen.
 
 ### D3 Ergebnis- und Abbruch-Formulierungen
 
