@@ -2616,7 +2616,10 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                 : honestNoToolResponse(actionIntent.kind)
         } else if (!isSystemMessage && actionIntent.requiresTool && fulfillmentToolCount === 0 && !(result as any).error) {
             supervised.content = honestNoToolResponse(actionIntent.kind)
-        } else if (!isSystemMessage && fulfillmentToolCount === 0 && responseClaimsCompletedAction(supervised.content || '')) {
+        } else if (!isSystemMessage && fulfillmentToolCount === 0 && responseClaimsCompletedAction(supervised.content || '')
+            // 2.90.2 (VM 130, 18:57, mesh_screenshot captured:true): without an action intent a successful observation
+            // (capture, screenshot) is evidence for a claim about it; an action intent still needs a fulfilling tool.
+            && !(actionIntent.kind === 'none' && successfulExecutions.some((execution: any) => toolProvidesActionEvidence(execution.toolName)))) {
             supervised.content = honestNoToolResponse(actionIntent.kind)
         }
 
