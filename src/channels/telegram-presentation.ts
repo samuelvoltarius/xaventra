@@ -109,7 +109,23 @@ export function isTelegramFailureReply(text: string): boolean {
     // 2.89.14: a verification note in front of a real answer is no failure (live: the L12 note closed the card as ❌ and the answer came twice).
     if (value.startsWith(L12_UNVERIFIED_NOTE) || value.startsWith(UNVERIFIED_NOTE)) return false
     return /^(?:❌|⚠️|🚫)/u.test(value) || /^(?:Die Anfrage wurde abgebrochen|Fehler\b|Abgebrochen\b)/i.test(value)
+        || FAILURE_REPLY_START.test(value)
 }
+
+/** 2.90.1 (Codekarte D3): openings of the runner's/pipeline's own failure and limit texts (escalation,
+ * honestNoToolResponse, userFacingVerdictMessage, unfinishedRunNotice, limitStopNotice, run timeout).
+ * Only the opening counts: an answer that mentions a failure later in a sentence stays a success. */
+const FAILURE_REPLY_START = new RegExp('^(?:' + [
+    'Die Aktion ist nicht gelungen',
+    'Das habe ich gerade nicht hinbekommen',
+    'Ich konnte die Aufgabe nicht als abgeschlossen bestätigen',
+    'Ich bin mit dieser Aufgabe noch nicht ganz fertig geworden',
+    'Das war viel auf einmal: Ich habe nach \\d+ Arbeitsschritten angehalten',
+    'Das Werkzeug \\S+ hat länger als \\d+ s gebraucht',
+    'Die Zeitgrenze für diese Aufgabe ist abgelaufen',
+    'Die erlaubte Anzahl an Werkzeugaufrufen',
+    'Das hat zu lange gedauert',
+].join('|') + ')', 'u')
 
 /** One inbound request owns one visible lifecycle: progress is edited in place,
  * then removed before the final/clarification/error response is delivered

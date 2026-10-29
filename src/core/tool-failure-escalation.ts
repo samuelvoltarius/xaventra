@@ -212,16 +212,38 @@ export function setToolFailureEscalationStore(value: ToolFailureEscalationStore)
  */
 export function escalationWithCompletedEffects(
     content: string,
-    executions: ReadonlyArray<{ toolName?: string; params?: Record<string, unknown>; success?: boolean }>,
+    executions: ReadonlyArray<{ toolName?: string; params?: Record<string, unknown>; success?: boolean; result?: unknown }>,
     tools: ReadonlyArray<{ name: string; parameters?: ReadonlyArray<{ name: string }> }> = [],
 ): string {
     const effectTools = new Set(tools.filter(tool => tool.parameters?.some(parameter => parameter.name === 'confirm')).map(tool => tool.name))
     const done = executions.filter(item => item.success === true && effectTools.has(String(item.toolName || '')))
-    if (!done.length) return content
+    const read = readValues(executions)
+    if (!done.length && !read.length) return content
     const target = (params: Record<string, unknown> = {}) => {
         const value = ['entity_id', 'filename', 'target', 'host', 'to', 'name'].map(key => params[key]).find(item => typeof item === 'string' && item.trim())
         return value ? ` (${String(value).slice(0, 80)})` : ''
     }
-    return `Erledigt: ${done.map(item => `${item.toolName}${target(item.params)}`).join('; ')}.\n\n`
-        + 'Ein späterer Schritt ist danach nicht gelungen; die Ursache ist intern zur Prüfung vorgemerkt.'
+    // 2.90.1 (live 29.10. 14:01:39): a value read before the failure (hass_get 97.0 %) is named, not dropped.
+    return [
+        done.length ? `Erledigt: ${done.map(item => `${item.toolName}${target(item.params)}`).join('; ')}.` : '',
+        read.length ? `Gelesen: ${read.join('; ')}.` : '',
+    ].filter(Boolean).join('\n') + '\n\n'
+        + (done.length ? 'Ein späterer Schritt ist danach nicht gelungen; die Ursache ist intern zur Prüfung vorgemerkt.'
+            : 'Ein späterer Schritt ist danach nicht gelungen; die Ursache ist intern zur Prüfung vorgemerkt. Geändert wurde nichts.')
+}
+
+/** Values a successful hass_get returned in this run (at most 3); other reads have no safe short form. */
+function readValues(executions: ReadonlyArray<{ toolName?: string; success?: boolean; result?: unknown }>): string[] {
+    const out: string[] = []
+    for (const item of executions) {
+        if (item.success !== true || item.toolName !== 'hass_get') continue
+        let data: any = item.result
+        if (typeof data === 'string') { try { data = JSON.parse(data) } catch { data = null } }
+        const entity = data?.entity
+        if (!entity?.entity_id || entity.state === undefined) continue
+        const unit = entity.attributes?.unit_of_measurement ? ` ${entity.attributes.unit_of_measurement}` : ''
+        const line = `${String(entity.attributes?.friendly_name || entity.entity_id).slice(0, 80)}: ${String(entity.state).slice(0, 40)}${unit}`
+        if (!out.includes(line)) out.push(line)
+    }
+    return out.slice(0, 3)
 }

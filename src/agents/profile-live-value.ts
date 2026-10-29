@@ -87,6 +87,10 @@ function staleness(input: { question: LiveValueQuestion; executions: readonly Li
     const fresh = aged.filter(item => item.age <= max)
     const mentionsAge = STATES_AGE.test(reply)
     // 2.89.15 (Abnahme 2.89.14): the list named every stale entity (5220 chars) - three are enough.
+    const fold = (value: unknown) => String(value ?? '').toLocaleLowerCase('de-DE').replace(/[_.\-]+/g, ' ')
+    const terms = input.question.terms.map(fold).filter(term => term.trim().length >= 3)
+    const bound = input.question.binding?.entityId
+    const belongs = (entity: any) => entity?.entity_id === bound || terms.some(term => fold(`${label(entity)} ${entity?.entity_id}`).includes(term))
     const note = (items: typeof stale) => items.slice(0, 3).map(item => `„${label(item.entity)}“: Stand vor ${ageText(item.age)}`).join('; ')
         + (items.length > 3 ? `; und ${items.length - 3} weitere` : '')
     if (!fresh.length) {
@@ -100,9 +104,6 @@ function staleness(input: { question: LiveValueQuestion; executions: readonly Li
         // 2.89.15 (Abnahme 2.89.14, 11:28:04): the freshest entity of ANY kind replaced a stale vehicle range
         // (sensor.pv_surplus_km, "Strom & PV Ueberschuss als Reichweite"). A replacement belongs to the asked
         // entity (profile terms in its name or id) and is of the same kind; otherwise the stale value is named as stale.
-        const fold = (value: unknown) => String(value ?? '').toLocaleLowerCase('de-DE').replace(/[_.\-]+/g, ' ')
-        const terms = input.question.terms.map(fold).filter(term => term.trim().length >= 3)
-        const belongs = (entity: any) => terms.some(term => fold(`${label(entity)} ${entity?.entity_id}`).includes(term))
         const sameKind = (a: any, b: any) => Boolean((a?.attributes?.unit_of_measurement && a.attributes.unit_of_measurement === b?.attributes?.unit_of_measurement)
             || (a?.attributes?.device_class && a.attributes.device_class === b?.attributes?.device_class))
         const best = fresh.filter(f => belongs(f.entity) && citedStale.some(s => sameKind(f.entity, s.entity))).sort((a, b) => a.age - b.age)[0]
@@ -110,9 +111,11 @@ function staleness(input: { question: LiveValueQuestion; executions: readonly Li
         const old = [...citedStale].sort((a, b) => a.age - b.age)[0]
         return `Stand vor ${ageText(old.age)}: ${label(old.entity)}: ${old.entity.state}${unitOf(old.entity)}. Der Wert ist nicht aktuell, Home Assistant hat ihn seit längerem nicht aktualisiert.`
     }
-    return mentionsAge ? null : `${reply}
+    // 2.90.1 (live 29.10. 14:02:28): the hint listed 95 unrelated sensors ("… und 92 weitere") - only the asked entity's.
+    const ownStale = stale.filter(item => belongs(item.entity))
+    return mentionsAge || !ownStale.length ? null : `${reply}
 
-Hinweis: nicht aktuell und deshalb nicht verwendet (${note(stale)}).`
+Hinweis: nicht aktuell und deshalb nicht verwendet (${note(ownStale)}).`
 }
 
 function guardNumbers(input: { question: LiveValueQuestion; reply: string; executions: readonly LiveValueToolExecution[]; now?: number }): string | null {
