@@ -1895,7 +1895,16 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                 // budget, tool timeout) instead of a vague „nicht fertig“.
                 const notice = policyBlocked ? '' : limitStopNotice(runLimitError ?? error)
                 if (notice && !policyBlocked && behelfCalls >= 2) capabilityGap = true
-                if (handoffRefusal && !policyBlocked) { finalContent = handoffRefusal; incompleteSynthesis = false }
+                if (handoffRefusal && !policyBlocked) {
+                    // 2.90.3 (probe 00:06): proven hand-over results of this run survive the refusal; the stop
+                    // sentence is appended, it never replaces them.
+                    const { handoffResultText } = await import('../mesh/peer-refusal.js')
+                    const proven = toolExecutions
+                        .filter(item => (item.toolName === 'spawn_subagent' || item.toolName === 'mesh_delegate') && item.success !== false)
+                        .map(item => handoffResultText(item.result)).filter((text): text is string => Boolean(text))
+                    finalContent = [...new Set(proven), handoffRefusal].join('\n\n')
+                    incompleteSynthesis = false
+                }
                 else if (!policyBlocked) finalContent = await finishUnfinished(notice)
                 try {
                     const { missingToolFailures } = await import('../tools/skill-builder.js')

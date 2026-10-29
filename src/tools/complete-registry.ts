@@ -3194,7 +3194,10 @@ export const ALL_TOOLS: NovaTool[] = [
                     ...(await subagentParentIdentity(params)),
                 })
                 if (result.status === 'completed') {
-                    return `${placement}✅ Subagent ${result.id} fertig (${result.durationMs}ms):\n${result.output}`
+                    // 2.90.3 (probe 00:06): a proven hand-over is not repeated to the same node.
+                    const hint = result.mode === 'mesh' && result.meshNode
+                        ? `\n\n${(await import('../mesh/peer-refusal.js')).handoffDoneHint(result.meshNode)}` : ''
+                    return `${placement}✅ Subagent ${result.id} fertig (${result.durationMs}ms):\n${result.output}${hint}`
                 }
                 // 2.90.0: a hand-over to a node that did not answer is one clear sentence for the owner, not a raw timeout.
                 if (result.mode === 'mesh' && result.meshNode && result.status === 'timeout') {

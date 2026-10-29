@@ -57,6 +57,26 @@ export function handoffRefusalText(result: unknown): string {
     return at < 0 ? text : text.slice(at).split('\n')[0].replace(/"\s*[,}].*$/, '')
 }
 
+/** 2.90.3 (probe 00:06): after a proven hand-over the model is told not to hand the same node the task again. */
+const HANDOFF_DONE_HINT = '(Ergebnis liegt vor — nicht erneut an '
+
+export function handoffDoneHint(node: string): string {
+    return `${HANDOFF_DONE_HINT}${node} übergeben; antworte mit diesem Ergebnis.)`
+}
+
+/**
+ * 2.90.3: the proven result inside a successful hand-over tool result ("✅ Subagent … fertig (… ms):" or
+ * "Ergebnis von <node>:"), without the header and the model hint; null for anything else (refusals, errors).
+ */
+export function handoffResultText(result: unknown): string | null {
+    const text = String(typeof result === 'string' ? result : '')
+    if (!text || text.includes(HANDOFF_REFUSED)) return null
+    const match = /(?:✅ Subagent \S+ fertig \([^)]*\):|Ergebnis von (\S+):)\n([\s\S]+)/u.exec(text)
+    if (!match) return null
+    const body = match[2].split(HANDOFF_DONE_HINT)[0].trim().slice(0, 1500)
+    return body || null
+}
+
 const TTL_MS = 10 * 60_000
 const refused = new Map<string, { until: number; sentence: string }>()
 /** The governed run; without one nothing is remembered ("in the same run" needs a run). */

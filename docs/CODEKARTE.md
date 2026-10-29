@@ -505,7 +505,10 @@ streicht sie hier im selben Commit (oder markiert sie als erledigt mit Version).
   2.90.2: eine Ablehnung durch die Mesh-Richtlinie (`ack.status === 'rejected'`)
   heißt „abgelehnt“ (`peerRejectionSentence`), nie „nicht erreichbar“; der
   Runner beendet den Lauf mit dem Satz (`nova-runner.ts` `handoffRefusal`,
-  erkannt über `isHandoffRefusal`).
+  erkannt über `isHandoffRefusal`). 2.90.3: belegte Übergabe-Ergebnisse des
+  Laufs (`handoffResultText`) bleiben stehen, der Abbruchsatz wird angehängt;
+  nach einer gelungenen Übergabe sagt `handoffDoneHint` dem Modell, denselben
+  Knoten nicht erneut zu beauftragen.
 - Weitere Einstiege auf denselben Weg: `spawn_subagents_parallel`,
   `continuable_subagent_start`, `mesh_repo_task` — reichen `mesh_node="auto"`
   aber roh durch bzw. routen selbst (siehe D11).

@@ -26,6 +26,14 @@ Fixes from the Telegram acceptance of 2.90.2.
   Änderung" / "nichts verändert" is never said when a change is proven.
 - **A failure answer appears once.** The Telegram status card closes as one
   "❌ Abgebrochen · N s" line instead of repeating the answer below it.
+- **A node's answer survives a later refusal.** ns1 answered a hand-over; a
+  second, unneeded hand-over was refused and the reply showed only the
+  refusal. The answer now keeps ns1's result and adds the refusal after it;
+  after a successful hand-over the model is told not to send the same node
+  the task again.
+- **The self-check no longer repeats itself every minute.** Each finding
+  ("Tool … hat 5x versagt") is reported at most once per hour, instead of
+  every minute with an internal diagnosis.
 
 ## [2.90.2] — 2026-10-29
 
