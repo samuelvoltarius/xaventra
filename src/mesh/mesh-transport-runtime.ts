@@ -206,6 +206,13 @@ async function sendCaptureEnvelope(node: string, payload: NodeCaptureRequest | N
     } finally { clearTimeout(timer); capturePending.delete(envelope.id) }
 }
 
+/** The agent tool list a peer reported in its signed node.tools inventory; undefined when unknown or malformed. */
+export function reportedRemoteAgentTools(node: string): string[] | undefined {
+    const list = peerStates[node]?.tools?.remoteAgentTools
+    if (!Array.isArray(list) || list.length > 128 || !list.every(name => typeof name === 'string' && /^[a-z0-9_]{1,64}$/.test(name))) return undefined
+    return [...list]
+}
+
 export function currentCaptureNodes(): string[] {
     return [getLocalNodeId(), ...Object.values(peerStates).filter(p => Date.now() - p.lastSeen < 120_000 && watchKnownNodes().includes(p.nodeId)).map(p => p.nodeId)].filter((id, i, all) => all.indexOf(id) === i).slice(0, 16)
 }
@@ -517,7 +524,9 @@ export function startMeshDataPlane(intervalMs = 30_000): void {
             const { getToolRegistry } = await import('../tools/complete-registry.js')
             const tools = getToolRegistry().getAll().map(tool => ({ name: tool.name, description: tool.description, category: tool.category }))
             const inventoryHash = createHash('sha256').update(JSON.stringify(tools.map(tool => tool.name).sort())).digest('hex')
-            const inventory = transport.create<ToolInventoryPayload>('node.tools', '*', { tools, inventoryHash })
+            const { remoteAgentToolList } = await import('./mesh-policy.js')
+            const remoteAgentTools = remoteAgentToolList(loadRuntimeConfig().allowedTools)
+            const inventory = transport.create<ToolInventoryPayload>('node.tools', '*', { tools, inventoryHash, remoteAgentTools })
             await transport.broadcast(inventory)
         } catch { /* registry may not be initialized during fast boot */ }
     }

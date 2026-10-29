@@ -12,6 +12,19 @@
   helpers on nodes with a screen, maps and routes, music, a maker helper for
   boards and sensors.
 
+### Fixed (next patch, version set at release)
+
+- **Subagents on another node get tools the node accepts.** A subagent sent
+  to a node without its own tool list carried Main's local defaults
+  (`run_python`, `web_search`, `fetch_url`, …), and the node refused the whole
+  request (`agent_tool_not_globally_allowed`). Each node now reports the
+  agent tools it accepts in its signed tool inventory, and Main sends exactly
+  that list (or the node default when nothing is reported yet). Explicitly
+  requested tools are passed on unchanged and stay subject to the node's own
+  policy; nothing is loosened on the node.
+- The time tool is `get_current_time` in all default lists; `get_time` was
+  never a registered tool.
+
 ## [2.90.0] — 2026-10-29
 
 Context per task, step 1: measure, and build the smaller prompts in shadow

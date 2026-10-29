@@ -194,7 +194,7 @@ const AGENT_ID = /^[A-Z][A-Z0-9_-]{1,31}$/
 
 /** Read-only tools for a local subagent (no memory, no shell, no writes, no sending). */
 export const DELEGATION_SUBAGENT_TOOLS: readonly string[] = Object.freeze([
-    'web_search', 'browser_search', 'fetch_url', 'read_url', 'read_file', 'list_directory', 'calculate', 'get_time', 'get_system_info',
+    'web_search', 'browser_search', 'fetch_url', 'read_url', 'read_file', 'list_directory', 'calculate', 'get_current_time', 'get_system_info',
 ])
 
 /** Asks for a change to systems → L2 (card). Raises only. Umlauts handled via \p{L}. */

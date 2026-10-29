@@ -17,6 +17,14 @@ const DEFAULT_REMOTE_TOOLS = new Set([
     'find_capability', 'resolve_capability', 'get_current_time',
 ])
 
+/** Agent tools this node accepts in agent.request (configured list or code default,
+ * never-remote tools removed). Published in node.tools so Main sends a list the
+ * target accepts instead of its own local defaults (Langtest B, 2.90.0). */
+export function remoteAgentToolList(configured?: readonly string[]): string[] {
+    const base = configured?.length ? configured : [...DEFAULT_REMOTE_TOOLS]
+    return [...new Set(base.map(String))].filter(tool => !NEVER_REMOTE.has(tool)).sort()
+}
+
 /**
  * MI-6: minimum principal role per request kind (fail-closed). Observers may
  * only publish state; mission handoff and Codex access need a privileged role.

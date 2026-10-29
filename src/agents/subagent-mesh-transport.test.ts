@@ -4,6 +4,8 @@ const mesh = vi.hoisted(() => ({
     sendAgentRequest: vi.fn(),
     waitForMeshRunResult: vi.fn(),
     cancelMeshRun: vi.fn(),
+    // No inventory report: the target's code-default agent tool list is sent.
+    reportedRemoteAgentTools: vi.fn(() => undefined),
 }))
 
 vi.mock('../mesh/mesh-transport-runtime.js', () => mesh)
