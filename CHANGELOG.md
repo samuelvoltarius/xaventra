@@ -34,7 +34,9 @@ Reliability after the Telegram acceptance of 2.89.15 and the peer test of
   the requesting user is gone.
 - **The owner on another node.** A node treats a delegated task as the owner's
   only when it is signed with the pinned key of a configured peer and names the
-  configured owner; unsigned, unknown or unpinned ways stay guests. A node
+  configured owner and it comes from a Main (peer entry with the role `owner`,
+  or a Main fence the coordinator confirmed); unsigned, unknown, unpinned or
+  worker-to-worker ways stay guests. A node
   that still answers as guest is reported in one sentence and not asked again
   in the same task (it was asked four more times until the time limit).
 - **Local models stay off when switched off.** With

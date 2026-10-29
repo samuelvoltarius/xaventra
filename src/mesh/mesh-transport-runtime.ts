@@ -37,14 +37,19 @@ export interface MeshAgentExecutionOptions {
 /**
  * 2.90.1 (Peer-Test 29.10.): the owner holds on a peer only for an agent.request signed with the pinned
  * publicKey of a configured named peer (no TOFU, no workload prefix, no key-less peer) whose user id is
- * the configured owner (allowFrom). Everything else stays as before (guest/user).
+ * the configured owner (allowFrom), and only from a Main: the sender's `nova-main` fence was confirmed live
+ * by the coordinator (`mainFenceOk`; a token alone can be made by any node) or its peer entry grants the
+ * role `owner` explicitly. A worker peer - even with a valid key - never makes the owner on another node.
+ * Replay: the router runs MeshPolicy.verify (signature, pinned key, expiry, nonce) before any handler.
  */
-export function verifiedMeshOwnerRequest(envelope: MeshEnvelope, peers: readonly MeshPeer[], allowFrom: string[]): boolean {
+export function verifiedMeshOwnerRequest(envelope: MeshEnvelope, peers: readonly MeshPeer[], allowFrom: string[], mainFenceOk = false): boolean {
     if (envelope?.kind !== 'agent.request') return false
     const userId = (envelope.payload as AgentRequestPayload | undefined)?.userId
     if (typeof userId !== 'string' || !userId.trim()) return false
-    const pinned = peers.find(peer => peer.nodeId === envelope.sourceNode)?.publicKey?.trim()
+    const peer = peers.find(item => item.nodeId === envelope.sourceNode)
+    const pinned = peer?.publicKey?.trim()
     if (!pinned || !MeshIdentity.verifyWithKey(envelope, pinned)) return false
+    if (!mainFenceOk && !peer?.roles?.includes('owner')) return false
     return isConfiguredOwner(userId, 'telegram', allowFrom)
 }
 
@@ -298,15 +303,15 @@ export function currentMainMeshFence(): MeshFence | undefined {
  * and where a coordinator is reachable the fence is confirmed live. observe:
  * logged only; enforce: the request is refused.
  */
-export async function verifyDelegatedEnvelopeFence(envelope: MeshEnvelope, live = true): Promise<{ ok: boolean; reason: string }> {
+export async function verifyDelegatedEnvelopeFence(envelope: MeshEnvelope, live = true): Promise<{ ok: boolean; reason: string; confirmed?: boolean }> {
     if (!envelope.fence?.token || !envelope.fence.epoch) return { ok: false, reason: 'delegated request carries no Main fence' }
     return checkDelegatedFence({
         service: envelope.fence.service, epoch: envelope.fence.epoch, token: envelope.fence.token, sourceNode: envelope.sourceNode,
     }, { live })
 }
 
-async function admitDelegatedEnvelope(envelope: MeshEnvelope): Promise<string | null> {
-    const verdict = await verifyDelegatedEnvelopeFence(envelope)
+async function admitDelegatedEnvelope(envelope: MeshEnvelope, checked?: { ok: boolean; reason: string; confirmed?: boolean }): Promise<string | null> {
+    const verdict = checked || await verifyDelegatedEnvelopeFence(envelope)
     if (verdict.ok) return null
     if (getFencingMode() === 'enforce') {
         console.warn(`[MeshTransport] ${envelope.kind} from ${envelope.sourceNode} refused (fenced): ${verdict.reason}`)
@@ -740,7 +745,8 @@ async function handleEnvelope(envelope: MeshEnvelope, messageHandler?: MessageHa
         const cached = processed.get(payload.idempotencyKey)
         if (cached) return sendResult(envelope, forRequest(cached, envelope.id))
         if (!messageHandler) throw new Error('agent handler unavailable')
-        const agentFenceRefusal = await admitDelegatedEnvelope(envelope)
+        const agentFence = await verifyDelegatedEnvelopeFence(envelope)
+        const agentFenceRefusal = await admitDelegatedEnvelope(envelope, agentFence)
         if (agentFenceRefusal) {
             await sendResult(envelope, makeResult(envelope.id, false, undefined, `fenced: ${agentFenceRefusal}`))
             return
@@ -764,7 +770,7 @@ async function handleEnvelope(envelope: MeshEnvelope, messageHandler?: MessageHa
                 async content => { if (!controller.signal.aborted) output += content },
                 undefined,
                 { abortSignal: controller.signal, allowedTools: payload.allowedTools || [], requestId: envelope.id,
-                    ...(verifiedMeshOwnerRequest(envelope, loadRuntimeConfig().direct.peers, getConfigAllowFrom()) ? { verifiedMeshOwner: true } : {}) },
+                    ...(verifiedMeshOwnerRequest(envelope, loadRuntimeConfig().direct.peers, getConfigAllowFrom(), agentFence.ok && agentFence.confirmed === true && envelope.fence?.service === 'nova-main') ? { verifiedMeshOwner: true } : {}) },
             ))
             if (controller.signal.aborted) throw new Error('mesh agent request cancelled')
             const result = makeResult(envelope.id, true, output)

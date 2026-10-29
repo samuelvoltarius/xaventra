@@ -148,7 +148,8 @@ export function currentDelegatedFence(): DelegatedFence | undefined {
 // Guard
 // ---------------------------------------------------------------------------
 
-export interface FenceCheck { ok: boolean; reason: string; delegated?: boolean }
+/** `confirmed`: the coordinator itself confirmed the fence live (not only token + high-water). */
+export interface FenceCheck { ok: boolean; reason: string; delegated?: boolean; confirmed?: boolean }
 
 /** Never throws. `live` asks the coordinator with a read-only check. */
 export async function checkFence(service: string = FENCE_MAIN_SERVICE, options: { live?: boolean } = {}): Promise<FenceCheck> {

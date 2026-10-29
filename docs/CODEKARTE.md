@@ -484,7 +484,10 @@ streicht sie hier im selben Commit (oder markiert sie als erledigt mit Version).
   `handoffWaitSeconds()`.
   Owner auf dem Empfänger: nur für ein `agent.request`, das mit dem festen
   `publicKey` eines konfigurierten Peers signiert ist und dessen userId der
-  konfigurierte Owner ist (`mesh-transport-runtime.ts`
+  konfigurierte Owner ist, und nur von einem Main: Peer-Eintrag mit Rolle
+  `owner` oder ein vom Koordinator live bestätigter `nova-main`-Fence
+  (`FenceCheck.confirmed`; ein Token allein beweist nichts). Replay prüft der
+  Router vorher (`MeshPolicy.verify`) (`mesh-transport-runtime.ts`
   `verifiedMeshOwnerRequest` → Pipeline → `multi-user-middleware.ts`
   `runAsVerifiedMeshOwner`, gilt nur für diesen einen Lauf).
   Gast-/Ablehnungsantwort eines Knotens: `src/mesh/peer-refusal.ts`

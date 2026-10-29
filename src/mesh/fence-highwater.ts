@@ -82,7 +82,7 @@ export async function checkDelegatedFence(fence: DelegatedFence, options: { live
         const { checkRemoteFence } = await import('./leader-election.js')
         const remote = await checkRemoteFence(fence.service, fence.epoch, fence.sourceNode)
         if (remote.available === false) return { ok: true, reason: `epoch ${fence.epoch} >= high-water; ${remote.reason}` }
-        return remote.valid ? { ok: true, reason: remote.reason } : { ok: false, reason: remote.reason }
+        return remote.valid ? { ok: true, reason: remote.reason, confirmed: true } : { ok: false, reason: remote.reason }
     } catch (error) {
         return { ok: false, reason: `remote fence check failed (${String(error).slice(0, 120)})` }
     }
