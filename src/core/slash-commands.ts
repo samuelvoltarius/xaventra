@@ -3402,7 +3402,8 @@ _Deaktivieren: /verbose off_`
         {
             // Not in COMMAND_MINIMUM_ROLE, so owner-only; checked again here.
             if (requestPermission !== 'owner') return '🔒 Freigaben kann nur der Owner erteilen.'
-            const [toolName, ...rest] = args.trim().split(/\s+/).filter(Boolean)
+            // 2.89.13 (Quiet-Hub relay): only the first line - an appended "(Antworte knapp …)" must not join the detail.
+            const [toolName, ...rest] = (args.trim().split(/\r?\n/)[0] || '').split(/\s+/).filter(Boolean)
             const detail = rest.join(' ').trim()
             // P9: a code is always bound to a concrete detail (file, entity, host or the
             // `#hash` the refusal names) — a tool-wide code would approve every call.
