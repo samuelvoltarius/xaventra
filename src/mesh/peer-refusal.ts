@@ -59,19 +59,22 @@ export function handoffRefusalText(result: unknown): string {
 
 const TTL_MS = 10 * 60_000
 const refused = new Map<string, { until: number; sentence: string }>()
-const runKey = () => {
+/** The governed run; without one nothing is remembered ("in the same run" needs a run). */
+const runKey = (): string | null => {
     const context = getExecutionPolicyContext()
-    return String(context.runId || context.contractId || context.authUserId || context.userId || 'anon')
+    return context.runId || context.contractId ? String(context.runId || context.contractId) : null
 }
 
 export function rememberPeerRefusal(node: string, sentence = peerRefusalSentence(node), now = Date.now()): void {
     for (const [key, entry] of refused) if (entry.until <= now) refused.delete(key)
-    refused.set(`${runKey()}|${node}`, { until: now + TTL_MS, sentence })
+    const run = runKey()
+    if (run) refused.set(`${run}|${node}`, { until: now + TTL_MS, sentence })
 }
 
 /** The sentence when this node refused in the current run; the hand-over is then not sent again. */
 export function peerRefusalInThisRun(node: string, now = Date.now()): string | null {
-    const entry = refused.get(`${runKey()}|${node}`)
+    const run = runKey()
+    const entry = run ? refused.get(`${run}|${node}`) : undefined
     return entry && entry.until > now ? entry.sentence : null
 }
 
