@@ -11,7 +11,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync, ope
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { traceStep } from './request-tracer.js'
-import { ReplyDeliveryError, protectReplyDelivery } from './reply-delivery-error.js'
+import { ReplyDeliveryError, deliveryFailureText, protectReplyDelivery } from './reply-delivery-error.js'
 import { stripInternalHistoryNotes, withoutInternalNotes } from './history-note-filter.js'
 import { selectContextPolicy } from './context-policy.js'
 import { conversationResponseGuidance, detectActionIntent, honestNoToolResponse, responseClaimsCompletedAction, toolProvidesActionEvidence } from './action-intent.js'
@@ -2898,7 +2898,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
         }
 
     } catch (err) {
-        console.error(`[Nova] [${channel}] Fehler: ${err}`)
+        console.error(`[Nova] [${channel}] Fehler: ${deliveryFailureText(err)}`)
         if (err instanceof ReplyDeliveryError) throw err
         const disposition = agentFailureDisposition(err, execution?.abortSignal)
 

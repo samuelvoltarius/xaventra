@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
-import { protectReplyDelivery, ReplyDeliveryError } from './reply-delivery-error.js'
+import { deliveryFailureText, protectReplyDelivery, ReplyDeliveryError } from './reply-delivery-error.js'
 
 describe('reply delivery is not an inference failure', () => {
     it('retains the transport cause and does not resend an ambiguous delivery', async () => {
@@ -15,5 +15,16 @@ describe('reply delivery is not an inference failure', () => {
         const handler = source.slice(source.indexOf('console.error(`[Nova] [${channel}] Fehler:'))
         expect(handler.indexOf('if (err instanceof ReplyDeliveryError) throw err')).toBeLessThan(handler.indexOf('state.llm.complete'))
         expect(new ReplyDeliveryError('failure').message).not.toContain('failure')
+    })
+})
+
+// 2.89.13 (Abnahme 2.89.12, 01:25:38): the journal only said "ReplyDeliveryError: Reply delivery failed";
+// the transport cause (EFATAL …) was lost, so the failure could not be explained afterwards.
+describe('a delivery failure is logged with its cause', () => {
+    it('names the transport cause, redacted and bounded', () => {
+        const text = deliveryFailureText(new ReplyDeliveryError(new Error('EFATAL: fetch failed https://api.telegram.org/bot123456789:AAHfakeFAKEfake_test-value-1234567/sendMessage')))
+        expect(text).toContain('EFATAL: fetch failed')
+        expect(text).not.toContain('AAHfakeFAKEfake_test-value-1234567')
+        expect(deliveryFailureText(new Error('boom'))).toBe('Error: boom')
     })
 })
