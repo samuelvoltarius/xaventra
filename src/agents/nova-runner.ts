@@ -31,7 +31,7 @@ import { join } from 'node:path'
 import { buildCognitivePrompt } from '../core/context-policy.js'
 import { sideEffectsDisabled } from '../core/side-effects.js'
 import { historyEvidenceMessages } from './history-evidence.js'
-import { incompleteToolResponse, incompleteExecutionsResponse, unfinishedRunNotice, exhaustionSynthesisPrompt, environmentOverviewResponse, wantsTechnicalDetails, META_TOOL_NAMES } from '../core/tool-evidence-response.js'
+import { incompleteToolResponse, incompleteExecutionsResponse, unfinishedRunNotice, exhaustionSynthesisPrompt, boundIncompleteSummary, environmentOverviewResponse, wantsTechnicalDetails, META_TOOL_NAMES } from '../core/tool-evidence-response.js'
 import { environmentOverviewPlan } from './environment-overview.js'
 import { cancellableCompletion } from '../llm/cancellable-completion.js'
 import { responseConstraintPrompt } from '../core/response-contract.js'
@@ -1801,7 +1801,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                         const out = await kernel.inference.summarize(() => withTimeout(speakableClient(llmClient).complete(
                             [...messages, { role: 'user', content: prompt }] as any, [],
                             { maxTokens: kernel.cognition.executionBudget.maxOutputTokens, reasoningEffort: 'none' } as any), TIMEOUT_LLM, 'Final synthesis')) as any
-                        if (!(out?.toolCalls?.length)) summary = String(out?.content || '').trim()
+                        if (!(out?.toolCalls?.length)) summary = boundIncompleteSummary(String(out?.content || ''))
                     }
                 } catch (error) { console.warn('[Xaventra Agent] Final synthesis failed:', String(error)) }
                 if (summary) { incompleteSynthesis = false; return notice ? `${notice}\n\n${summary}` : summary }
