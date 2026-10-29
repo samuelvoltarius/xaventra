@@ -28,3 +28,14 @@ describe('a delivery failure is logged with its cause', () => {
         expect(deliveryFailureText(new Error('boom'))).toBe('Error: boom')
     })
 })
+
+// 2.89.14 (Abnahme 2.89.13, 03:13:29): the first /freigabe failed with "Reply delivery failed" on the
+// slash path, which telegram.ts logged without its cause.
+describe('the Telegram handler logs keep the delivery cause', () => {
+    it('every "messageHandler threw" line goes through deliveryFailureText', () => {
+        const source = readFileSync(new URL('../channels/telegram.ts', import.meta.url), 'utf8')
+        const lines = source.split('\n').filter(line => line.includes('] messageHandler threw:'))
+        expect(lines.length).toBeGreaterThanOrEqual(2)
+        for (const line of lines) expect(line).toContain('deliveryFailureText(')
+    })
+})

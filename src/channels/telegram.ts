@@ -12,6 +12,7 @@ import { mayRetryTelegramPolling, telegramConflictRetryDelay } from './telegram-
 import { formatTelegramMessage } from './telegram-presentation.js'
 import type { PrincipalContext } from '../users/principal-id.js'
 import { claimTelegramPairing, isTelegramPairingMessage } from '../onboarding/telegram-pairing.js'
+import { deliveryFailureText } from '../core/reply-delivery-error.js'
 
 // ============================================
 // Types
@@ -1269,7 +1270,7 @@ export class TelegramAdapter implements ChannelAdapter {
             if (!this.messageHandler) return
             this.startTyping(chatId)
             try { await (this.messageHandler(incoming) as unknown as Promise<void>) }
-            catch (error) { console.error(`[Nova Telegram] messageHandler threw: ${error}`) }
+            catch (error) { console.error(`[Nova Telegram] messageHandler threw: ${deliveryFailureText(error)}`) }
             finally { this.stopTyping(chatId) }
         })
     }
@@ -1566,7 +1567,7 @@ export class TelegramAdapter implements ChannelAdapter {
             try {
                 await (this.messageHandler(incoming) as unknown as Promise<void>)
             } catch (err) {
-                console.error(`[Nova Telegram] messageHandler threw: ${err}`)
+                console.error(`[Nova Telegram] messageHandler threw: ${deliveryFailureText(err)}`)
             } finally {
                 // Guarantee typing stops even if pipeline crashes or never sends
                 this.stopTyping(chatId)
