@@ -22,6 +22,9 @@
   that list (or the node default when nothing is reported yet). Explicitly
   requested tools are passed on unchanged and stay subject to the node's own
   policy; nothing is loosened on the node.
+- **Tasks handed to a node (`mesh_delegate`) run with tools.** They were sent
+  without any tool list, so the node worked on them without tools. They now
+  carry the same list the node reported (or its default, without risky tools).
 - The time tool is `get_current_time` in all default lists; `get_time` was
   never a registered tool.
 

@@ -16,6 +16,7 @@
  *   })
  */
 
+import { agentToolsForTarget, RISKY_AGENT_TOOLS } from '../mesh/mesh-policy.js'
 import { randomUUID } from 'node:crypto'
 import { appendFileSync, mkdirSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
@@ -168,11 +169,7 @@ const SAFE_DEFAULT_TOOLS = new Set([
 // browser_open/click/type excluded — stateful, require explicit opt-in
 // Callers can explicitly include it via task.tools if truly needed
 
-const RISKY_TOOLS = new Set([
-    'run_command', 'ssh_command', 'system_executor',
-    'delete_file', 'send_telegram', 'send_email',
-    'deploy', 'docker_run',
-])
+const RISKY_TOOLS = RISKY_AGENT_TOOLS
 
 /** Tool lists arrive as arrays or, from tool calls, as comma-separated strings. */
 export function normalizeToolList(requested: unknown): string[] | undefined {
@@ -195,8 +192,7 @@ function filterTools(requestedInput: unknown): string[] | undefined {
 async function meshSubagentTools(requestedInput: unknown, meshNode: string): Promise<string[] | undefined> {
     if (normalizeToolList(requestedInput)) return filterTools(requestedInput)
     const { reportedRemoteAgentTools } = await import('../mesh/mesh-transport-runtime.js')
-    const { remoteAgentToolList } = await import('../mesh/mesh-policy.js')
-    return remoteAgentToolList(reportedRemoteAgentTools(meshNode)).filter(tool => !RISKY_TOOLS.has(tool))
+    return agentToolsForTarget(reportedRemoteAgentTools(meshNode))
 }
 
 // ============================================

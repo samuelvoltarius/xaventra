@@ -25,6 +25,19 @@ export function remoteAgentToolList(configured?: readonly string[]): string[] {
     return [...new Set(base.map(String))].filter(tool => !NEVER_REMOTE.has(tool)).sort()
 }
 
+/** Never sent by Main as a default, whatever a target reports. */
+export const RISKY_AGENT_TOOLS: ReadonlySet<string> = new Set([
+    'run_command', 'ssh_command', 'system_executor',
+    'delete_file', 'send_telegram', 'send_email',
+    'deploy', 'docker_run',
+])
+
+/** Default agent tools for a target: what it reported (or the peer code default), minus risky tools.
+ * Used by spawn_subagent with mesh_node and by mesh_delegate. */
+export function agentToolsForTarget(reported?: readonly string[]): string[] {
+    return remoteAgentToolList(reported).filter(tool => !RISKY_AGENT_TOOLS.has(tool))
+}
+
 /**
  * MI-6: minimum principal role per request kind (fail-closed). Observers may
  * only publish state; mission handoff and Codex access need a privileged role.

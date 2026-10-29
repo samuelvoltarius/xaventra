@@ -221,6 +221,7 @@
     {
       "module": "src/agents/subagent-orchestrator.ts",
       "imports": [
+        "../mesh/mesh-policy.js",
         "node:crypto",
         "node:fs",
         "node:path"
