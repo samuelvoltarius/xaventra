@@ -4,7 +4,7 @@
  * Implements: TTS (speech-2.8-hd), Image Generation (image-01),
  *             Image Vision (M3), Video Generation (I2V-01/Hailuo-2.3)
  *
- * API Key: from xaventra.config.json providers.minimax.apiKey
+ * API Key: providers.minimax via cloudProviderKey (vault reference or plaintext, then MINIMAX_API_KEY)
  * Base URL: https://api.minimax.io
  *
  * Critical gotchas (from Samuel_agentbot's guide):
@@ -18,6 +18,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { NovaTool } from './complete-registry.js'
 import { resolveConfigPath } from '../config/config-path.js'
+import { cloudProviderKey } from '../core/llm-factory.js'
 
 
 // ============================================
@@ -26,16 +27,15 @@ import { resolveConfigPath } from '../config/config-path.js'
 
 const BASE_URL = 'https://api.minimax.io'
 
+/** 2.90.1 (Codekarte D5): the one LLM key resolver (plaintext, vault reference, vault profile, MINIMAX_API_KEY);
+ * reading only the plaintext field lost the key after the vault move. `apis.minimax_key` stays a legacy fallback. */
 function getMiniMaxKey(): string {
+    let cfg: any = null
     try {
         const cfgPath = resolveConfigPath()
-        if (existsSync(cfgPath)) {
-            const cfg = JSON.parse(readFileSync(cfgPath, 'utf-8'))
-            const key = cfg.providers?.minimax?.apiKey || cfg.apis?.minimax_key
-            if (key) return key
-        }
-    } catch { /* fall through */ }
-    return process.env.MINIMAX_API_KEY || ''
+        if (existsSync(cfgPath)) cfg = JSON.parse(readFileSync(cfgPath, 'utf-8'))
+    } catch { /* resolver still finds vault profile and environment */ }
+    return cloudProviderKey('minimax', cfg?.providers?.minimax) || String(cfg?.apis?.minimax_key || '')
 }
 
 let keyCheck: { at: number; present: boolean } | null = null

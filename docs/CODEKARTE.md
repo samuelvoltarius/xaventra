@@ -581,8 +581,9 @@ Belegte Widersprüche:
   (**Env zuerst** — umgekehrte Reihenfolge).
 - Basis: `src/secrets/provider-keys.ts:48` `resolveProviderKey`,
   `:101` `rehydrateConfigProviderKeys`.
-- Abweichende Leser ohne Tresor: `src/tools/minimax-tools.ts:29`
-  `getMiniMaxKey`, `src/layers/L10-vision.ts:121`,
+- 2.90.1 erledigt: `src/tools/minimax-tools.ts` `getMiniMaxKey` liest über
+  `cloudProviderKey('minimax', …)` (TTS/Bild/Video finden den Tresor-Schlüssel).
+- Abweichende Leser ohne Tresor: `src/layers/L10-vision.ts:121`,
   `src/tools/image-gen-tool.ts:108`, `src/media/media-providers.ts`,
   `src/nova-boot.ts:400`, `src/cli.ts:287–313`,
   `src/core/model-resolver.ts:147` `getOpenAIKey`,
@@ -594,7 +595,7 @@ Belegte Widersprüche:
   `register_llm_provider`/`storeProviderKey`.
 - **Empfehlung:** alle LLM-Leser auf `cloudProviderKey`, alle Dienst-Leser auf
   `resolveServiceApiKey`; Reihenfolge (Env vs. Config) einmal festlegen und
-  dokumentieren. MiniMax zuerst (nach Tresor-Migration unsichtbar).
+  dokumentieren.
 
 ### D6 Konfiguration laden
 
