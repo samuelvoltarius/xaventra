@@ -57,9 +57,9 @@ class SelfCheckManager extends EventEmitter {
     private toolCallActive = false  // Track if a tool is currently executing
 
     private checkInterval: NodeJS.Timeout | null = null
-    private lastActSignature = ''
-    private lastActAt = 0
-    private readonly ACT_REPEAT_MS = 60 * 60_000      // same issue set re-triggers shouldAct at most hourly
+    /** 2.90.3 (B4): when each issue (by signature, numbers ignored) was last reported. */
+    private readonly actReportedAt = new Map<string, number>()
+    private readonly ACT_REPEAT_MS = 60 * 60_000      // the same issue re-triggers shouldAct at most hourly
     private readonly SILENCE_THRESHOLD_MS = 30000       // 30s without response = possible problem
     private readonly SILENCE_WARN_MAX_MS = 5 * 60_000   // Stop warning after 5 min — user is gone
     private readonly MAX_CONSECUTIVE_SILENCES = 3
@@ -413,15 +413,15 @@ ${check.suggestions.length > 0 ? `\n💡 Vorschläge:\n${check.suggestions.map(s
             // shouldAct triggers an LLM diagnosis in the daemon. The same
             // unchanged issues (e.g. a tool that failed 3x and was never used
             // again) would otherwise re-trigger it every interval.
-            const signature = result.issues
-                .map(issue => issue.replace(/\d+(?:[.,]\d+)?/g, '#'))
-                .sort()
-                .join('|')
+            // 2.90.3 (B4, VM 130 00:06): per issue, not per set - another issue coming and going changed the set's
+            // signature and re-reported "Tool X hat 5x versagt" every minute, each time with an LLM diagnosis.
             const now = Date.now()
-            if (signature === this.lastActSignature && now - this.lastActAt < this.ACT_REPEAT_MS) return
-            this.lastActSignature = signature
-            this.lastActAt = now
-            this.emit('shouldAct', result)
+            for (const [signature, at] of this.actReportedAt) if (now - at >= this.ACT_REPEAT_MS) this.actReportedAt.delete(signature)
+            const signatureOf = (issue: string) => issue.replace(/\d+(?:[.,]\d+)?/g, '#')
+            const fresh = result.issues.filter(issue => !this.actReportedAt.has(signatureOf(issue)))
+            if (!fresh.length) return
+            for (const issue of fresh) this.actReportedAt.set(signatureOf(issue), now)
+            this.emit('shouldAct', { ...result, issues: fresh })
         }, intervalSeconds * 1000)
     }
 
