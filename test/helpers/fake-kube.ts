@@ -11,6 +11,7 @@ import type { KubeRequest, KubeResponse, KubeTransport } from '../../src/infra/k
 export const NS = 'xaventra'
 export const RELEASE = 'xv'
 export const IMAGE = 'ghcr.io/example/xaventra:2.88.0'
+export const TEST_NS = 'xaventra-test'
 
 export function controlPolicyRaw(overrides: Record<string, unknown> = {}) {
     return {
@@ -37,6 +38,11 @@ export function createFakeKube(options: { workerNodes?: string[] } = {}) {
         { kind: 'DaemonSet', name: `${RELEASE}-voice`, nodes: [], ready: 0, image: IMAGE, resources: {}, namespace: NS },
         { kind: 'DaemonSet', name: 'fremd-agent', nodes: ['node-a', 'node-b'], ready: 2, image: 'example/other:1', resources: {}, namespace: 'fremd' },
     ]
+    // xaventra-test: own test pods (label managed-by=xaventra) and one foreign pod without the label.
+    const testPods = new Map<string, any>([
+        ['fremd-debug', { metadata: { name: 'fremd-debug', namespace: TEST_NS, uid: 'uid-fremd', labels: { app: 'fremd' } }, status: { phase: 'Running' } }],
+    ])
+    let uidCounter = 0
     const controlJson = JSON.stringify(controlPolicyRaw())
     const secretLog = 'Bearer abc.def.ghi und OPENAI_API_KEY=sk-test-' + 'x'.repeat(40)
     const respond = (data: unknown, status = 200): KubeResponse => ({ status, data })
@@ -90,10 +96,36 @@ export function createFakeKube(options: { workerNodes?: string[] } = {}) {
         if (path === `/api/v1/namespaces/${NS}/configmaps/${RELEASE}-control` && request.method === 'GET') {
             return respond({ metadata: { name: `${RELEASE}-control` }, data: { 'control.json': controlJson } })
         }
+        if (path === `/api/v1/namespaces/${TEST_NS}/pods`) {
+            if (request.method === 'GET') {
+                const selector = url.searchParams.get('labelSelector') || ''
+                const [key, value] = selector.split('=')
+                return respond({ items: [...testPods.values()].filter(pod => !selector || pod.metadata.labels?.[key] === value) })
+            }
+            if (request.method === 'POST') {
+                const body = JSON.parse(JSON.stringify(request.body))
+                if (testPods.has(body.metadata.name)) return respond({ message: 'already exists' }, 409)
+                const pod = { ...body, metadata: { ...body.metadata, namespace: TEST_NS, uid: `uid-${++uidCounter}` }, status: { phase: 'Pending' } }
+                testPods.set(body.metadata.name, pod)
+                return respond(pod, 201)
+            }
+        }
+        match = new RegExp(`^/api/v1/namespaces/${TEST_NS}/pods/([a-z0-9.-]+)(/log)?$`).exec(path)
+        if (match) {
+            const pod = testPods.get(match[1])
+            if (!pod) return respond({ message: 'not found' }, 404)
+            if (request.method === 'GET') return match[2] ? respond('Testlauf ok') : respond(pod)
+            if (request.method === 'DELETE' && !match[2]) {
+                const uid = (request.body as any)?.preconditions?.uid
+                if (uid && uid !== pod.metadata.uid) return respond({ message: 'precondition failed' }, 409)
+                testPods.delete(match[1])
+                return respond({ kind: 'Status', status: 'Success' })
+            }
+        }
         return respond({ message: `fake: no route ${request.method} ${path}` }, 404)
     }
     return {
-        calls, transport, workloads,
+        calls, transport, workloads, testPods,
         workload: (name: string) => workloads.find(w => w.name === name)!,
         writes: () => calls.filter(call => call.method !== 'GET'),
     }

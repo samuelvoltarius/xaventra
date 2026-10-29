@@ -271,7 +271,11 @@ Supabase-Warteschlange in `delegateTask` (siehe D1).
 `proxmoxImGespraech`; Befehl `/vms` → `src/infra/proxmox-command.ts`
 `handleVmsCommand`. Kubernetes `/cluster` →
 `src/infra/kubernetes-command.ts` `handleClusterCommand`; Werkzeug
-`cluster_status` (`src/tools/cluster-tools.ts`).
+`cluster_status` (`src/tools/cluster-tools.ts`). Test-Pods nur im Namespace
+`xaventra-test`: Werkzeug `cluster_test_pod` (gleiche Datei, Owner-Freigabe je
+Anlegen) → `runTestPodAction` → `src/infra/kubernetes-test-pods.ts`
+(Vorlage, Whitelist, Wächter); Namespace/RBAC/NetworkPolicy legt der Owner an
+(`deploy/kubernetes/xaventra-test-rbac.yaml`).
 
 **Wichtige Dateien:** `src/infra/proxmox.ts` (TLS-Fingerabdruck,
 `PROXMOX_ACTIONS`), `proxmox-setup.ts`, `kubernetes.ts`

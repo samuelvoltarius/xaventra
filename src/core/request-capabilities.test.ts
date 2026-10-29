@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isEnvironmentOverview, isKubernetesQuestion, isKubernetesStatusQuestion, isMeshWideInventoryRequest, mentionsEnvironment } from './request-capabilities.js'
+import { isEnvironmentOverview, isKubernetesQuestion, isKubernetesStatusQuestion, isKubernetesTestPodRequest, isMeshWideInventoryRequest, mentionsEnvironment } from './request-capabilities.js'
 import { detectActionIntent } from './action-intent.js'
 
 describe('environment overview stays separate from action requests', () => {
@@ -60,6 +60,14 @@ describe('Kubernetes questions stay on cluster_status', () => {
             expect(isKubernetesQuestion(text)).toBe(true)
             expect(isKubernetesStatusQuestion(text)).toBe(false)
         }
+    })
+
+    it('2.89.15: test-pod requests go to cluster_test_pod, not the read-only status plan', () => {
+        for (const text of ['Leg im Cluster einen Test-Pod mit busybox an', 'Lösch den Pod xvt-probe', 'Welche Test-Pods laufen?', 'Erstelle einen Pod in xaventra-test']) {
+            expect(isKubernetesTestPodRequest(text), text).toBe(true)
+            expect(isKubernetesStatusQuestion(text), text).toBe(false)
+        }
+        for (const text of ['Welche Pods laufen im Cluster?', 'Zeig mir die Pods', 'Hör dir den Podcast an']) expect(isKubernetesTestPodRequest(text), text).toBe(false)
     })
 
     it('Podcast and mesh inventory stay out of the Kubernetes route', () => {

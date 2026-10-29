@@ -4078,7 +4078,9 @@
       "imports": [
         "../core/approval-cards.js",
         "../core/node-profile.js",
+        "../tools/owner-approval.js",
         "./kubernetes-node.js",
+        "./kubernetes-test-pods.js",
         "./kubernetes.js",
         "node:fs",
         "node:path"
@@ -4092,11 +4094,16 @@
       ]
     },
     {
+      "module": "src/infra/kubernetes-test-pods.ts",
+      "imports": []
+    },
+    {
       "module": "src/infra/kubernetes.ts",
       "imports": [
         "../config/config-path.js",
         "../security/secret-redaction.js",
         "./kubernetes-node.js",
+        "./kubernetes-test-pods.js",
         "node:crypto",
         "node:fs",
         "node:https"
@@ -7554,7 +7561,8 @@
       "module": "src/tools/cluster-tools.ts",
       "imports": [
         "../agents/kubernetes-status-plan.js",
-        "./complete-registry.js"
+        "./complete-registry.js",
+        "./owner-approval.js"
       ]
     },
     {

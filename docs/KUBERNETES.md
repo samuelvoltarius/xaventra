@@ -269,6 +269,40 @@ Main-StatefulSet nur mit `main.enabled`; `get` auf die eigene Steuer-ConfigMap.
 Kein `secrets`, kein `pods/exec|attach|portforward`, kein `create`/`delete`,
 kein `scale`.
 
+### Test-Pods in `xaventra-test` (2.89.15)
+
+Die einzige Ausnahme vom „nie anlegen/löschen“: **Pods** im Namespace genau
+`xaventra-test` (Werkzeug `cluster_test_pod`: `liste`, `logs`, `anlegen`,
+`loeschen`). Alles andere bleibt im Code gesperrt — andere Namespaces (auch der
+eigene), andere Ressourcen, Pods ändern, Secrets, exec/attach/portforward/proxy.
+
+- **Anlegen** nur aus der festen Vorlage (`src/infra/kubernetes-test-pods.ts`):
+  Label `managed-by=xaventra`, CPU/Speicher-Limits (Standard 250m/128Mi,
+  höchstens 1000m/1Gi), Laufzeitgrenze (Standard 60, höchstens 240 Minuten),
+  `restartPolicy: Never`, kein Service-Account-Token, kein
+  hostNetwork/hostPID/hostIPC, keine Volumes (kein hostPath), nicht privileged,
+  keine Privilege Escalation, alle Capabilities gedroppt, keine Ports, keine
+  Umgebung aus Secrets, Image mit festem Tag (kein `latest`). Der Wächter prüft
+  jeden POST-Body erneut gegen diese Liste.
+- **Jedes Anlegen braucht die Owner-Freigabe** für genau diesen Pod: der Owner
+  sendet `/freigabe cluster_test_pod #…` (die Zeile nennt das Werkzeug selbst)
+  und gibt den Einmal-Code weiter. Ohne Code geht nichts an den Cluster.
+- **Löschen** nur eigener Pods: Xaventra liest den Pod, prüft das Label und
+  löscht mit `preconditions.uid` genau diesen Pod. RBAC kann Löschen nicht auf
+  ein Label begrenzen — diese Prüfung macht der Code.
+- Beides nur am Main mit Main-Lease; Worker handeln nie.
+
+Namespace, Quota, LimitRange und Rechte legt der Owner einmal selbst an:
+`kubectl apply -f deploy/kubernetes/xaventra-test-rbac.yaml` (Role nur in
+`xaventra-test`: `pods` create/get/list/watch/delete, `pods/log` get; keine
+ClusterRole; RoleBinding auf `xaventra/xaventra-control`; Pod Security
+`baseline` erzwungen; höchstens 5 Pods, 2 CPU, 2Gi). Netz per NetworkPolicy
+`xaventra-test-egress` (k3s setzt sie mit kube-router durch): nichts von außen
+herein; hinaus nur DNS zu CoreDNS und Internet — keine privaten Netze
+(10/8, 172.16/12, 192.168/16), kein Tailnet (100.64/10), kein Link-Local, kein
+Pod-/Service-Netz des Clusters. Rückweg:
+`kubectl delete -f deploy/kubernetes/xaventra-test-rbac.yaml`.
+
 ## Sandbox mit `kata-clh`
 
 `workers.toolSandbox` (und jede Workload mit `sandbox: true`) bekommt

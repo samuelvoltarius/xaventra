@@ -79,6 +79,10 @@ describe('everyday German requests reach the right tool (real registry)', () => 
         ['Welche Pods laufen im Cluster?', 'cluster_status'],
         ['Was läuft in Kubernetes?', 'cluster_status'],
         ['Zeig mir den Cluster-Status', 'cluster_status'],
+        // 2.89.15: test pods in xaventra-test.
+        ['Leg im Cluster einen Test-Pod mit busybox an', 'cluster_test_pod'],
+        ['Lösch den Pod xvt-probe in xaventra-test', 'cluster_test_pod'],
+        ['Welche Test-Pods laufen?', 'cluster_test_pod'],
     ])('„%s“ → %s', (request, tool) => {
         expect(names(request)).toContain(tool)
     })

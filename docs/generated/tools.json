@@ -638,6 +638,58 @@
       ]
     },
     {
+      "name": "cluster_test_pod",
+      "category": "system",
+      "description": "Test-Pods im Kubernetes-Namespace xaventra-test (NUR dort): liste, logs, anlegen, loeschen. Anlegen nur aus der festen Vorlage (Label managed-by=xaventra, CPU/Speicher-Limits, Laufzeitgrenze, kein hostNetwork/privileged/hostPath, kein Service-Account-Token) und nur mit dem Einmal-Code des Owners für genau diesen Pod (Parameter confirm). Löschen nur eigener gelabelter Pods. Kein anderer Namespace, keine Secrets, kein exec, kein kubectl.",
+      "parameters": [
+        {
+          "name": "aktion",
+          "type": "string",
+          "required": true
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "image",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "kommando",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "cpu",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "speicher",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "laufzeit_minuten",
+          "type": "number",
+          "required": false
+        },
+        {
+          "name": "zeilen",
+          "type": "number",
+          "required": false
+        },
+        {
+          "name": "confirm",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
       "name": "code_outline",
       "category": "file",
       "description": "Zeigt die Struktur einer Code-Datei: Klassen, Funktionen, Interfaces mit Signaturen und Zeilennummern. Unterstützt TS/JS, Python, Go, Rust.",
