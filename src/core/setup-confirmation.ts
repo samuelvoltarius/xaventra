@@ -41,6 +41,41 @@ export function findLiveSetupConfirmation(principal: string, target: string): st
     return null
 }
 
+// 2.90.1 (Abnahme 2.90.0, Langtest C): the owner's answer to an approval request
+// ("#99c5c5ff8a2f", later "Freigabecode …") is no sentence a route recognises, so
+// the tool that asked was missing in exactly that turn. The router asks here which
+// tool a message answers. Only a hint for offering the tool — the tool still checks
+// owner, principal and the code.
+const TOOL_APPROVAL_REQUEST_TTL_MS = 2 * SETUP_CONFIRMATION_TTL_MS
+const MIN_DETAIL_MATCH = 6
+const toolApprovalRequests = new Map<string, number>()
+const toolOfTarget = (target: string): string | null => /^tool:([a-z][a-z0-9_-]{1,79}):/.exec(target)?.[1] ?? null
+
+/** Called when an owner-approval gate refuses: the target `tool:<name>:<detail>` is open for a short while. */
+export function noteToolApprovalRequest(target: string): void {
+    if (toolOfTarget(target)) toolApprovalRequests.set(target, Date.now() + TOOL_APPROVAL_REQUEST_TTL_MS)
+}
+
+/** Tools a message answers: a live one-time code bound to `tool:<name>:…`, or the detail of a just-refused call. */
+export function toolsReferencedByApproval(text: string): string[] {
+    const value = String(text ?? '')
+    if (!value.trim()) return []
+    const now = Date.now()
+    const names = new Set<string>()
+    for (const [token, entry] of setupConfirmations) {
+        if (entry.expiresAt <= now) { setupConfirmations.delete(token); continue }
+        const name = toolOfTarget(entry.target)
+        if (name && value.includes(token)) names.add(name)
+    }
+    for (const [target, expiresAt] of toolApprovalRequests) {
+        if (expiresAt <= now) { toolApprovalRequests.delete(target); continue }
+        const name = toolOfTarget(target)
+        const detail = name ? target.slice(`tool:${name}:`.length) : ''
+        if (name && detail.length >= MIN_DETAIL_MATCH && value.includes(detail)) names.add(name)
+    }
+    return [...names]
+}
+
 export function consumeSetupConfirmation(principal: string, target: string, token: unknown): boolean {
     if (typeof token !== 'string' || !token) return false
     const entry = setupConfirmations.get(token)

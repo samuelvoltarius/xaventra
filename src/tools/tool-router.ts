@@ -28,6 +28,7 @@ import { isDirectUrlCheck } from '../core/tool-evidence-binding.js'
 import { loadOwnerProfile, profileRouteTools } from '../memory/owner-profile.js'
 import { handoffTargetNode } from '../mesh/known-node-names.js'
 import { featureEnabled } from '../core/context-switches.js'
+import { toolsReferencedByApproval } from '../core/setup-confirmation.js'
 import { compoundRemainder, containsTailnetUrl, isKubernetesQuestion, isKubernetesTestPodRequest, isMeshWideInventoryRequest, isNodeScreenshotRequest, mentionsMesh, mentionsEnvironment } from '../core/request-capabilities.js'
 
 // ============================================
@@ -668,7 +669,9 @@ export function getRelevantTools(
     // 2.89.8 (U4): an alias of the owner profile that is a vehicle/device ("Dolphin") routes status questions to Home Assistant.
     let profileTools: string[] = []
     try { profileTools = profileRouteTools(loadOwnerProfile(), primaryMessage) } catch { profileTools = [] }
-    const liveTools = [...memoryTools, ...profileTools, ...LIVE_ROUTES.filter(route => route.applies(primaryMessage, primaryIntent)).flatMap(route => route.tools)]
+    // 2.90.1: the answer to an approval request (the refused detail or the live one-time code) keeps that tool.
+    const approvalTools = toolsReferencedByApproval(primaryMessage)
+    const liveTools = [...memoryTools, ...profileTools, ...approvalTools, ...LIVE_ROUTES.filter(route => route.applies(primaryMessage, primaryIntent)).flatMap(route => route.tools)]
 
     // An explicit registered tool identifier is stronger than a fuzzy pack
     // keyword (`health_status` must not need the pack keyword `health`).
