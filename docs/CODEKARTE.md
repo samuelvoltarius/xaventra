@@ -42,6 +42,7 @@ und Mesh annehmen und in die eine Pipeline geben.
 |---|---|
 | `src/channels/telegram.ts`, `whatsapp.ts`, `discord.ts` | echte Kanal-Adapter |
 | `src/channels/telegram-presentation.ts` | Statuskarte, Fehlschlag-Erkennung |
+| `src/channels/telegram.ts` `deliverMessage` / `announceLostReply` | der eine Versandweg für Antworten und Karten: 2 Wiederholungen (~2 s, ~6 s) nur bei Netzfehlern, danach einmaliger Hinweis beim nächsten Versand; `src/core/reply-delivery-error.ts` wiederholt bewusst nicht selbst |
 | `src/server/rest-api.ts:128` `startRestApi` | REST `/v1/message`, `/v1/status`, Bearer `NOVA_API_TOKEN` |
 | `src/desktop/desktop-api.ts:312` `registerDesktopApi` | Desktop/Hub-Eingang (`/api/desktop`) |
 | `src/mesh/mesh-transport-runtime.ts` | Mesh-Eingang `mesh-direct` → gleiche Pipeline |
@@ -660,6 +661,7 @@ Belegte Widersprüche:
 | `isAuthFailure` | `src/core/infrastructure-failure.ts:14` | 401/403 |
 | `isAuthFailure` | `src/connections/connector-login.ts:344` | 401, „abgelaufen", **ohne 403** |
 | `isUnreachable` | `src/core/infrastructure-failure.ts:22` | + DNS/Host |
+| `isTransientTransportFailure` | `src/core/infrastructure-failure.ts` | nur Netz (EFATAL, fetch failed, Reset/Refused, Timeout, DNS), **nie** mit API-Antwort (4xx) — der eine Grund, einen Versand zu wiederholen |
 | `isConnectionFailure` | `src/llm/nova-llm-sdk.ts:1370` | eigene Regex, ohne ETIMEDOUT |
 | `classifyToolFailure` | `src/core/typed-tool-recovery.ts:54` | eigene Klassen |
 | `classifyFailoverReason` | `src/llm/model-fallback.ts` | lockere Muster (`/5\d{2}/`, „auth"), Netzfehler = timeout |
