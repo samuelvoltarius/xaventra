@@ -264,6 +264,8 @@ export interface MessageExecutionOptions {
     /** Set only by in-process producers (reminder/heartbeat wakeups, autonomy):
      * keeps internal prefixes like [REMINDER]; external callers never set it. */
     systemAuthored?: boolean
+    /** 2.90.1: set only by the mesh transport after `verifiedMeshOwnerRequest`; honoured on mesh-direct only. */
+    verifiedMeshOwner?: boolean
 }
 
 /** The agent exceeded its wall-clock budget; its signal has been aborted. */
@@ -460,8 +462,15 @@ export async function handleMessage(...args: Parameters<typeof handleMessageInSc
     // One LLM-principal scope per message (Codex only for the owner).
     const { runWithLlmPrincipal } = await import('../llm/llm-principal.js')
     // 2.89.8 (U3): every message is a potential owner turn (counted once an owner is authenticated).
+    // 2.90.1: a verified mesh owner request is the owner for exactly this run (multi-user-middleware).
+    const [channel, from, , , , , , execution] = args
+    const run = () => runWithLlmPrincipal(() => handleMessageInScope(...args))
     return runAsPotentialOwnerTurn(async () => {
-        return runWithLlmPrincipal(() => handleMessageInScope(...args))
+        if (execution?.verifiedMeshOwner === true && String(channel).toLowerCase() === 'mesh-direct') {
+            const { runAsVerifiedMeshOwner } = await import('../users/multi-user-middleware.js')
+            return runAsVerifiedMeshOwner(from, run)
+        }
+        return run()
     })
 }
 

@@ -16,6 +16,7 @@ import type {
 } from './transport-contracts.js'
 import { getLocalNodeId, getLocalNodeSnapshot } from './mesh-registry.js'
 import { resolveConfigPath } from '../config/config-path.js'
+import { getConfigAllowFrom, isConfiguredOwner } from '../users/multi-user-middleware.js'
 import { assertFenced, getFencingMode, getHeldFence, runWithDelegatedFence } from './fence.js'
 import { checkDelegatedFence } from './fence-highwater.js'
 import { collectLiveLoad, heartbeatProfileFields, peerWantsProfile, sanitizeLiveLoad, sanitizeNodeProfile, type NodeLiveLoad, type NodeProfile, type ProfilePublishState } from '../core/node-profile.js'
@@ -29,6 +30,22 @@ export interface MeshAgentExecutionOptions {
     abortSignal: AbortSignal
     allowedTools: string[]
     requestId: string
+    /** 2.90.1: set only here, after verifiedMeshOwnerRequest; the pipeline honours it on mesh-direct only. */
+    verifiedMeshOwner?: boolean
+}
+
+/**
+ * 2.90.1 (Peer-Test 29.10.): the owner holds on a peer only for an agent.request signed with the pinned
+ * publicKey of a configured named peer (no TOFU, no workload prefix, no key-less peer) whose user id is
+ * the configured owner (allowFrom). Everything else stays as before (guest/user).
+ */
+export function verifiedMeshOwnerRequest(envelope: MeshEnvelope, peers: readonly MeshPeer[], allowFrom: string[]): boolean {
+    if (envelope?.kind !== 'agent.request') return false
+    const userId = (envelope.payload as AgentRequestPayload | undefined)?.userId
+    if (typeof userId !== 'string' || !userId.trim()) return false
+    const pinned = peers.find(peer => peer.nodeId === envelope.sourceNode)?.publicKey?.trim()
+    if (!pinned || !MeshIdentity.verifyWithKey(envelope, pinned)) return false
+    return isConfiguredOwner(userId, 'telegram', allowFrom)
 }
 
 type MessageHandler = (
@@ -746,7 +763,8 @@ async function handleEnvelope(envelope: MeshEnvelope, messageHandler?: MessageHa
                 payload.prompt,
                 async content => { if (!controller.signal.aborted) output += content },
                 undefined,
-                { abortSignal: controller.signal, allowedTools: payload.allowedTools || [], requestId: envelope.id },
+                { abortSignal: controller.signal, allowedTools: payload.allowedTools || [], requestId: envelope.id,
+                    ...(verifiedMeshOwnerRequest(envelope, loadRuntimeConfig().direct.peers, getConfigAllowFrom()) ? { verifiedMeshOwner: true } : {}) },
             ))
             if (controller.signal.aborted) throw new Error('mesh agent request cancelled')
             const result = makeResult(envelope.id, true, output)

@@ -11,6 +11,7 @@
  * 7. Non-blocking Channel — async worker for heavy tasks
  */
 
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { resolveConfigPath } from '../config/config-path.js'
@@ -36,9 +37,21 @@ export interface UserRecord {
     onboarded: boolean
 }
 
+/** 2.90.1: the user id of the mesh request being run, set only after the transport verified it
+ * (`verifiedMeshOwnerRequest`: signed with a configured peer's pinned key, user id = configured owner). */
+const verifiedMeshOwner = new AsyncLocalStorage<string>()
+
+/** Runs one verified mesh agent request; only inside it is that user id the owner on channel mesh-direct. */
+export function runAsVerifiedMeshOwner<T>(userId: string, fn: () => T): T {
+    return verifiedMeshOwner.run(userId, fn)
+}
+
 export function isConfiguredOwner(userId: string, channel: string, allowFrom: string[]): boolean {
-    // These allow-lists come from Telegram configuration, not every transport.
-    if (channel.trim().toLowerCase() !== 'telegram') return false
+    // These allow-lists come from Telegram configuration, not every transport. A mesh request
+    // counts only inside its own verified run - never from a stored record or another request.
+    const normalized = channel.trim().toLowerCase()
+    if (normalized === 'mesh-direct') { if (verifiedMeshOwner.getStore() !== userId) return false }
+    else if (normalized !== 'telegram') return false
     const rawId = userId.replace(/^telegram:/i, '')
     if (rawId.includes(':')) return false
     return allowFrom.some(value => String(value).trim().replace(/^telegram:/i, '') === rawId)
