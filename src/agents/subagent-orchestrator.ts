@@ -315,10 +315,11 @@ async function runMeshSubagent(
         if (abortSignal?.aborted) {
             return { id, status: 'cancelled', output: '', toolsUsed: [], durationMs: 0, mode: 'mesh', meshNode }
         }
-        const { isPeerRefusal, peerRefusedInThisRun, rememberPeerRefusal } = await import('../mesh/peer-refusal.js')
-        // 2.90.1: a node that answered as guest in this run is not asked again.
-        if (peerRefusedInThisRun(meshNode)) {
-            return { id, status: 'failed', output: '', toolsUsed: [], durationMs: 0, mode: 'mesh', meshNode, error: 'peer-refused: guest' }
+        const { isPeerRefusal, peerRefusalInThisRun, peerRefusalSentence, peerRejectionSentence, rememberPeerRefusal } = await import('../mesh/peer-refusal.js')
+        // 2.90.1/2.90.2: a node that answered as guest or rejected the request in this run is not asked again.
+        const earlier = peerRefusalInThisRun(meshNode)
+        if (earlier) {
+            return { id, status: 'failed', output: '', toolsUsed: [], durationMs: 0, mode: 'mesh', meshNode, error: `peer-refused: ${earlier}` }
         }
         console.log(`[SubagentOrch] 🌐 Delegating to ${meshNode} through signed MeshTransport`)
         const parent = await resolveParentIdentity(task)
@@ -329,7 +330,13 @@ async function runMeshSubagent(
             idempotencyKey: `subagent:${id}`,
         })
         requestId = sent.requestId
-        if (sent.ack.status === 'rejected' || sent.ack.status === 'unreachable') {
+        if (sent.ack.status === 'rejected') {
+            // 2.90.2 (Langtest B): the node refused by policy - "abgelehnt", not "nicht erreichbar".
+            const sentence = peerRejectionSentence(meshNode, String(sent.ack.reason || ''))
+            rememberPeerRefusal(meshNode, sentence)
+            return { id, status: 'failed', output: '', toolsUsed: [], durationMs: Date.now() - start, mode: 'mesh', meshNode, error: `peer-refused: ${sentence}` }
+        }
+        if (sent.ack.status === 'unreachable') {
             return {
                 id, status: 'failed', output: '', toolsUsed: [], durationMs: Date.now() - start,
                 mode: 'mesh', meshNode, error: `Mesh request ${sent.ack.status}: ${sent.ack.reason || 'no route'}`,
@@ -350,8 +357,9 @@ async function runMeshSubagent(
             }
         }
         if (remote.success && isPeerRefusal(remote.result)) {
-            rememberPeerRefusal(meshNode)
-            return { id, status: 'failed', output: '', toolsUsed: [], durationMs: Date.now() - start, mode: 'mesh', meshNode, error: 'peer-refused: guest' }
+            const sentence = peerRefusalSentence(meshNode)
+            rememberPeerRefusal(meshNode, sentence)
+            return { id, status: 'failed', output: '', toolsUsed: [], durationMs: Date.now() - start, mode: 'mesh', meshNode, error: `peer-refused: ${sentence}` }
         }
         return {
             id,

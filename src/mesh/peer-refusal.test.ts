@@ -33,7 +33,7 @@ describe('a peer that answers as guest is a failed hand-over', () => {
         const first = String(await handOver('Wie spät ist es dort?'))
         expect(first).toMatch(/xaventra-nas/)
         expect(first).toMatch(/Gast/)
-        expect(first).toMatch(/nicht erneut/i)
+        expect(first).toMatch(/nicht ausgeführt/)
         expect(first).not.toMatch(/fertig/)
         const second = String(await handOver('Wie spät ist es dort? Bitte nochmal.'))
         expect(net.sends).toBe(1)

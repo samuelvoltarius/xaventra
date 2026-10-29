@@ -3,6 +3,10 @@
  * with its fixed guest greeting or a refusal within milliseconds. The Main took that text as the result, asked
  * the node four more times and ran into the run limit. Such an answer is a failed hand-over with one clear
  * sentence, and the same node is not asked again in the same run (spawn_subagent and mesh_delegate).
+ *
+ * 2.90.2 (Abnahme 2.90.1, Langtest B): a node that REJECTS the request (mesh policy, e.g.
+ * agent_tool_not_globally_allowed) is "abgelehnt", never "nicht erreichbar"; the runner ends the run with the
+ * sentence (`isHandoffRefusal`), so the model neither hands over again nor wanders through status tools.
  */
 import { getExecutionPolicyContext } from '../core/lifecycle-policy.js'
 
@@ -20,24 +24,57 @@ export function isPeerRefusal(text: unknown): boolean {
     return Boolean(value) && REFUSAL.some(pattern => pattern.test(value))
 }
 
+/** Every refused hand-over sentence starts with this; the runner ends the run on it. */
+const HANDOFF_REFUSED = '⛔ Übergabe an '
+
 export function peerRefusalSentence(node: string): string {
-    return `Der Knoten ${node} hat den Auftrag nur mit Gast-Rechten angenommen und nichts ausgeführt — dort bist du nicht als Owner erkannt (Knoten-Stand oder Schlüssel). Nicht erneut an ${node} schicken; sag das dem Nutzer in einem Satz.`
+    return `${HANDOFF_REFUSED}${node} nicht ausgeführt: Der Knoten hat den Auftrag nur mit Gast-Rechten angenommen — dort bist du nicht als Owner erkannt (Knoten-Stand oder Schlüssel).`
+}
+
+/** Mesh policy reasons (mesh-policy.ts) in plain words; unknown reasons are named as they are. */
+const REJECTION_WORDS: Array<[RegExp, string]> = [
+    [/agent_tool_not_(?:globally_)?allowed|agent_tool_not_allowed_for_peer/, 'er erlaubt die angeforderten Werkzeuge nicht'],
+    [/role_not_allowed|request_role_not_allowed/, 'er nimmt von diesem Knoten keine Aufträge in dieser Rolle an'],
+    [/missing_peer_key|untrusted_node|invalid_signature/, 'er kennt den Schlüssel dieses Knotens nicht'],
+    [/missing_fence|fenced|coordination_disabled/, 'er erkennt diesen Knoten gerade nicht als Main an'],
+]
+
+export function peerRejectionSentence(node: string, reason: string): string {
+    const raw = String(reason || '').replace(/^Error:\s*/i, '').trim().slice(0, 80)
+    const words = REJECTION_WORDS.find(([pattern]) => pattern.test(raw))?.[1]
+    return `${HANDOFF_REFUSED}${node} abgelehnt: ${words || `der Knoten meldet „${raw || 'ohne Angabe'}“`}.`
+}
+
+/** True for a tool result that carries a refused hand-over sentence (string or JSON with it). */
+export function isHandoffRefusal(result: unknown): boolean {
+    return String(typeof result === 'string' ? result : JSON.stringify(result ?? '')).includes(HANDOFF_REFUSED)
+}
+
+/** The refused hand-over sentence inside a tool result, for the owner. */
+export function handoffRefusalText(result: unknown): string {
+    const text = String(typeof result === 'string' ? result : (result as any)?.error ?? JSON.stringify(result ?? ''))
+    const at = text.indexOf(HANDOFF_REFUSED)
+    return at < 0 ? text : text.slice(at).split('\n')[0].replace(/"\s*[,}].*$/, '')
 }
 
 const TTL_MS = 10 * 60_000
-const refused = new Map<string, number>()
+const refused = new Map<string, { until: number; sentence: string }>()
 const runKey = () => {
     const context = getExecutionPolicyContext()
     return String(context.runId || context.contractId || context.authUserId || context.userId || 'anon')
 }
 
-export function rememberPeerRefusal(node: string, now = Date.now()): void {
-    for (const [key, until] of refused) if (until <= now) refused.delete(key)
-    refused.set(`${runKey()}|${node}`, now + TTL_MS)
+export function rememberPeerRefusal(node: string, sentence = peerRefusalSentence(node), now = Date.now()): void {
+    for (const [key, entry] of refused) if (entry.until <= now) refused.delete(key)
+    refused.set(`${runKey()}|${node}`, { until: now + TTL_MS, sentence })
 }
 
-/** True when this node refused in the current run; the hand-over is then not sent again. */
+/** The sentence when this node refused in the current run; the hand-over is then not sent again. */
+export function peerRefusalInThisRun(node: string, now = Date.now()): string | null {
+    const entry = refused.get(`${runKey()}|${node}`)
+    return entry && entry.until > now ? entry.sentence : null
+}
+
 export function peerRefusedInThisRun(node: string, now = Date.now()): boolean {
-    const until = refused.get(`${runKey()}|${node}`)
-    return until !== undefined && until > now
+    return peerRefusalInThisRun(node, now) !== null
 }

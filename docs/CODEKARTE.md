@@ -494,6 +494,10 @@ streicht sie hier im selben Commit (oder markiert sie als erledigt mit Version).
   (`isPeerRefusal`) macht daraus in `runMeshSubagent` und `mesh_delegate`
   einen Fehlschlag mit einem Satz; derselbe Knoten wird im selben Lauf nicht
   erneut gefragt. Der Empfänger schickt auf `mesh-direct` keine Begrüßung.
+  2.90.2: eine Ablehnung durch die Mesh-Richtlinie (`ack.status === 'rejected'`)
+  heißt „abgelehnt“ (`peerRejectionSentence`), nie „nicht erreichbar“; der
+  Runner beendet den Lauf mit dem Satz (`nova-runner.ts` `handoffRefusal`,
+  erkannt über `isHandoffRefusal`).
 - Weitere Einstiege auf denselben Weg: `spawn_subagents_parallel`,
   `continuable_subagent_start`, `mesh_repo_task` — reichen `mesh_node="auto"`
   aber roh durch bzw. routen selbst (siehe D11).

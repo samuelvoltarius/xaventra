@@ -1129,6 +1129,8 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
         let checkpointUnreplicated = false
         let awaitingPolicyApproval = false
         let failureEscalationContent: string | undefined
+        // 2.90.2 (Abnahme 2.90.1, Langtest B): a refused hand-over ends the run with its sentence.
+        let handoffRefusal: string | undefined
         // 2.89: failed tool calls of this run, escalated once if the run ends
         // without a model answer (a failure is an observation, not a stop).
         const runFailureObservations: VerifiedToolFailureObservation[] = []
@@ -1613,6 +1615,15 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                             timestamp: Date.now(),
                         })
                         logRuntimeEvent({ event: effectiveSuccess ? 'tool.completed' : 'tool.failed', channel, userId: authUserId, canonicalUserId: userId, tool: call.name, success: effectiveSuccess })
+                        if ((call.name === 'spawn_subagent' || call.name === 'mesh_delegate') && !handoffRefusal) {
+                            const { isHandoffRefusal, handoffRefusalText } = await import('../mesh/peer-refusal.js')
+                            if (isHandoffRefusal(resultStr)) {
+                                handoffRefusal = handoffRefusalText(resultStr)
+                                console.log(`[Xaventra Agent] Hand-over refused (${call.name}); the run ends with that sentence`)
+                                hardStop = true
+                                break
+                            }
+                        }
                     } catch (err) {
                         _traceRecorder.toolEnd(_traceId, false, 0, String(err).slice(0, 200))
                         if (limitStopNotice(err)) runLimitError ??= err
@@ -1883,7 +1894,8 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                 // budget, tool timeout) instead of a vague „nicht fertig“.
                 const notice = policyBlocked ? '' : limitStopNotice(runLimitError ?? error)
                 if (notice && !policyBlocked && behelfCalls >= 2) capabilityGap = true
-                if (!policyBlocked) finalContent = await finishUnfinished(notice)
+                if (handoffRefusal && !policyBlocked) { finalContent = handoffRefusal; incompleteSynthesis = false }
+                else if (!policyBlocked) finalContent = await finishUnfinished(notice)
                 try {
                     const { missingToolFailures } = await import('../tools/skill-builder.js')
                     const known = new Set(getToolRegistry().getAll().map(tool => tool.name))
