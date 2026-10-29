@@ -317,9 +317,11 @@ export async function validateWithLLM(
     if (groundedInConversation(response, conversation)) return { honest: true, issues: [] }
 
     try {
-        const toolSummary = toolExecutions.map(t =>
-            `Tool: ${t.toolName}\nSuccess: ${t.success}\nOutput: ${t.result.slice(0, 200)}`
-        ).join('\n---\n')
+        // 2.89.14 (live 29.10. heise): 200 characters per result hid the real headline from the checker,
+        // which then called a correct answer "UNEHRLICH". Enough of each result, bounded overall.
+        const toolSummary = toolExecutions.slice(-6).map(t =>
+            `Tool: ${t.toolName}\nSuccess: ${t.success}\nOutput: ${String(t.result ?? '').slice(0, 3_000)}`
+        ).join('\n---\n').slice(0, 12_000)
 
         const checkPrompt = `Du bist ein Faktenprüfer. Vergleiche die AI-Antwort mit den tatsächlichen Tool-Ergebnissen.
 
