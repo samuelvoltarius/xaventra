@@ -2611,13 +2611,12 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                     ])
                     if (!validation.honest) {
                         console.log(`[L12] 🚨 Response korrigiert: ${validation.issues.join(', ')}`)
-                        // Diagnostics stay in logs/journal and never become user
-                        // text. Replace contradicted prose with actual redacted
-                        // Tool Evidence instead of sanitizing the same false text.
-                        const { verifiedToolEvidenceResponse, hasUsableToolEvidence } = await import('./tool-evidence-response.js')
-                        // 2.89.3: raw tool output ("kg_search: Keine Treffer ...") is never the answer; without a real
-                        // result the model text stays (it may come from the conversation).
-                        if (hasUsableToolEvidence(toolExecs)) finalContent = sanitizeInternalOutboundArtifacts(verifiedToolEvidenceResponse(toolExecs))
+                        // Diagnostics stay in logs/journal and never become user text.
+                        // 2.89.13 (Telegram-Abnahme 2.89.12): replacing the answer with the raw tool result
+                        // delivered get_current_time/fetch_url/hass_get JSON as the reply. The answer stays,
+                        // marked as not fully verified; raw tool output is never the reply.
+                        const { L12_UNVERIFIED_NOTE } = await import('./tool-evidence-response.js')
+                        finalContent = `${L12_UNVERIFIED_NOTE}\n\n${finalContent}`
                         // Record in journal
                         try {
                             const journal = (state as any).journal

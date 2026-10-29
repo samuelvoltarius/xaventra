@@ -195,6 +195,9 @@ export function hasUsableToolEvidence(executions: ResponseToolExecution[]): bool
     })
 }
 
+/** 2.89.13: put in front of an answer the L12 second opinion could not match with this run's tool results. */
+export const L12_UNVERIFIED_NOTE = '⚠️ Nicht vollständig belegt: Einen Teil dieser Antwort konnte ich nicht mit den Werkzeug-Ergebnissen dieses Durchgangs bestätigen.'
+
 export function verifiedToolEvidenceResponse(executions: ResponseToolExecution[]): string {
     const successful = executions.filter(item => item.success === true)
     if (successful.length === 0) return 'Es liegt kein verifiziertes Tool-Ergebnis vor.'
