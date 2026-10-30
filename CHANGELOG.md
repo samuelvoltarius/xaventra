@@ -12,6 +12,19 @@
   helpers on nodes with a screen, maps and routes, music, a maker helper for
   boards and sensors.
 
+## [2.90.5] — 2026-10-30
+
+Fix from the acceptance of 2.90.4.
+
+### Fixed
+
+- **A task handed to a node ends with the node's answer.** "Gib diese Aufgabe
+  an ns1: …" got ns1's answer, then Xaventra kept checking things locally for
+  a minute and finally said she had "only looked up what she can" and the time
+  on ns1 "was not asked". Now the node's proven answer is the reply, right
+  away. Every stop or summary text also keeps the answers and changes this
+  task already proved.
+
 ## [2.90.4] — 2026-10-30
 
 Fixes from the Telegram acceptance of 2.90.3.

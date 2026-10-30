@@ -502,6 +502,10 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/e2e/mesh-handoff-result-ends-run-2-90-5.test.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/e2e/owner-profile-2898.test.ts",
       "path": ".nova-data"
     },

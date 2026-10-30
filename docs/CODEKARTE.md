@@ -512,7 +512,12 @@ streicht sie hier im selben Commit (oder markiert sie als erledigt mit Version).
   erkannt über `isHandoffRefusal`). 2.90.3: belegte Übergabe-Ergebnisse des
   Laufs (`handoffResultText`) bleiben stehen, der Abbruchsatz wird angehängt;
   nach einer gelungenen Übergabe sagt `handoffDoneHint` dem Modell, denselben
-  Knoten nicht erneut zu beauftragen.
+  Knoten nicht erneut zu beauftragen. 2.90.5: hat die Nachricht die
+  Übergabeform („Gib diese Aufgabe an <Knoten>: …“, `handoffTargetNode`) und
+  liefert der Knoten ein belegtes Ergebnis, endet der Lauf damit
+  (`nova-runner.ts` `handoffAnswer`); jeder Abbruch-/Zusammenfassungstext aus
+  `finishUnfinished` behält belegte Ergebnisse (`tool-failure-escalation.ts`
+  `withProvenResults`).
 - Weitere Einstiege auf denselben Weg: `spawn_subagents_parallel`,
   `continuable_subagent_start`, `mesh_repo_task` — reichen `mesh_node="auto"`
   aber roh durch bzw. routen selbst (siehe D11).

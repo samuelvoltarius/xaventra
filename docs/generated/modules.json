@@ -2795,6 +2795,7 @@
       "imports": [
         "../doctor/failure-research-coordinator.js",
         "../memory/session-summarizer.js",
+        "../mesh/peer-refusal.js",
         "../security/secret-redaction.js",
         "./atomic-storage.js",
         "./data-root.js",
