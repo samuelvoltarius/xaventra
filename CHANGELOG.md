@@ -12,9 +12,9 @@
   helpers on nodes with a screen, maps and routes, music, a maker helper for
   boards and sensors.
 
-## [2.91.0] — 2026-10-29
+## [2.91.0] — 2026-10-30
 
-Topic threads, step 1 (shadow). Alfred keeps one chat; inside, every message
+Topic threads, step 1 (shadow). The owner keeps one chat; inside, every message
 gets a topic. Nothing the model sees changes with the default.
 
 ### Added
@@ -44,6 +44,10 @@ gets a topic. Nothing the model sees changes with the default.
 - A non-blocking channel-parity report runs with the tests: the HUD still
   shows only the last part of a multi-part answer and the screenshot fallback
   is Telegram-only (planned for 2.91.1/2.91.2).
+- **Xaventra addresses her own owner.** Another installation called its owner
+  by a fixed first name. Every runtime text now uses the name from the owner
+  profile of this installation (or "du"/"der Owner"); a check in CI keeps
+  fixed names out of runtime text, and tests use invented data only.
 
 ## [2.90.5] — 2026-10-30
 

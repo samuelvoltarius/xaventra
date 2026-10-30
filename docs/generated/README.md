@@ -6,8 +6,8 @@ Generated from authoritative source. Do not edit by hand.
 |---|---:|---|
 | tools.json | 238 | `3144c39a9adc801bcd1a4921a5b439dcff5fa061cbaa83493aadf6241c6eb0d7` |
 | config.json | 0 | `f9fd035c5b0cc6f7a1fbca85337babd19c1caa5e923c68fa06995aa5b279c8cb` |
-| persistence.json | 406 | `9edc6b41883c78f914e39da4ef50f6b08dc3c73935bd4311ee19e9fff9c0ad40` |
-| modules.json | 980 | `16d4e9f2eae19cb4a1827fc00625a8b72a165bf24d378955d89dcdbfd8d19252` |
+| persistence.json | 409 | `40c39e0863397c2c0e3e2ceec0f7533dae3c0981cca663de75ab2dd702e625e6` |
+| modules.json | 981 | `6fe972aff7a4a7a337fd72f32e7c4748147c10ba2912327dfea61371f7106ca9` |
 | profiles.json | 5 | `4e5aa338bdcb4e6d67c22281c894cfc54a6c68a5535d62a8e097a8cea18d982c` |
 | install-catalog.json | 14 | `9248a1a6085920111a44f42672e5d94ab9690b2fa0ab88f74d0d4053512df059` |
 | software-candidates.json | 18 | `abe3e02f517a52d374a2378b58c3861c80942cd27abe716655121f5dd91fc0d3` |
