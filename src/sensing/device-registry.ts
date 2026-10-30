@@ -43,6 +43,8 @@ export interface DeviceRecord {
     evidence: Evidence
     hardware?: HardwareIdentity
     hardwareAskedFingerprint?: string
+    /** Späher: the mesh node that found it (absent = Main itself). */
+    seenBy?: string
 }
 
 export interface DeviceCandidate {
@@ -53,6 +55,7 @@ export interface DeviceCandidate {
     name?: string
     evidence?: Record<string, unknown>
     hardware?: HardwareIdentity
+    seenBy?: string
 }
 
 export interface Approver { principalId: string; permission?: string }
@@ -115,6 +118,7 @@ export function recordCandidates(dataDir: string, candidates: DeviceCandidate[],
             if (candidate.via === 'http' || candidate.via === 'udp') existing.via = candidate.via
             if (candidate.name) existing.name = cleanText(candidate.name, 80)
             if (candidate.hardware) existing.hardware = candidate.hardware
+            if (candidate.seenBy) existing.seenBy = candidate.seenBy
             continue
         }
         if (devices.length >= 1000 || (['networkservice', 'networkdevice'].includes(candidate.type) && devices.filter(d => ['networkservice', 'networkdevice'].includes(d.type)).length >= 200)) continue
@@ -125,6 +129,7 @@ export function recordCandidates(dataDir: string, candidates: DeviceCandidate[],
             status: 'gefunden', foundAt: at, lastSeenAt: at,
             evidence: cleanEvidence(candidate.evidence),
             ...(candidate.hardware ? { hardware: candidate.hardware } : {}),
+            ...(candidate.seenBy ? { seenBy: candidate.seenBy } : {}),
         }
         devices.push(record)
         fresh.push(record)

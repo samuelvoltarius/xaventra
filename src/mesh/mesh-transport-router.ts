@@ -52,7 +52,7 @@ class MeshOutbox {
     }
 }
 
-const STATE_UPDATE_KINDS = new Set(['node.heartbeat', 'node.capabilities', 'node.tools'])
+const STATE_UPDATE_KINDS = new Set(['node.heartbeat', 'node.capabilities', 'node.tools', 'discovery.report'])
 // Request admission and request completion are separate protocol events. In
 // particular, an agent request must be acknowledged before its handler
 // finishes so the caller can deliver a correlated run.cancel while the work is

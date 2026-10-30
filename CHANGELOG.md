@@ -12,6 +12,17 @@
   helpers on nodes with a screen, maps and routes, music, a maker helper for
   boards and sensors.
 
+### Added (next patch, version set at release)
+
+- **A scout node finds devices in its own network.** Device search ran only
+  on Main, which stands at another site and does not see the home LAN. A mesh
+  worker with `autonomy.sensing.scout: true` (off by default; meant for the
+  NAS) now runs the same careful search in its own networks and sends the
+  findings signed to Main. Main checks every address with the same rule as
+  before (never public, only inside the scout's private network), notes which
+  node saw it, and asks as usual before connecting anything. Unsigned,
+  changed or malformed reports and reports from observers are dropped.
+
 ## [2.90.4] — 2026-10-30
 
 Fixes from the Telegram acceptance of 2.90.3.

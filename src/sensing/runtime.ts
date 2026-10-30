@@ -152,8 +152,15 @@ export function buildSensingBus(options: { nodeId?: string; role?: 'main' | 'wor
  * Starts sensing when enabled. Mesh workers never start it: they would only
  * duplicate the main's observations, and they never talk to the owner.
  */
-export function startSensing(options: { nodeOnly: boolean; nodeId?: string; autoDiscovery?: boolean; discoveryRunner?: () => Promise<unknown> }): { started: boolean; reason: string } {
+export function startSensing(options: { nodeOnly: boolean; nodeId?: string; autoDiscovery?: boolean; discoveryRunner?: () => Promise<unknown>; scoutRunner?: () => Promise<unknown> }): { started: boolean; reason: string } {
     if (!state.config.enabled) return { started: false, reason: 'autonomy.sensing.enabled=false' }
+    // Späher (30.10.2026): a worker only searches when the operator made it a scout; no adapters,
+    // no cards here — the findings go signed to Main, which keeps the one gate rule.
+    if (options.nodeOnly && state.config.scout && state.config.discovery.enabled) {
+        if (state.timers.length) return { started: true, reason: 'Späher läuft bereits' }
+        scheduleScout(options.scoutRunner || runScoutOnce)
+        return { started: true, reason: `Späher: Geräte-Suche im eigenen Netz alle ${state.config.discovery.intervalHours} h, Bericht an die Main` }
+    }
     if (options.nodeOnly) return { started: false, reason: 'Mesh-Worker: Wahrnehmen läuft nur am Main' }
     if (state.bus) return { started: true, reason: 'läuft bereits' }
     state.bus = buildSensingBus({ nodeId: options.nodeId, role: 'main' })
@@ -185,6 +192,55 @@ function scheduleAutoDiscovery(runner?: () => Promise<unknown>): void {
     const every = setInterval(run, state.config.discovery.intervalHours * 60 * 60_000)
     every.unref?.()
     state.timers.push(first, every)
+}
+
+function scheduleScout(runner: () => Promise<unknown>): void {
+    const run = () => { void runner().catch(error => sensingLog(`Späher-Suche fehlgeschlagen: ${cleanText(String((error as Error)?.message || error), 160)}`)) }
+    const first = setTimeout(run, state.config.discovery.firstRunDelaySec * 1000)
+    first.unref?.()
+    const every = setInterval(run, state.config.discovery.intervalHours * 60 * 60_000)
+    every.unref?.()
+    state.timers.push(first, every)
+}
+
+/** One scout run on a worker: the same bounded, own-network discovery, then a signed report to Main. */
+async function runScoutOnce(deps: DiscoveryDeps = {}): Promise<void> {
+    const cfg = state.config
+    const report = await discoverDevices({
+        deadlineMs: cfg.discovery.deadlineSec * 1000, ratePerSec: cfg.discovery.ratePerSec, concurrency: cfg.discovery.concurrency,
+        maxHosts: cfg.discovery.maxHosts, mdns: cfg.discovery.mdns, tailnetHosts: cfg.discovery.tailnetHosts,
+    }, { mdnsBrowse: cfg.discovery.mdns ? realMdnsBrowse : undefined, ssdpBrowse: cfg.discovery.mdns ? ms => realSsdpBrowse(ms, deps.interfaces) : undefined,
+        tuyaBrowse: cfg.discovery.mdns ? ms => realTuyaBrowse(ms, deps.interfaces) : undefined, ...deps })
+    const payload = {
+        subnets: report.scope.subnets.slice(0, 8), hasTailnet: report.scope.hasTailnet,
+        candidates: report.candidates.slice(0, 512).map(c => ({ type: c.type, host: c.host, port: c.port, via: c.via,
+            ...(c.name ? { name: cleanText(c.name, 120) } : {}) })),
+    }
+    const { publishDiscoveryReport } = await import('../mesh/mesh-transport-runtime.js')
+    await publishDiscoveryReport(payload)
+    sensingLog(`Späher: ${payload.candidates.length} Funde an die Main gemeldet (${payload.subnets.join(', ') || 'kein privates Netz'}${payload.hasTailnet ? ' + Tailnet' : ''})`)
+}
+
+/**
+ * Main: takes over a verified scout report. The one gate rule (net-scope) decides every address;
+ * accepted devices are recorded with the scout's name and go the usual way (watch, bundled card).
+ */
+export async function ingestScoutReport(sourceNode: string, payload: unknown, opts: { offerCards?: boolean } = {}): Promise<{ recorded: number; rejected: number }> {
+    const { acceptedScoutCandidates, validDiscoveryReport } = await import('../mesh/discovery-report.js')
+    if (!validDiscoveryReport(payload)) return { recorded: 0, rejected: Array.isArray((payload as any)?.candidates) ? (payload as any).candidates.length : 0 }
+    const { accepted, rejected } = acceptedScoutCandidates(payload)
+    const known = accepted.filter(c => Object.hasOwn(DEVICE_LABEL, c.type))
+    recordCandidates(state.dataDir, known.map(c => ({ type: c.type as DeviceRecord['type'], host: c.host, port: c.port, via: c.via,
+        ...(c.name ? { name: c.name } : {}), ...(c.evidence ? { evidence: c.evidence } : {}), seenBy: cleanText(sourceNode, 80) })))
+    autoMonitorDevices(state.dataDir)
+    if (opts.offerCards !== false && process.env.NOVA_NODE_ONLY !== 'true') {
+        try {
+            const { offerDeviceConnections } = await import('./device-connect.js')
+            await offerDeviceConnections({ dataDir: state.dataDir })
+        } catch (error) { sensingLog(`Späher-Funde: Geräte-Fragen nicht erstellt: ${cleanText(String((error as Error)?.message || error), 160)}`) }
+    }
+    sensingLog(`Späher ${cleanText(sourceNode, 80)}: ${known.length} Funde übernommen, ${rejected + accepted.length - known.length} verworfen`)
+    return { recorded: known.length, rejected: rejected + accepted.length - known.length }
 }
 
 export function stopSensing(): void {

@@ -5495,6 +5495,13 @@
       ]
     },
     {
+      "module": "src/mesh/discovery-report.ts",
+      "imports": [
+        "../sensing/net-scope.js",
+        "node:net"
+      ]
+    },
+    {
       "module": "src/mesh/emergency-code.ts",
       "imports": [
         "../core/atomic-storage.js",
@@ -5630,6 +5637,7 @@
       "module": "src/mesh/mesh-policy.ts",
       "imports": [
         "../core/data-root.js",
+        "./discovery-report.js",
         "./mesh-git.js",
         "./mesh-identity.js",
         "./node-capture.js",

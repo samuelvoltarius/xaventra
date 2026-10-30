@@ -3,6 +3,7 @@ export type MeshMode = 'standalone' | 'direct' | 'ha'
 export type MeshEnvelopeKind =
     | 'mesh.hello' | 'mesh.ack'
     | 'node.heartbeat' | 'node.capabilities' | 'node.tools'
+    | 'discovery.report'
     | 'tool.request' | 'agent.request' | 'mission.request'
     | 'exchange.request' | 'exchange.response'
     | 'capture.request' | 'capture.response'
@@ -195,7 +196,7 @@ export const COORDINATED_KINDS = new Set<MeshEnvelopeKind>(['mission.request'])
 
 export function isSafeMeshKind(value: unknown): value is MeshEnvelopeKind {
     return typeof value === 'string' && new Set<MeshEnvelopeKind>([
-        'mesh.hello', 'mesh.ack', 'node.heartbeat', 'node.capabilities', 'node.tools',
+        'mesh.hello', 'mesh.ack', 'node.heartbeat', 'node.capabilities', 'node.tools', 'discovery.report',
         'tool.request', 'agent.request', 'mission.request', 'codex.status.request', 'codex.complete.request', 'update.release', 'run.progress', 'run.evidence',
         'exchange.request', 'exchange.response',
         'capture.request', 'capture.response',
