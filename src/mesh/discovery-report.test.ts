@@ -42,7 +42,7 @@ describe('discovery report from a scout node', () => {
         expect(result.rejected).toBe(3)
     })
     it('tailnet addresses only when the scout has an own tailnet interface', () => {
-        const withTailnet = report({ hasTailnet: true, candidates: [{ type: 'networkdevice', host: '100.101.102.103', port: 443, via: 'tcp' }] })
+        const withTailnet = report({ hasTailnet: true, candidates: [{ type: 'networkdevice', host: '100.64.12.34', port: 443, via: 'tcp' }] })
         expect(acceptedScoutCandidates(withTailnet as any).accepted).toHaveLength(1)
     })
 })
