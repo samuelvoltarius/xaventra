@@ -4,11 +4,12 @@ import { PassThrough } from 'node:stream'
 import { mkdtempSync, mkdirSync, readdirSync, writeFileSync, readFileSync, rmSync, symlinkSync, linkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { createHash } from 'node:crypto'
 
 const mocks = vi.hoisted(() => ({ spawn: vi.fn(), execFileSync: vi.fn() }))
 vi.mock('node:child_process', () => mocks)
-import { assertPatchSourcePath, REPAIR_SANDBOX_LIMITS, validatePatchInSandbox } from './patch-sandbox.js'
+import { assertPatchSourcePath, REPAIR_SANDBOX_OPEN_FILES, validatePatchInSandbox } from './patch-sandbox.js'
 
 describe('repair sandbox boundary (scripted Docker, not live isolation proof)', () => {
     let root: string
@@ -136,6 +137,6 @@ describe('sandbox file limit (EMFILE, 30.10.2026)', () => {
     it('stays well above the number of test files', () => {
         const count = (dir: string): number => readdirSync(dir, { withFileTypes: true }).reduce((sum, entry) =>
             sum + (entry.isDirectory() ? count(join(dir, entry.name)) : entry.name.endsWith('.test.ts') ? 1 : 0), 0)
-        expect(REPAIR_SANDBOX_LIMITS.openFiles).toBeGreaterThanOrEqual(count(join(process.cwd(), 'src')) * 4)
+        expect(REPAIR_SANDBOX_OPEN_FILES).toBeGreaterThanOrEqual(count(fileURLToPath(new URL('..', import.meta.url))) * 4)
     })
 })
