@@ -121,6 +121,12 @@ spec:
               mountPath: /etc/xaventra/cluster
               readOnly: true
             {{- end }}
+            {{- if .Values.vaultKey.existingSecret }}
+            - name: vault-key
+              mountPath: /run/secrets/xaventra-credential-key
+              subPath: {{ .Values.vaultKey.key }}
+              readOnly: true
+            {{- end }}
       volumes:
         {{- include "xaventra.configVolume" . | nindent 8 }}
         - name: tmp
@@ -130,6 +136,15 @@ spec:
         - name: control
           configMap:
             name: {{ $full }}-control
+        {{- end }}
+        {{- if .Values.vaultKey.existingSecret }}
+        - name: vault-key
+          secret:
+            secretName: {{ .Values.vaultKey.existingSecret }}
+            defaultMode: 256
+            items:
+              - key: {{ .Values.vaultKey.key }}
+                path: {{ .Values.vaultKey.key }}
         {{- end }}
   volumeClaimTemplates:
     {{- range $volume := list "state" "memory" "workspaces" }}

@@ -36,7 +36,10 @@ export function checkVault(dataDirs: readonly string[]): CheckResult {
         issues.push({
             code: 'VAULT_KEY_IN_DATA_TREE', severity: 'warning',
             message: 'Tresor-Schlüssel liegt im Datenbaum',
-            fix: { type: 'info', hint: 'NOVA_CREDENTIAL_KEY_FILE auf einen Pfad außerhalb des Datenbaums setzen (oder systemd LoadCredential / Docker-Secret).', safe: false },
+            // 2.91.2: inside Kubernetes the way is the Helm value, not systemd/Docker.
+            fix: { type: 'info', hint: String(process.env.KUBERNETES_SERVICE_HOST || '').trim()
+                ? 'Helm-Wert vaultKey.existingSecret setzen (Secret per Pipe anlegen, docs/KUBERNETES.md); ein Knoten mit schon versiegelten Speichern braucht seinen bisherigen Schlüssel.'
+                : 'NOVA_CREDENTIAL_KEY_FILE auf einen Pfad außerhalb des Datenbaums setzen (oder systemd LoadCredential / Docker-Secret).', safe: false },
         })
     }
     const unreadable = issues.filter(item => item.code === 'VAULT_STORE_UNREADABLE').length

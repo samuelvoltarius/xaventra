@@ -310,6 +310,9 @@ Supabase-Warteschlange in `delegateTask` (siehe D1).
 Anlegen) → `runTestPodAction` → `src/infra/kubernetes-test-pods.ts`
 (Vorlage, Whitelist, Wächter); Namespace/RBAC/NetworkPolicy legt der Owner an
 (`deploy/kubernetes/xaventra-test-rbac.yaml`).
+Helm-Chart `deploy/helm/xaventra`: Tresor-Schlüssel aus einem Secret über
+`vaultKey.existingSecret` (2.91.2, Mount `/run/secrets/xaventra-credential-key`,
+Test `src/infra/helm-vault-key.test.ts`).
 
 **Wichtige Dateien:** `src/infra/proxmox.ts` (TLS-Fingerabdruck,
 `PROXMOX_ACTIONS`), `proxmox-setup.ts`, `kubernetes.ts`

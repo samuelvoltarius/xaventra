@@ -222,6 +222,15 @@ oder im Verlauf landet:
 - Workload-Schlüssel: `NOVA_NODE_ID=<präfix> npm run mesh:identity` auf deinem
   Rechner, dann `kubectl -n xaventra create secret generic <name> --from-file=identity.json=<datei>`
   und die Datei löschen.
+- Tresor-Schlüssel (2.91.2, `vaultKey.existingSecret`): ein Schlüssel für alle
+  versiegelten Speicher, außerhalb des `/runtime`-Ordners. Neuer Knoten:
+  `head -c 32 /dev/urandom | kubectl -n xaventra create secret generic xaventra-vault-key --from-file=credential.key=/dev/stdin`.
+  Ein Knoten, dessen Speicher schon versiegelt sind (z. B. ein migrierter
+  Docker-Worker), braucht **denselben** Schlüssel, mit dem versiegelt wurde
+  (`cat <vorhandene credential.key> | kubectl … --from-file=credential.key=/dev/stdin`) —
+  ein neuer Schlüssel zeigt „Schlüssel fehlt“, gelöscht wird nichts. Das Chart
+  hängt ihn schreibgeschützt (0400, Gruppe = `fsGroup` 1000) nach
+  `/run/secrets/xaventra-credential-key` in jeden Worker und eine Main im Cluster.
 
 Woher ein Secret kommt, ist austauschbar: von Hand, über den **External Secrets
 Operator** (eine `ExternalSecret` mit demselben Zielnamen) oder über **Vault**

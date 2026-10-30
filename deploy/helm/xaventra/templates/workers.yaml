@@ -218,6 +218,12 @@ spec:
               mountPath: /etc/xaventra/mesh-identity
               readOnly: true
             {{- end }}
+            {{- if $.Values.vaultKey.existingSecret }}
+            - name: vault-key
+              mountPath: /run/secrets/xaventra-credential-key
+              subPath: {{ $.Values.vaultKey.key }}
+              readOnly: true
+            {{- end }}
             {{- if $w.shmSizeLimit }}
             - name: dshm
               mountPath: /dev/shm
@@ -252,6 +258,16 @@ spec:
             items:
               - key: identity.json
                 path: identity.json
+        {{- end }}
+        {{- if $.Values.vaultKey.existingSecret }}
+        # 0400; fsGroup (podSecurityContext) makes the container user's group the owner.
+        - name: vault-key
+          secret:
+            secretName: {{ $.Values.vaultKey.existingSecret }}
+            defaultMode: 256
+            items:
+              - key: {{ $.Values.vaultKey.key }}
+                path: {{ $.Values.vaultKey.key }}
         {{- end }}
         {{- if $w.shmSizeLimit }}
         - name: dshm

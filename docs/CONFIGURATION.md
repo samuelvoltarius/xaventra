@@ -261,6 +261,10 @@ copied for backups, peer swaps and the rollback copy of the runtime. Sources, in
    secrets folder, never into the runtime copy.
 3. Docker peers: mount a secret at `/run/secrets/xaventra-credential-key` (read only), e.g.
    `docker run --mount type=bind,src=/etc/xaventra/credential.key,dst=/run/secrets/xaventra-credential-key,readonly`.
+   Kubernetes (2.91.2): Helm value `vaultKey.existingSecret` (key `vaultKey.key`, default `credential.key`)
+   mounts the Secret read-only (0400, group = `fsGroup`) at the same path in every worker and an in-cluster
+   Main; see `docs/KUBERNETES.md` → Secrets per Pipe. A node whose stores are already sealed needs the key
+   they were sealed with.
 4. Without any of them the old per-directory key next to each store is used and the daemon warns at start.
 
 At start, plaintext secret files are sealed (backup, seal, read back) and, with an external key,

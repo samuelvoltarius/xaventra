@@ -70,6 +70,16 @@ secrets:
   existingSecret: ""
 
 # CA of the coordination service (e.g. a self-hosted database behind your own CA).
+# Vault key (2.91.1+): one key for all sealed stores (vault, connection access data, Hue/Tuya keys),
+# kept OUT of the node's runtime folder. Secret name only; the key below holds the key file. When set,
+# every worker and an in-cluster Main mount it read-only (0400, group = fsGroup) at
+# /run/secrets/xaventra-credential-key, where the daemon reads it. Empty = nothing mounted: the daemon
+# keeps the old key next to each store and warns at start. Create it by pipe (docs/KUBERNETES.md);
+# a node with already sealed stores needs the key they were sealed with.
+vaultKey:
+  existingSecret: ""
+  key: credential.key
+
 coordinationCA:
   # Secret name only; the key below holds the PEM. Empty = nothing mounted.
   existingSecret: ""
