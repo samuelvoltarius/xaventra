@@ -1,8 +1,10 @@
 /**
  * /desktop „Übernehmen“: while Alfred controls a desktop that Xaventra's own
- * desktop_input acts on, the agent's input is paused. Kept dependency-free so
+ * desktop_input acts on, the agent's input is paused. Kept free of the gateway so
  * the input tool can ask without loading the gateway.
  */
+
+import { ownerName } from '../memory/owner-profile.js'
 
 const holds = new Map<string, string>()
 
@@ -16,7 +18,7 @@ export function holdAgentDesktopInput(holdId: string, desktopId: string): () => 
 export function agentDesktopInputPauseReason(): string | null {
     if (holds.size === 0) return null
     const desktops = [...new Set(holds.values())].join(', ')
-    return `Desktop-Eingabe pausiert: Alfred hat den Desktop übernommen (${desktops}). Erst nach „Zurückgeben“ oder Sitzungsende wieder möglich.`
+    return `Desktop-Eingabe pausiert: ${ownerName()} hat den Desktop übernommen (${desktops}). Erst nach „Zurückgeben“ oder Sitzungsende wieder möglich.`
 }
 
 /** Test helper. */

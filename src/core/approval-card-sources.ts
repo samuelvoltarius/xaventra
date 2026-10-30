@@ -124,7 +124,7 @@ export function createSelfHealExecutor(getDataDir: () => string): CardExecutor {
         async execute(card) {
             const ok = await decide(card, 'angenommen')
             return ok
-                ? { ok: true, message: 'Angenommen und im Vorschlag vermerkt. Für diese Aktion gibt es keinen freigegebenen Ausführungsweg — ich führe nichts selbst aus (z. B. Neustart macht Alfred).' }
+                ? { ok: true, message: 'Angenommen und im Vorschlag vermerkt. Für diese Aktion gibt es keinen freigegebenen Ausführungsweg — ich führe nichts selbst aus (z. B. einen Neustart machst du selbst).' }
                 : { ok: false, message: 'Vorschlag nicht mehr offen oder nicht gefunden.' }
         },
         async reject(card) {

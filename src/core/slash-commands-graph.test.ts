@@ -11,10 +11,10 @@ mkdirSync(join(sandbox, '.nova-data'), { recursive: true })
 writeFileSync(join(sandbox, '.nova-data', 'knowledge-graph.json'), JSON.stringify({
     version: 1, lastUpdated: 1,
     nodes: [
-        { id: 'alfred', label: 'Alfred', type: 'person', properties: {}, createdAt: 1, updatedAt: 1 },
+        { id: 'max', label: 'Max', type: 'person', properties: {}, createdAt: 1, updatedAt: 1 },
         { id: 'salzburg', label: 'Salzburg', type: 'place', properties: {}, createdAt: 1, updatedAt: 1 },
     ],
-    edges: [{ id: 'e1', from: 'alfred', to: 'salzburg', relation: 'wohnt_in', weight: 1, source: 'governance:mem_1', createdAt: 1 }],
+    edges: [{ id: 'e1', from: 'max', to: 'salzburg', relation: 'wohnt_in', weight: 1, source: 'governance:mem_1', createdAt: 1 }],
 }))
 const cwd = vi.spyOn(process, 'cwd').mockReturnValue(sandbox)
 afterAll(() => cwd.mockRestore())

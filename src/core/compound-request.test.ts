@@ -24,8 +24,8 @@ describe('2.89.3 compound requests', () => {
         const none = compoundNodeScreenshotResponse([shots], 'Google nach mir', 'Screenshots gesendet.')
         expect(none).toContain('spark: Bild gesendet')
         expect(none).toMatch(/Den zweiten Teil \(„Google nach mir“\) habe ich nicht geschafft\. Soll ich es noch einmal versuchen\?/)
-        const done = compoundNodeScreenshotResponse([shots, { toolName: 'web_search', success: true, result: 'Alfred Aigner: Fotograf in Salzburg' }], 'Google nach mir', 'Zu dir finde ich: Fotograf in Salzburg.')
-        expect(done).toContain('Zu dir finde ich: Fotograf in Salzburg.')
+        const done = compoundNodeScreenshotResponse([shots, { toolName: 'web_search', success: true, result: 'Max Muster: Fotograf in Beispielstadt' }], 'Google nach mir', 'Zu dir finde ich: Fotograf in Beispielstadt.')
+        expect(done).toContain('Zu dir finde ich: Fotograf in Beispielstadt.')
         expect(done).not.toContain('nicht geschafft')
     })
 

@@ -6,6 +6,10 @@
   bump, changelog and relevant guides. Push only after the applicable gates pass.
 - Use `xaventra.config.json` for new installs; `nova.config.json` is a read-in-place
   compatibility fallback. Never publish either runtime configuration.
+- Runtime text never names a fixed owner: use `ownerName()` from
+  `src/memory/owner-profile.ts` (`npm run check:owner-neutral`). Tests and
+  fixtures use invented people, ids and pets; real personal identifiers belong
+  only in the private leak denylist, never in the repository.
 - Do not call subsystem-probe scores autonomous-agent completion scores. Real
   model acceptance, OS install checks and distributed channel failover are
   separate evidence gates. Preserve failed reports; do not relax tests to pass.

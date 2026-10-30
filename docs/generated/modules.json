@@ -1492,6 +1492,7 @@
       "module": "src/core/action-policy.ts",
       "imports": [
         "../install/never-list.js",
+        "../memory/owner-profile.js",
         "./atomic-storage.js",
         "./data-root.js",
         "node:crypto",
@@ -1819,6 +1820,7 @@
     {
       "module": "src/core/decisions.ts",
       "imports": [
+        "../memory/owner-profile.js",
         "../security/secret-redaction.js",
         "./action-policy.js",
         "./atomic-storage.js",
@@ -2095,6 +2097,7 @@
     {
       "module": "src/core/missions.ts",
       "imports": [
+        "../memory/owner-profile.js",
         "../security/secret-redaction.js",
         "./action-policy.js",
         "./approval-cards.js",
@@ -2490,6 +2493,7 @@
     {
       "module": "src/core/responsibility-runtime.ts",
       "imports": [
+        "../memory/owner-profile.js",
         "../sensing/ports.js",
         "./action-policy.js",
         "./autonomy-defaults.js",
@@ -3010,7 +3014,9 @@
     },
     {
       "module": "src/desktop-direct/pause.ts",
-      "imports": []
+      "imports": [
+        "../memory/owner-profile.js"
+      ]
     },
     {
       "module": "src/desktop-direct/rfb.ts",
@@ -3118,6 +3124,7 @@
       "imports": [
         "../core/approval-cards.js",
         "../core/data-root.js",
+        "../memory/owner-profile.js",
         "../security/secret-redaction.js",
         "node:fs",
         "node:path"
@@ -3239,6 +3246,15 @@
         "node:fs",
         "node:path",
         "node:url"
+      ]
+    },
+    {
+      "module": "src/dev/check-owner-neutral.ts",
+      "imports": [
+        "node:fs",
+        "node:path",
+        "node:url",
+        "typescript"
       ]
     },
     {

@@ -17,12 +17,12 @@ describe('2.89.3 two tasks in one request', () => {
         const e2e = await harness({ searxng: true })
         const result = await e2e.telegram(REQUEST, [
             { tool: 'mesh_screenshot', args: {} },
-            { tool: 'searxng_search', args: { query: 'Alfred Aigner' } },
-            { text: 'Zu dir finde ich: Alfred Aigner, Fotograf und Videograf in Salzburg.' },
+            { tool: 'searxng_search', args: { query: 'Max Muster' } },
+            { text: 'Zu dir finde ich: Max Muster, Fotograf und Videograf in Beispielstadt.' },
         ])
         expect(result.offeredTools).toEqual(expect.arrayContaining(['mesh_screenshot', 'searxng_search']))
         expect(result.executedTools).toContain('searxng_search')
-        expect(result.final).toContain('Fotograf und Videograf in Salzburg')
+        expect(result.final).toContain('Fotograf und Videograf in Beispielstadt')
         expect(result.final).not.toContain('Bildzustellung')
         expect(result.final).not.toMatch(/nicht geschafft/)
     }, T)

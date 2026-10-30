@@ -106,6 +106,26 @@ export function loadOwnerProfile(path = profilePath()): OwnerProfile | null {
 
 export function _resetOwnerProfileCacheForTest(): void { cache = null; reconciledSignature = '' }
 
+export type OwnerCase = 'nom' | 'akk' | 'dat' | 'gen'
+const NEUTRAL_OWNER: Record<OwnerCase, string> = { nom: 'der Owner', akk: 'den Owner', dat: 'dem Owner', gen: 'des Owners' }
+
+/**
+ * The one way runtime text names the owner (Datenschutz 2.91): the first name from the
+ * owner profile of THIS installation, otherwise a neutral „der Owner“ in the asked case.
+ * Never a fixed person's name — another installation must not address its owner as ours.
+ */
+export function ownerName(kase: OwnerCase = 'nom', profile: OwnerProfile | null | undefined = loadOwnerProfile()): string {
+    const first = String(profile?.owner?.name || '').trim().split(/\s+/)[0] || ''
+    if (!first) return NEUTRAL_OWNER[kase]
+    return kase === 'gen' ? (/[sßxz]$/i.test(first) ? `${first}’` : `${first}s`) : first
+}
+
+/** `ownerName` with a capital first letter, for the start of a sentence. */
+export function ownerNameAtStart(kase: OwnerCase = 'nom', profile?: OwnerProfile | null): string {
+    const name = ownerName(kase, profile === undefined ? loadOwnerProfile() : profile)
+    return name.charAt(0).toUpperCase() + name.slice(1)
+}
+
 // ---------------------------------------------------------------- text helpers
 
 const norm = (value: string) => String(value || '').toLocaleLowerCase('de-DE').normalize('NFKC').replace(/[?!.,:;"“”„]+/g, ' ').replace(/\s+/g, ' ').trim()

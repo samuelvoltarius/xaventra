@@ -395,7 +395,7 @@ export function createWatchEngine(deps: WatchEngineDeps) {
                     title: daysLeft < 0 ? `TLS-Zertifikat von ${host.name} abgelaufen` : `TLS-Zertifikat von ${host.name} läuft in ${Math.max(0, Math.floor(daysLeft))} Tagen ab`,
                     evidence: `${host.host}:${host.port}, gültig bis ${new Date(validTo).toISOString().slice(0, 10)}`,
                     severity: severity === 'critical' ? 'critical' : 'warning',
-                    action: { kind: 'melden', text: 'Zertifikat erneuern (Alfred; ich ändere keine Zertifikate)' },
+                    action: { kind: 'melden', text: 'Zertifikat erneuern (bitte selbst; ich ändere keine Zertifikate)' },
                 })
             }
         }

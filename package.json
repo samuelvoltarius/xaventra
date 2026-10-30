@@ -50,6 +50,7 @@
     "check:infra-leaks": "node scripts/check-infra-leaks.mjs --check",
     "check:catalogs": "tsx src/dev/generate-runtime-catalogs.ts --check",
     "check:codekarte": "tsx src/dev/check-codekarte.ts",
+    "check:owner-neutral": "tsx src/dev/check-owner-neutral.ts",
     "sbom:generate": "node scripts/generate-sbom.mjs",
     "release:deploy": "tsx src/dev/deploy-current-release.ts",
     "benchmark:smoke": "tsx src/benchmark/benchmark-cli.ts",

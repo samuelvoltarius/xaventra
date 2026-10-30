@@ -31,6 +31,7 @@ import { createMissionEngine, planSteps, type Mission, type MissionCardPort, typ
 import {
     createResponsibilityManager, type CheckOutcome, type Responsibility, type ResponsibilityManager, type ResponsibilitySignals, type ThoughtPort,
 } from './responsibilities.js'
+import { ownerName } from '../memory/owner-profile.js'
 
 export interface ResponsibilitySettings {
     enabled: boolean
@@ -189,7 +190,7 @@ export function createResponsibilityRuntime(deps: ResponsibilityRuntimeDeps): Re
 // ---------------------------------------------------------------------------
 
 const MISSION_SECTIONS: Array<[Mission['status'], string]> = [
-    ['in-arbeit', 'In Arbeit'], ['geplant', 'Geplant'], ['wartet-auf-alfred', 'Wartet auf Alfred'], ['wartet-auf-delegation', 'Wartet auf Delegation'], ['blockiert', 'Blockiert'],
+    ['in-arbeit', 'In Arbeit'], ['geplant', 'Geplant'], ['wartet-auf-alfred', 'Wartet auf dich'], ['wartet-auf-delegation', 'Wartet auf Delegation'], ['blockiert', 'Blockiert'],
 ]
 const short = (value: unknown, max: number) => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max)
 
@@ -218,7 +219,7 @@ export function formatArbeit(missions: readonly Mission[], responsibilities: rea
     for (const item of active) {
         const check = item.lastCheck
         const state = item.status === 'pausiert' ? 'pausiert' : !check ? 'noch nicht gemessen' : check.erfuellt === true ? 'erfüllt' : check.erfuellt === false ? `verletzt: ${short(check.befunde.join('; '), 160)}` : 'unbekannt'
-        lines.push(`- ${item.titel} [${item.id}] · ${state} · ${item.herkunft === 'owner' ? 'von Alfred' : 'selbst abgeleitet'} · bis ${item.maxLevel}`)
+        lines.push(`- ${item.titel} [${item.id}] · ${state} · ${item.herkunft === 'owner' ? `von ${ownerName('dat')}` : 'selbst abgeleitet'} · bis ${item.maxLevel}`)
     }
     for (const item of proposed.slice(-5)) lines.push(`- (Vorschlag, wartet auf Knopf) ${item.titel} [${item.id}]`)
     const promoted = options.promoted || []
@@ -425,7 +426,7 @@ function productionExecutors(): StepExecutor[] {
             // Success is Nova's own measurement of the mission criterion, not the agent's word.
             kind: 'delegieren',
             async run(step, mission, ctx) {
-                if (!ctx.approvedBy) return { ok: false, message: 'ohne Alfreds Ja wird nichts übergeben' }
+                if (!ctx.approvedBy) return { ok: false, message: `ohne Ja von ${ownerName('dat')} wird nichts übergeben` }
                 const { delegate } = await import('./delegation.js')
                 const responsibility = runtime?.responsibilities.get(mission.responsibilityId)
                 const result = await delegate({
