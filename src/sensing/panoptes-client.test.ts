@@ -6,17 +6,18 @@ import { assertPanoptesPfad, holeStandbild, lauscheEreignisse, parseEreignis, Pa
 const BASE = 'http://100.64.1.2:8080'
 const JPEG = Buffer.concat([Buffer.from('ffd8ffe0', 'hex'), Buffer.alloc(32)])
 const ID = 'a'.repeat(32)
+const ANFRAGE = 'd'.repeat(32)
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 
 describe('Erlaubnisliste', () => {
     it.each([
-        ['POST', '/auth/kopplung/anfrage'], ['GET', '/auth/kopplung/anfrage/abc-123'], ['GET', '/api/ha/v1/ereignisse'],
+        ['POST', '/auth/kopplung/anfrage'], ['GET', `/auth/kopplung/anfrage/${ANFRAGE}`], ['GET', '/api/ha/v1/ereignisse'],
         ['GET', `/api/waechter/standbild/${ID}`], ['GET', '/api/surveillance/status'], ['POST', '/api/sitzung/erneuern'], ['POST', '/api/sitzung/abmelden'],
     ])('erlaubt %s %s', (method, path) => expect(() => assertPanoptesPfad(method, path)).not.toThrow())
     it.each([
         ['GET', '/video/a.mp4'], ['GET', '/api/recordings'], ['GET', '/thumb/a.jpg?t=x'], ['GET', '/snapshot/1'], ['GET', '/ws'], ['GET', '/h264/1'], ['GET', '/api/stream'],
         ['POST', '/api/ha/v1/aktion'], ['POST', '/api/handy/v1/aktion'], ['GET', '/api/ha/v1/zustand'], ['GET', '/api/kopplungen'], ['GET', '/api/ereignisclip/1'],
-        ['DELETE', '/api/sitzung/abmelden'], ['GET', '/api/waechter/standbild/kurz'], ['GET', `/api/waechter/standbild/${ID}/../../video`], ['GET', '/api/ha/v1/ereignisse?position=1'],
+        ['DELETE', '/api/sitzung/abmelden'], ['GET', '/auth/kopplung/anfrage/kurz'], ['GET', '/api/waechter/standbild/kurz'], ['GET', `/api/waechter/standbild/${ID}/../../video`], ['GET', '/api/ha/v1/ereignisse?position=1'],
     ])('verweigert %s %s', (method, path) => expect(() => assertPanoptesPfad(method, path)).toThrow(PanoptesPfadVerweigert))
     it('ein verbotener Pfad erreicht das Netz nie', async () => {
         const fetchFn = vi.fn()
@@ -26,21 +27,37 @@ describe('Erlaubnisliste', () => {
 })
 
 describe('Kopplung Art dienst', () => {
-    it('fragt mit Prüfzahl an, Alfred erlaubt am Auto, der JWT kommt zurück', async () => {
+    it('fragt mit Prüfzahl an, der Besitzer erlaubt am Auto, der JWT kommt zurück', async () => {
         const fetchFn = vi.fn(async (url: any, init: any = {}) => {
-            if (String(url).endsWith('/auth/kopplung/anfrage')) { expect(JSON.parse(init.body)).toEqual({ geraet: 'Xaventra', pruefzahl: '1234', art: 'dienst' }); return json({ ok: true, id: 'abc', abfrageAlleMs: 1 }) }
+            if (String(url).endsWith('/auth/kopplung/anfrage')) { expect(JSON.parse(init.body)).toEqual({ geraet: 'Xaventra', pruefzahl: '1234', art: 'dienst' }); return json({ ok: true, id: ANFRAGE, abfrageAlleMs: 1 }) }
             return fetchFn.mock.calls.length < 3 ? json({ status: 'wartet' }) : json({ status: 'erlaubt', jwt: 'kopplungs-jwt', kopplungId: 'kid-1' })
         })
         const start = await starteKopplung(BASE, '1234', { fetchFn: fetchFn as any })
-        expect(start).toEqual({ id: 'abc', abfrageAlleMs: 1 })
+        expect(start).toEqual({ id: ANFRAGE, abfrageAlleMs: 1 })
         expect(await pollKopplung(BASE, start, { fetchFn: fetchFn as any, sleep: async () => undefined, maxMs: 1000 })).toEqual({ status: 'erlaubt', jwt: 'kopplungs-jwt', kopplungId: 'kid-1' })
+    })
+    it.each(['abgelehnt', 'abgelaufen', 'abgeholt'])('Zustand %s endet ohne zweiten Versuch', async status => {
+        const fetchFn = vi.fn(async () => json({ status }))
+        expect(await pollKopplung(BASE, { id: ANFRAGE, abfrageAlleMs: 1 }, { fetchFn: fetchFn as any, sleep: async () => undefined, maxMs: 1000 })).toEqual({ status })
+        expect(fetchFn).toHaveBeenCalledOnce()
+    })
+    it('404 unbekannt endet ebenso; ein Netzfehler beim Abfragen fragt weiter', async () => {
+        const gone = vi.fn(async () => json({ status: 'unbekannt' }, 404))
+        expect(await pollKopplung(BASE, { id: ANFRAGE, abfrageAlleMs: 1 }, { fetchFn: gone as any, sleep: async () => undefined, maxMs: 1000 })).toEqual({ status: 'unbekannt' })
+        const answers: Array<() => Promise<Response>> = [async () => { throw new Error('offline') }, async () => json({ status: 'erlaubt', jwt: 'j', kopplungId: 'k' })]
+        const flaky = vi.fn(async () => answers.shift()!())
+        expect(await pollKopplung(BASE, { id: ANFRAGE, abfrageAlleMs: 1 }, { fetchFn: flaky as any, sleep: async () => undefined, maxMs: 1000 })).toMatchObject({ status: 'erlaubt' })
+    })
+    it('eine abgewiesene Anfrage (400 pruefzahl, 429 ratenlimit) wirft mit Grund', async () => {
+        await expect(starteKopplung(BASE, '12', { fetchFn: (async () => json({ ok: false, grund: 'pruefzahl' }, 400)) as any })).rejects.toThrow(/pruefzahl/)
+        await expect(starteKopplung(BASE, '1234', { fetchFn: (async () => json({ ok: false, grund: 'ratenlimit' }, 429)) as any })).rejects.toThrow(/ratenlimit/)
     })
     it('eine Ablehnung und das Zeitlimit enden ehrlich, ohne JWT', async () => {
         const denied = vi.fn(async () => json({ status: 'abgelehnt' }))
-        expect(await pollKopplung(BASE, { id: 'abc', abfrageAlleMs: 1 }, { fetchFn: denied as any, sleep: async () => undefined, maxMs: 1000 })).toEqual({ status: 'abgelehnt' })
+        expect(await pollKopplung(BASE, { id: ANFRAGE, abfrageAlleMs: 1 }, { fetchFn: denied as any, sleep: async () => undefined, maxMs: 1000 })).toEqual({ status: 'abgelehnt' })
         let clock = 0
         const waiting = vi.fn(async () => json({ status: 'wartet' }))
-        expect(await pollKopplung(BASE, { id: 'abc', abfrageAlleMs: 1 }, { fetchFn: waiting as any, sleep: async () => { clock += 1000 }, now: () => clock, maxMs: 2000 })).toEqual({ status: 'zeitlimit' })
+        expect(await pollKopplung(BASE, { id: ANFRAGE, abfrageAlleMs: 1 }, { fetchFn: waiting as any, sleep: async () => { clock += 1000 }, now: () => clock, maxMs: 2000 })).toEqual({ status: 'zeitlimit' })
     })
     it('erneuert die Sitzung und bekommt einen frischen JWT', async () => {
         const fetchFn = vi.fn(async (_url: any, init: any) => { expect(init.headers.Authorization).toBe('Bearer alt'); return json({ jwt: 'neu' }) })

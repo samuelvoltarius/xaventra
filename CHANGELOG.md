@@ -36,6 +36,11 @@
   with MiniMax and sends it to you. Kept at most 72 hours. No clips, no live
   image, no vehicle commands, no coordinates; the client refuses every other
   path.
+  Pairing reports success only after the one-time JWT is sealed and read back,
+  otherwise it asks for a new pairing; a refused or expired request is not
+  retried. `urls` is a list, the event stream reconnects with a growing pause up
+  to 5 minutes, and the session is renewed daily even after offline periods.
+  Stream drops are normal and log at most once an hour.
 
 ## [2.92.1] — 2026-10-30
 

@@ -1,5 +1,5 @@
 /**
- * Standbild bei Wächter-Ereignis über die Panoptes-Kopplung (Alfred 30.10.2026: „Bilder dürfen zu
+ * Standbild bei Wächter-Ereignis über die Panoptes-Kopplung (Besitzer 30.10.2026: „Bilder dürfen zu
  * MiniMax … und ja sie darf es holen“). Schalter Standard aus (`autonomy.panoptes`). Koppeln startet nur
  * der Besitzer, das Recht „Standbild bei Ereignis“ schaltet er in Panoptes selbst ein. Genau ein Bild je
  * ereignisId, höchstens 72 h im privaten Ordner, keine Clips, keine Koordinaten. Der JWT liegt im Tresor.
@@ -9,10 +9,11 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, wr
 import { join } from 'node:path'
 import { getRuntimeRoot } from '../core/data-root.js'
 import { readSecretJson, writeSecretJson } from '../secrets/local-sealed-store.js'
-import { erneuereSitzung, holeStandbild, lauscheEreignisse, meldeAb, pollKopplung, starteKopplung, type PanoptesDeps, type PanoptesEreignis } from './panoptes-client.js'
+import { erneuereSitzung, holeStandbild, lauscheEreignisse, meldeAb, PanoptesAnfrageAbgewiesen, pollKopplung, starteKopplung, type PanoptesDeps, type PanoptesEreignis } from './panoptes-client.js'
 
-export interface PanoptesConfig { enabled: boolean; url: string }
-export interface Kopplung { jwt: string; kopplungId: string; url: string; pairedAt: number }
+/** `urls`: Tailscale-Adressen des Autos (es kann zwei geben); nie hart im Code, der Rollout setzt sie. */
+export interface PanoptesConfig { enabled: boolean; urls: string[] }
+export interface Kopplung { jwt: string; kopplungId: string; url: string; pairedAt: number; renewedAt?: number }
 export type EreignisDeps = PanoptesDeps & {
     log?: (line: string) => void
     /** path = null: reine Textmeldung. Liefert, ob die Zustellung geklappt hat. */
@@ -29,22 +30,38 @@ const kopplungFile = (root: string) => join(root, 'secrets', 'panoptes', 'kopplu
 const seenFile = (root: string) => join(root, 'panoptes', 'gesehen.json')
 const ART: Record<string, string> = { person: 'Person', bewegung: 'Bewegung' }
 
-let config: PanoptesConfig = { enabled: false, url: '' }
+let config: PanoptesConfig = { enabled: false, urls: [] }
 let dataRoot = ''
 let rechtGemeldet = false
 const abrufe: number[] = []
+const hinweise = new Map<string, number>()
 
 export function parsePanoptesConfig(raw: unknown): PanoptesConfig {
     const value = (raw || {}) as Record<string, unknown>
-    if (value.enabled !== true || typeof value.url !== 'string') return { enabled: false, url: '' }
+    const off = { enabled: false, urls: [] }
+    if (value.enabled !== true || !Array.isArray(value.urls) || !value.urls.length || value.urls.length > 4) return off
     try {
-        const url = new URL(value.url)
-        if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return { enabled: false, url: '' }
-        return { enabled: true, url: url.href.replace(/\/+$/, '') }
-    } catch { return { enabled: false, url: '' } }
+        const urls = value.urls.map(item => {
+            const url = new URL(String(item))
+            if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('invalid')
+            return url.href.replace(/\/+$/, '')
+        })
+        return { enabled: true, urls }
+    } catch { return off }
 }
 
-export function setPanoptesConfig(next: PanoptesConfig, root: string): void { config = next; dataRoot = root; rechtGemeldet = false; abrufe.length = 0 }
+export function setPanoptesConfig(next: PanoptesConfig, root: string): void { config = next; dataRoot = root; rechtGemeldet = false; abrufe.length = 0; hinweise.clear() }
+
+/** Offline-Zeiten sind normal (täglicher Neustart, kein Netz): höchstens eine Zeile je Stunde und Art. */
+function hinweis(key: string, line: string, deps: EreignisDeps): void {
+    const now = (deps.now || Date.now)()
+    if (now - (hinweise.get(key) ?? -Infinity) < 60 * 60_000) return
+    hinweise.set(key, now)
+    ;(deps.log || (text => console.log(`[Panoptes] ${text}`)))(line)
+}
+
+/** Die Adressen, zuerst die der Kopplung. */
+const adressen = (cfg: PanoptesConfig, kopplung: Kopplung) => [kopplung.url, ...cfg.urls.filter(url => url !== kopplung.url)]
 
 export function readKopplung(root: string): Kopplung | undefined {
     try {
@@ -56,6 +73,12 @@ export function readKopplung(root: string): Kopplung | undefined {
 export function writeKopplung(root: string, kopplung: Kopplung): void {
     mkdirSync(join(root, 'secrets', 'panoptes'), { recursive: true, mode: 0o700 })
     writeSecretJson(kopplungFile(root), kopplung)
+}
+
+/** Versiegeln und zurücklesen. Der JWT kommt nur einmal: Erfolg gibt es erst, wenn er wirklich im Tresor liegt. */
+export function speichereKopplung(root: string, kopplung: Kopplung): boolean {
+    try { writeKopplung(root, kopplung) } catch { return false }
+    return readKopplung(root)?.jwt === kopplung.jwt
 }
 
 /** Entfernt Standbilder, die älter als 72 h sind; liefert die Anzahl. */
@@ -106,7 +129,11 @@ export async function verarbeiteEreignis(root: string, cfg: PanoptesConfig, even
     abrufe.push(now)
     // Vor dem Abruf merken: Auch nach einem Absturz gibt es nie ein zweites Bild zu dieser Kennung.
     markSeen(root, id)
-    const result = await holeStandbild(cfg.url, kopplung.jwt, id, deps)
+    let result: Awaited<ReturnType<typeof holeStandbild>> | null = null
+    for (const url of adressen(cfg, kopplung)) {
+        try { result = await holeStandbild(url, kopplung.jwt, id, deps); break } catch { /* nächste Adresse */ }
+    }
+    if (!result) { hinweis('standbild', 'Panoptes nicht erreichbar; Standbild nicht geholt.', deps); return { status: 'nicht-erreichbar' } }
     if (result.ok === false) {
         if (result.grund === 'nicht_erlaubt' && !rechtGemeldet) {
             rechtGemeldet = true
@@ -130,43 +157,75 @@ export async function verarbeiteEreignis(root: string, cfg: PanoptesConfig, even
 let abort: AbortController | null = null
 let renewTimer: ReturnType<typeof setInterval> | null = null
 
-/** Hört auf Ereignisse, solange Schalter und Kopplung stehen. 401/403 am Strom beendet ehrlich, ohne Dauerversuche. */
+/**
+ * Hört auf Ereignisse. Abbrüche sind normal (täglicher Neustart ~22:10, Zeiten ohne Netz): wiederverbinden
+ * mit wachsendem Abstand bis 5 min, reihum über die Adressen, keine Flut, keine Meldung an den Besitzer. Nur eine
+ * Verbindung, die mindestens eine Minute hielt, setzt den Abstand zurück. 401/403 beendet: neu koppeln.
+ */
+export async function lauschSchleife(root: string, cfg: PanoptesConfig, deps: EreignisDeps & { signal: AbortSignal }): Promise<'abgelehnt' | 'ohne-kopplung' | 'beendet'> {
+    const now = deps.now || Date.now
+    const sleep = deps.sleep || (ms => new Promise<void>(resolve => { const timer = setTimeout(resolve, ms); (timer as any).unref?.() }))
+    let backoffMs = 5000, index = 0
+    while (!deps.signal.aborted) {
+        const kopplung = readKopplung(root)
+        if (!kopplung) return 'ohne-kopplung'
+        const liste = adressen(cfg, kopplung)
+        const url = liste[index % liste.length], begin = now()
+        let status = 0
+        try {
+            status = (await lauscheEreignisse(url, kopplung.jwt, { ...deps,
+                onEreignis: async event => { await verarbeiteEreignis(root, cfg, event, deps).catch(() => hinweis('ereignis', 'Ereignis konnte nicht verarbeitet werden.', deps)) } })).status
+        } catch { if (deps.signal.aborted) return 'beendet' }
+        if (status === 401 || status === 403) {
+            hinweis('strom', `Ereignisstrom abgelehnt (${status}); bitte neu koppeln.`, deps)
+            await (deps.notify || defaultNotify)(null, 'Panoptes nimmt die Kopplung nicht mehr an. Bitte mit /panoptes koppeln neu koppeln.').catch(() => false)
+            return 'abgelehnt'
+        }
+        if (status !== 200) { index++; hinweis('offline', 'Panoptes nicht erreichbar; ich versuche es weiter.', deps) }
+        if (now() - begin >= 60_000) backoffMs = 5000
+        await sleep(backoffMs)
+        backoffMs = Math.min(backoffMs * 2, 5 * 60_000)
+    }
+    return 'beendet'
+}
+
+/** Täglich erneuern (frischer JWT, 30 Tage, gleiche Kopplung). Offline bleibt der alte, der nächste Lauf versucht es wieder. */
+export async function erneuereFaellig(root: string, cfg: PanoptesConfig, deps: EreignisDeps = {}): Promise<boolean> {
+    const kopplung = readKopplung(root)
+    const now = (deps.now || Date.now)()
+    if (!kopplung || now - (kopplung.renewedAt ?? kopplung.pairedAt) < 24 * 60 * 60_000) return false
+    for (const url of adressen(cfg, kopplung)) {
+        try {
+            const jwt = await erneuereSitzung(url, kopplung.jwt, deps)
+            if (jwt) {
+                if (speichereKopplung(root, { ...kopplung, jwt, renewedAt: now })) return true
+                hinweis('erneuern', 'Neuer Panoptes-Zugang konnte nicht gespeichert werden; der alte bleibt.', deps)
+                return false
+            }
+        } catch { /* nächste Adresse */ }
+    }
+    hinweis('erneuern', 'Panoptes-Sitzung nicht erneuert; nächster Versuch in einer Stunde.', deps)
+    return false
+}
+
 function starteLauscher(root: string, cfg: PanoptesConfig, deps: EreignisDeps = {}): void {
     abort?.abort()
     const controller = new AbortController()
     abort = controller
-    const log = deps.log || (line => console.log(`[Panoptes] ${line}`))
-    void (async () => {
-        let backoffMs = 5000
-        while (!controller.signal.aborted) {
-            const kopplung = readKopplung(root)
-            if (!kopplung) return
-            try {
-                const { status } = await lauscheEreignisse(cfg.url, kopplung.jwt, { ...deps, signal: controller.signal,
-                    onEreignis: async event => { await verarbeiteEreignis(root, cfg, event, deps).catch(() => log('Ereignis konnte nicht verarbeitet werden.')) } })
-                if (status === 401 || status === 403) { log(`Ereignisstrom abgelehnt (${status}); bitte neu koppeln.`); return }
-                if (status === 200) backoffMs = 5000
-            } catch { if (controller.signal.aborted) return }
-            await new Promise(resolve => setTimeout(resolve, backoffMs))
-            backoffMs = Math.min(backoffMs * 2, 5 * 60_000)
-        }
-    })()
+    void lauschSchleife(root, cfg, { ...deps, signal: controller.signal }).catch(() => undefined)
     if (renewTimer) clearInterval(renewTimer)
-    renewTimer = setInterval(() => {
-        const kopplung = readKopplung(root)
-        if (!kopplung) return
-        void erneuereSitzung(cfg.url, kopplung.jwt, deps).then(jwt => { if (jwt) writeKopplung(root, { ...kopplung, jwt }) }).catch(() => undefined)
-    }, 24 * 60 * 60_000)
-    renewTimer.unref?.()
+    // Stündlich prüfen: Das Auto ist nicht immer erreichbar, fällig wird es erst nach 24 h.
+    renewTimer = setInterval(() => { void erneuereFaellig(root, cfg, deps).catch(() => undefined) }, 60 * 60_000)
+    ;(renewTimer as any).unref?.()
 }
 
 /** Beim Daemon-Start, nur am Main. Ohne Schalter oder Kopplung geschieht nichts. */
-export function startPanoptes(raw: unknown, root: string): { started: boolean; reason: string } {
+export function startPanoptes(raw: unknown, root: string, deps: EreignisDeps = {}): { started: boolean; reason: string } {
     setPanoptesConfig(parsePanoptesConfig(raw), root)
     if (!config.enabled) return { started: false, reason: 'autonomy.panoptes aus' }
     pruneAutoStandbilder()
     if (!readKopplung(root)) return { started: false, reason: 'noch nicht gekoppelt' }
-    starteLauscher(root, config)
+    starteLauscher(root, config, deps)
     return { started: true, reason: 'hört auf Wächter-Ereignisse' }
 }
 
@@ -184,13 +243,20 @@ export async function handlePanoptesCommand(args: string, principal: { principal
     const sub = args.trim().split(/\s+/)[0]?.toLowerCase() || 'status'
     if (sub === 'koppeln') {
         const pruefzahl = String(randomInt(1000, 10000))
-        const start = await starteKopplung(config.url, pruefzahl, deps).catch(() => null)
-        if (!start) return 'Panoptes antwortet nicht oder nimmt die Anfrage nicht an. Nichts gekoppelt.'
         const finish = deps.onFertig || (text => { void (deps.notify || defaultNotify)(null, text).catch(() => false) })
-        void pollKopplung(config.url, start, deps).then(result => {
+        let start: Awaited<ReturnType<typeof starteKopplung>> | null = null, url = ''
+        for (const candidate of config.urls) {
+            try { start = await starteKopplung(candidate, pruefzahl, deps); url = candidate; break }
+            catch (error) { if (error instanceof PanoptesAnfrageAbgewiesen) return `Panoptes hat die Kopplung abgewiesen (${error.grund}). Nichts gekoppelt.` }
+        }
+        if (!start) return 'Panoptes antwortet nicht. Nichts gekoppelt.'
+        // Kein Wiederholen: Abgelehnt ist abgelehnt, und der JWT kommt nur beim ersten Abruf.
+        void pollKopplung(url, start, deps).then(result => {
             if (result.status !== 'erlaubt') return finish('Die Kopplung mit Panoptes kam nicht zustande. Nichts gespeichert.')
-            writeKopplung(root, { jwt: result.jwt, kopplungId: result.kopplungId, url: config.url, pairedAt: Date.now() })
-            starteLauscher(root, config, deps)
+            if (!speichereKopplung(root, { jwt: result.jwt, kopplungId: result.kopplungId, url, pairedAt: (deps.now || Date.now)() })) {
+                return finish('Panoptes hat erlaubt, aber ich konnte den Zugang nicht sicher speichern. Bitte neu koppeln.')
+            }
+            starteLauscher(root, config, { ...deps, sleep: undefined })
             finish('Mit Panoptes gekoppelt. Bitte jetzt unter Gekoppelte Geräte → Xaventra „Standbild bei Ereignis“ einschalten.')
         }).catch(() => finish('Die Kopplung mit Panoptes kam nicht zustande. Nichts gespeichert.'))
         return `Prüfzahl ${pruefzahl}. Bitte am Auto vergleichen und dort erlauben.`
@@ -199,7 +265,7 @@ export async function handlePanoptesCommand(args: string, principal: { principal
         const kopplung = readKopplung(root)
         if (!kopplung) return 'Es besteht keine Kopplung.'
         stopPanoptes()
-        const gemeldet = await meldeAb(config.url, kopplung.jwt, deps).catch(() => false)
+        const gemeldet = await meldeAb(kopplung.url, kopplung.jwt, deps).catch(() => false)
         rmSync(kopplungFile(root), { force: true })
         return gemeldet ? 'Von Panoptes abgemeldet; der Zugang ist gelöscht.' : 'Zugang gelöscht, aber Panoptes war nicht erreichbar: bitte die Kopplung dort auch entfernen.'
     }

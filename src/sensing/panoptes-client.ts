@@ -10,7 +10,7 @@ export interface PanoptesDeps { fetchFn?: FetchFn; sleep?: (ms: number) => Promi
 const MAX_IMAGE = 8 * 1024 * 1024
 const ERLAUBT: ReadonlyArray<readonly [string, RegExp]> = [
     ['POST', /^\/auth\/kopplung\/anfrage$/],
-    ['GET', /^\/auth\/kopplung\/anfrage\/[A-Za-z0-9_-]{1,100}$/],
+    ['GET', /^\/auth\/kopplung\/anfrage\/[0-9a-f]{32}$/],
     ['GET', /^\/api\/ha\/v1\/ereignisse$/],
     ['GET', /^\/api\/waechter\/standbild\/[a-f0-9]{32}$/],
     ['GET', /^\/api\/surveillance\/status$/],
@@ -35,25 +35,36 @@ function anfrage(base: string, method: string, path: string, deps: PanoptesDeps,
 }
 
 export interface KopplungsAnfrage { id: string; abfrageAlleMs: number }
+/** Panoptes hat geantwortet und die Anfrage abgewiesen (400 pruefzahl, 429 ratenlimit/zu_viele_offen). */
+export class PanoptesAnfrageAbgewiesen extends Error {
+    constructor(readonly grund: string) { super(`Panoptes hat die Kopplungsanfrage abgewiesen: ${grund}`); this.name = 'PanoptesAnfrageAbgewiesen' }
+}
 
 export async function starteKopplung(base: string, pruefzahl: string, deps: PanoptesDeps = {}): Promise<KopplungsAnfrage> {
     const response = await anfrage(base, 'POST', '/auth/kopplung/anfrage', deps, { body: { geraet: 'Xaventra', pruefzahl, art: 'dienst' } })
     const answer = await response.json().catch(() => ({})) as any
-    if (answer?.ok !== true || typeof answer.id !== 'string') throw new Error('Panoptes hat die Kopplungsanfrage nicht angenommen.')
+    if (answer?.ok !== true || typeof answer.id !== 'string') throw new PanoptesAnfrageAbgewiesen(String(answer?.grund || response.status).slice(0, 40))
     return { id: answer.id, abfrageAlleMs: Number.isFinite(answer.abfrageAlleMs) ? answer.abfrageAlleMs : 2000 }
 }
 
-export type KopplungsErgebnis = { status: 'erlaubt'; jwt: string; kopplungId: string } | { status: 'abgelehnt' | 'zeitlimit' }
+export type KopplungsErgebnis = { status: 'erlaubt'; jwt: string; kopplungId: string } | { status: 'abgelehnt' | 'abgelaufen' | 'abgeholt' | 'unbekannt' | 'zeitlimit' }
 
-/** Fragt ab, bis Alfred erlaubt hat. Jeder andere Zustand als `wartet` beendet die Anfrage. */
+/**
+ * Fragt ab, bis der Besitzer erlaubt hat. Panoptes gibt den JWT nur beim ERSTEN Abruf nach dem Erlauben
+ * (danach `abgeholt`). Jeder andere Zustand als `wartet` beendet die Anfrage; ein Netzfehler fragt weiter.
+ */
 export async function pollKopplung(base: string, start: KopplungsAnfrage, deps: PanoptesDeps & { maxMs?: number } = {}): Promise<KopplungsErgebnis> {
     const now = deps.now || Date.now, sleep = deps.sleep || (ms => new Promise(resolve => setTimeout(resolve, ms)))
-    const begin = now(), maxMs = deps.maxMs ?? 5 * 60_000
+    // Eine Anfrage gilt bei Panoptes 2 Minuten, dazu etwas Spielraum.
+    const begin = now(), maxMs = deps.maxMs ?? 150_000
     while (now() - begin < maxMs) {
         await sleep(Math.max(1, start.abfrageAlleMs))
-        const answer = await (await anfrage(base, 'GET', `/auth/kopplung/anfrage/${start.id}`, deps)).json().catch(() => ({})) as any
+        let answer: any
+        try { answer = await (await anfrage(base, 'GET', `/auth/kopplung/anfrage/${start.id}`, deps)).json() }
+        catch (error) { if (error instanceof PanoptesPfadVerweigert) throw error; continue }
         if (answer?.status === 'erlaubt' && typeof answer.jwt === 'string') return { status: 'erlaubt', jwt: answer.jwt, kopplungId: String(answer.kopplungId ?? '') }
-        if (answer?.status !== 'wartet') return { status: 'abgelehnt' }
+        if (answer?.status === 'wartet') continue
+        return { status: ['abgelaufen', 'abgeholt', 'unbekannt'].includes(answer?.status) ? answer.status : 'abgelehnt' }
     }
     return { status: 'zeitlimit' }
 }
