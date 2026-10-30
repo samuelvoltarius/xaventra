@@ -186,7 +186,7 @@ Welche Packs und Live-Routen ein Satz selbst aktiviert (gleiche Bewertung):
 | Router | Datei:Funktion | entscheidet |
 |---|---|---|
 | Werkzeuge | `src/tools/tool-router.ts:613` `getRelevantTools` | angebotene Werkzeuge |
-| Modell je Aufgabe | `src/routing/task-model-routing.ts` `decideRunnerTaskModel` | Codex/lokal/Multi; `stepTier`: Flash/M3 je Folgeschritt, R1/R2 davor (`pickStepModel`, `stepTierClient`, unter dem Inferenzbudget) |
+| Modell je Aufgabe | `src/routing/task-model-routing.ts` `decideRunnerTaskModel` | Codex/lokal/Multi; `stepTier`: Flash/M3 je Folgeschritt, R1/R2 davor (`pickStepModel`, `stepTierClient`, unter dem Inferenzbudget, M3 mit eigener Frist und Rückfall auf Flash im selben Aufruf) |
 | Knoten | `src/mesh/mesh-router.ts:38` `routeTask` | Zielknoten (siehe D11) |
 | Kontext | `src/core/context-policy.ts` | Denkmodus, Budgets |
 | Lernmuster | `src/routing/outcome-router.ts` | **nur** Stichproben, kein Routing |

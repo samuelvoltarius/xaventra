@@ -39,6 +39,11 @@ Cameras connected on request, one still per guard event from the car, and a stab
   to 5 minutes, and the session is renewed daily even after offline periods.
   Stream drops are normal and log at most once an hour.
 
+### Fixed
+
+- **A hanging M3 step falls back to Flash** in the same call: M3 gets at most 30 s and half of the step deadline, and after a failure the run stays on Flash. A cancelled run stays cancelled.
+- **The Matter wire test** loads the real SDK in the test process instead of a 15 s child, so it no longer fails under load.
+
 ## [2.92.2] — 2026-10-30
 
 Goal reached means done. Every fix red first from the real flow, with a counter-test.
