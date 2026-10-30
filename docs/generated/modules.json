@@ -7153,6 +7153,7 @@
         "./adapters/proxmox.js",
         "./adapters/system.js",
         "./awareness.js",
+        "./camera-access.js",
         "./camera-discovery.js",
         "./config.js",
         "./device-registry.js",

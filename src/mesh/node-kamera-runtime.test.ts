@@ -92,6 +92,16 @@ describe('camera still over the signed mesh route', () => {
         const walk = (dir: string): string[] => readdirSync(dir, { withFileTypes: true }).flatMap(entry => entry.isDirectory() ? walk(join(dir, entry.name)) : [join(dir, entry.name)])
         for (const path of walk(process.env.NOVA_RUNTIME_ROOT!)) expect(readFileSync(path, 'latin1').includes(PASSWORT), path).toBe(false)
     })
+    it('real Main route on the own node: password in no file and no log after success and failure', async () => {
+        snapshot.mockResolvedValueOnce(JPEG)
+        await expect(runtime.requestNodeKamera('kamera-worker', payload() as any)).resolves.toMatchObject({ mimeType: 'image/jpeg' })
+        const { CameraError } = await import('../sensing/camera-client.js')
+        snapshot.mockRejectedValueOnce(new CameraError('Die Kamera antwortet nicht.'))
+        await expect(runtime.requestNodeKamera('kamera-worker', payload() as any)).rejects.toThrow('Die Kamera antwortet nicht.')
+        const walk = (dir: string): string[] => readdirSync(dir, { withFileTypes: true }).flatMap(entry => entry.isDirectory() ? walk(join(dir, entry.name)) : [join(dir, entry.name)])
+        for (const path of walk(process.env.NOVA_RUNTIME_ROOT!)) expect(readFileSync(path, 'latin1').includes(PASSWORT), path).toBe(false)
+        expect(logged.join(String.fromCharCode(10))).not.toContain(PASSWORT)
+    })
     it('Main: without a path to the node it ends with an error, nothing else is tried', async () => {
         await expect(runtime.requestNodeKamera('kein-solcher-knoten', payload() as any)).rejects.toThrow()
         expect(snapshot).not.toHaveBeenCalled()

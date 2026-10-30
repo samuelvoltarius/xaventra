@@ -43,6 +43,8 @@
   encrypted direct mesh path. No video, no sound, nothing runs on its own, and
   the still is gone after 24 hours. Without access, or with a pure RTSP camera,
   she says so and tries nothing.
+  On Telegram the still goes to the asking owner as a picture; if that fails,
+  or in the app (no attachment way yet), she says so.
 
 ## [2.91.2] — 2026-10-30
 
