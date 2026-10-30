@@ -202,6 +202,11 @@ async function startDaemon() {
     // 2.85 Integration: the docks between Verbindungen (A), Erster Start (B), KI-Modelle (C)
     // and the one need rule (F) — also for Telegram and the autonomy loop without the desktop API.
     try {
+        // 30.10.2026: plaintext connection secrets are sealed once at start (ids only in the log).
+        const { migrateConnectionSecretsToVault } = await import('./connections/connection-store.js')
+        const sealed = migrateConnectionSecretsToVault()
+        if (sealed.migrated.length) console.log(`[Nova] Zugangsdaten in den Tresor verschoben: ${sealed.migrated.join(', ')}`)
+        if (sealed.failed.length) console.warn(`[Nova] Zugangsdaten nicht verschoben (unverändert): ${sealed.failed.join(', ')}`)
         const { registerConnectionDocks } = await import('./connections/connection-docks.js')
         registerConnectionDocks()
         // 2.89: a Home Assistant configured via HASS_URL / xaventra.config.json becomes one

@@ -11,9 +11,10 @@
  *   access values. Read only by connector-login.ts / the runtime; never logged,
  *   never put into memos, thoughts, cards or chat.
  */
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
+import { openCredential, readSecretJson, writeSecretJson } from '../secrets/local-sealed-store.js'
 import { atomicWriteJsonSync } from '../core/atomic-storage.js'
 import { getNovaDataDir } from '../core/data-root.js'
 import type { ConnectorCapability, ConnectorKategorie, Datenklasse } from './connector-catalog.js'
@@ -108,7 +109,7 @@ export function updateConnection(id: string, patch: Partial<ConnectionRecord>, o
 }
 
 // ---------------------------------------------------------------------------
-// Secrets (0600)
+// Secrets: sealed (AES-256-GCM, local-sealed-store), 0600 in 0700
 // ---------------------------------------------------------------------------
 
 export interface ConnectionSecrets {
@@ -129,21 +130,51 @@ const secretFile = (id: string, opts: StoreOptions) => {
 
 export function readConnectionSecrets(id: string, opts: StoreOptions = {}): ConnectionSecrets {
     try {
-        const path = secretFile(id, opts)
-        return existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) || {} : {}
+        // readSecretJson opens the sealed file (a leftover plaintext file is sealed on first read).
+        return readSecretJson(secretFile(id, opts)) || {}
     } catch { return {} }
 }
 
-/** Writes 0600 into a 0700 directory (write to a temp file, chmod, rename). */
+/** Sealed (AES-256-GCM), 0600 into a 0700 directory (temp file, chmod, rename). Never plaintext. */
 export function writeConnectionSecrets(id: string, secrets: ConnectionSecrets, opts: StoreOptions = {}): void {
     const dir = secretsDir(opts)
     mkdirSync(dir, { recursive: true, mode: 0o700 })
     try { chmodSync(dir, 0o700) } catch { /* not supported on this filesystem */ }
-    const path = secretFile(id, opts)
-    const tmp = `${path}.${randomBytes(4).toString('hex')}.tmp`
-    writeFileSync(tmp, JSON.stringify(secrets), { mode: 0o600 })
-    try { chmodSync(tmp, 0o600) } catch { /* not supported on this filesystem */ }
-    renameSync(tmp, path)
+    writeSecretJson(secretFile(id, opts), secrets)
+}
+
+/**
+ * Start migration (Sicherheitsbefund 30.10.2026): every plaintext secrets file is sealed.
+ * Per file: temporary 0600 backup, seal, read back and compare, then the backup goes; on any
+ * failure the original stays untouched. Returns connection ids only — values are never logged.
+ */
+export function migrateConnectionSecretsToVault(opts: StoreOptions = {}): { migrated: string[]; failed: string[] } {
+    const dir = secretsDir(opts)
+    const migrated: string[] = [], failed: string[] = []
+    if (!existsSync(dir)) return { migrated, failed }
+    for (const name of readdirSync(dir).sort()) {
+        const id = /^(c-[a-z0-9][a-z0-9-]{1,60})\.json$/.exec(name)?.[1]
+        if (!id) continue
+        const path = join(dir, name), backup = `${path}.vor-tresor`
+        const raw = readFileSync(path, 'utf8')
+        if (raw.startsWith('nova-sealed:')) continue
+        let backedUp = false
+        try {
+            const value = JSON.parse(raw)
+            writeFileSync(backup, raw, { mode: 0o600 })
+            try { chmodSync(backup, 0o600) } catch { /* not supported on this filesystem */ }
+            backedUp = true
+            writeSecretJson(path, value)
+            const readBack = JSON.parse(openCredential(readFileSync(path, 'utf8'), path))
+            if (JSON.stringify(readBack) !== JSON.stringify(value)) throw new Error('read-back mismatch')
+            rmSync(backup, { force: true })
+            migrated.push(id)
+        } catch {
+            if (backedUp && existsSync(backup)) renameSync(backup, path)
+            failed.push(id)
+        }
+    }
+    return { migrated, failed }
 }
 
 export function updateConnectionSecrets(id: string, patch: (current: ConnectionSecrets) => ConnectionSecrets, opts: StoreOptions = {}): ConnectionSecrets {

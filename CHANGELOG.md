@@ -12,6 +12,16 @@
   helpers on nodes with a screen, maps and routes, music, a maker helper for
   boards and sensors.
 
+### Security (next patch, version set at release)
+
+- **Access data of connections is sealed.** Tokens, passwords and logins
+  entered for a connection (Home Assistant, Proxmox, telephone, n8n, …) lay
+  as plain JSON (file mode 0600) under `secrets/connections`. They are now
+  written sealed (AES-256-GCM, separate owner-only key). Existing plain files
+  are moved at start: a short backup, seal, read back, then the plain copy is
+  gone; a file that cannot be read stays untouched. Only connection ids are
+  logged, never values.
+
 ## [2.90.3] — 2026-10-29
 
 Fixes from the Telegram acceptance of 2.90.2.
