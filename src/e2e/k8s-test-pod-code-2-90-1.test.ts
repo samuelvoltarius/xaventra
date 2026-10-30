@@ -47,7 +47,7 @@ async function startFakeKube() {
     return { port: (kubeServer.address() as AddressInfo).port, cert, fake }
 }
 
-const PLAN = { aktion: 'anlegen', name: 'xvt-nginx', image: 'nginx:1.27-alpine', laufzeit_minuten: 60 }
+const PLAN = { aktion: 'anlegen', name: 'xvt-nginx', image: 'nginxinc/nginx-unprivileged:1.27-alpine', laufzeit_minuten: 60 }
 
 describe('2.90.1 Test-Pod: der Zug nach der Freigabe-Aufforderung hat das Werkzeug', () => {
     it('Detail allein → ehrliche Anleitung; Einmal-Code → genau ein cluster_test_pod mit dem geplanten Pod', async () => {
@@ -110,6 +110,6 @@ describe('2.90.1 Test-Pod: der Zug nach der Freigabe-Aufforderung hat das Werkze
         const writes = fake.writes().slice(writesBefore)
         expect(writes).toHaveLength(1)
         expect(writes[0]).toMatchObject({ method: 'POST', path: `/api/v1/namespaces/${TEST_NS}/pods` })
-        expect(fake.testPods.get('xvt-nginx')?.spec?.containers?.[0]?.image).toBe('nginx:1.27-alpine')
+        expect(fake.testPods.get('xvt-nginx')?.spec?.containers?.[0]?.image).toBe('nginxinc/nginx-unprivileged:1.27-alpine')
     }, T)
 })

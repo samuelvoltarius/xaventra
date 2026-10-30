@@ -289,6 +289,8 @@ Die einzige Ausnahme vom „nie anlegen/löschen“: **Pods** im Namespace genau
 `loeschen`). Alles andere bleibt im Code gesperrt — andere Namespaces (auch der
 eigene), andere Ressourcen, Pods ändern, Secrets, exec/attach/portforward/proxy.
 
+- **Images ohne root:** Test-Pods laufen ohne root. Das offizielle `nginx`-Image wird
+  deshalb schon im Plan abgelehnt; `nginxinc/nginx-unprivileged:<tag>` (Port 8080) läuft (2.92.2).
 - **Anlegen** nur aus der festen Vorlage (`src/infra/kubernetes-test-pods.ts`):
   Label `managed-by=xaventra`, CPU/Speicher-Limits (Standard 250m/128Mi,
   höchstens 1000m/1Gi), Laufzeitgrenze (Standard 60, höchstens 240 Minuten),

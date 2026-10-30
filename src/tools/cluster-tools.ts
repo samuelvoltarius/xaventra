@@ -74,7 +74,7 @@ export const clusterTestPodTool: NovaTool = {
     parameters: [
         { name: 'aktion', type: 'string', description: 'liste | logs | anlegen | loeschen', required: true },
         { name: 'name', type: 'string', description: 'Pod-Name (Kleinbuchstaben, Ziffern, Bindestrich), z. B. xvt-probe' },
-        { name: 'image', type: 'string', description: 'Image mit festem Tag oder Digest, z. B. docker.io/library/busybox:1.36 (kein latest)' },
+        { name: 'image', type: 'string', description: 'Image mit festem Tag oder Digest, z. B. docker.io/library/busybox:1.36 (kein latest). Test-Pods laufen ohne root: für einen Webserver nginxinc/nginx-unprivileged:<tag> (Port 8080) statt nginx' },
         { name: 'kommando', type: 'string', description: 'optional: Kommando als JSON-Array, z. B. ["sh","-c","echo ok"]' },
         { name: 'cpu', type: 'string', description: 'optional, Standard 250m, höchstens 1000m' },
         { name: 'speicher', type: 'string', description: 'optional, Standard 128Mi, höchstens 1Gi' },

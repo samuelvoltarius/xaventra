@@ -212,3 +212,16 @@ describe('Anlegen, Liste, Löschen über /cluster-Logik', () => {
         expect(fake.calls.filter(call => call.path.includes(TEST_NS))).toEqual([])
     })
 })
+
+// 2.92.2 (Langtest C, Abnahme 2.92.0): der Pod mit nginx endete als „Failed“: das offizielle Image braucht root, Test-Pods
+// laufen ohne root. Das wird schon im Plan gesagt, vor der Freigabe, mit dem Image, das hier läuft.
+describe('images that need root', () => {
+    it.each(['nginx:1.27-alpine', 'docker.io/library/nginx:1.27', 'docker.io/nginx:alpine'])('%s is refused in the plan with the rootless image', image => {
+        const built = buildTestPod({ name: 'xvt-web', image })
+        expect(built.ok).toBe(false)
+        expect((built as any).reason).toMatch(/nginxinc\/nginx-unprivileged/)
+    })
+    it('the rootless image is fine', () => {
+        expect(buildTestPod({ name: 'xvt-web', image: 'docker.io/nginxinc/nginx-unprivileged:1.27-alpine' }).ok).toBe(true)
+    })
+})

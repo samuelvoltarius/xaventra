@@ -69,6 +69,8 @@ function memoryMi(value: unknown): number | null {
 function imageProblem(image: unknown): string | null {
     const value = String(image ?? '')
     if (!value || value.length > 300 || CONTROL.test(value)) return 'Image fehlt oder ist ungültig'
+    // 2.92.2 (Langtest C): test pods run without root; the official nginx image needs root and ends as „Failed“.
+    if (/^(?:docker\.io\/)?(?:library\/)?nginx[:@]/i.test(value)) return 'Das offizielle nginx-Image braucht root und scheitert hier (Test-Pods laufen ohne root). Nimm nginxinc/nginx-unprivileged:<tag>, es lauscht auf Port 8080'
     const at = value.indexOf('@')
     if (at >= 0) return IMAGE_REPO.test(value.slice(0, at)) && IMAGE_DIGEST.test(value.slice(at + 1)) ? null : 'Image-Digest ungültig'
     const colon = value.lastIndexOf(':')
