@@ -6792,6 +6792,16 @@
       ]
     },
     {
+      "module": "src/sensing/camera-discovery.ts",
+      "imports": [
+        "./net-scope.js",
+        "./ports.js",
+        "node:crypto",
+        "node:dgram",
+        "node:net"
+      ]
+    },
+    {
       "module": "src/sensing/config.ts",
       "imports": [
         "../core/autonomy-defaults.js",
@@ -6941,6 +6951,7 @@
       "module": "src/sensing/discovery.ts",
       "imports": [
         "../startup/tailscale-status.js",
+        "./camera-discovery.js",
         "./device-registry.js",
         "./hardware-recognition.js",
         "./matter-scope.js",
@@ -7114,6 +7125,7 @@
         "./adapters/proxmox.js",
         "./adapters/system.js",
         "./awareness.js",
+        "./camera-discovery.js",
         "./config.js",
         "./device-registry.js",
         "./device-words.js",

@@ -47,4 +47,11 @@ describe('Main takes over a scout report', () => {
         expect(devices.map(d => d.host)).toEqual(['192.168.1.20'])
         expect(devices[0].seenBy).toBe('xaventra-nas')
     })
+    it('keeps what a scout read about a camera (type and evidence)', async () => {
+        const dataDir = mkdtempSync(join(tmpdir(), 'scout-cam-'))
+        setSensingConfig({ enabled: true }, {}, dataDir)
+        await ingestScoutReport('xaventra-nas', { subnets: ['192.168.1.0/24'], hasTailnet: false,
+            candidates: [{ type: 'camera', host: '192.168.1.60', port: 8000, via: 'udp', name: 'Einfahrt', evidence: { quelle: 'ONVIF', model: 'IPC-HX2431' } }] }, { offerCards: false })
+        expect(loadDevices(dataDir)[0]).toMatchObject({ type: 'camera', seenBy: 'xaventra-nas', status: 'gefunden', evidence: { model: 'IPC-HX2431' } })
+    })
 })
