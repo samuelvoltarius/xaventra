@@ -470,7 +470,7 @@ v2.72); In-Place-Git-Updates sind abgeschaltet.
 | `src/learning` | Korrektur-Lernen, Fähigkeits-Lernen, Skills |
 | `src/logging` | `structured-logger.ts` |
 | `src/mcp` | MCP-Client und -Laufzeit |
-| `src/media` | Bildaufbereitung, Medienverständnis |
+| `src/media` | Bildaufbereitung, Medienverständnis; die eine Sperre für Bilder nach außen `image-source-policy.ts` `assertSendableImage` (private Ordner, freigegebene Knoten; Auto und lokaler Desktop abgelehnt) |
 | `src/onboarding` | Erststart, Telegram-Kopplung, Onboarding-API |
 | `src/plugins` | `PluginManager`, Lader |
 | `src/process` | Befehlswarteschlange, Exec, Daemon-Steuerung (Prozesswächter: `src/supervisor.ts` bzw. systemd) |
@@ -479,7 +479,7 @@ v2.72); In-Place-Git-Updates sind abgeschaltet.
 | `src/runtime` | Code-Laufzeit, Missions-Arbeitsbereich, LSP, Profile |
 | `src/secrets` | Tresor, Credential-Broker, Provider-/Dienstschlüssel |
 | `src/sehen` | „Sehen und lenken" (Bildschirm, Aktivität) |
-| `src/sensing` | Geräte- und Netzerkennung, Adapter; die eine Scan-Grenze `net-scope.ts` (`ownSubnets`, `restrictScope` für `discovery.subnets`, `scanTargetAllowed`); Späher-Knoten `runtime.ts` `startSensing` |
+| `src/sensing` | Geräte- und Netzerkennung, Adapter; die eine Scan-Grenze `net-scope.ts` (`ownSubnets`, `restrictScope` für `discovery.subnets`, `scanTargetAllowed`); Späher-Knoten `runtime.ts` `startSensing`; Kameras ohne Anmeldung `camera-discovery.ts` (ONVIF, RTSP OPTIONS) |
 | `src/sessions` | `session-key-utils.ts` |
 | `src/startup` | Umgebungs-Scan beim Start (`environment-scanner.ts` `locateProgram`), Tailscale-Status |
 | `src/synthesis` | Patch-Gate, Patch-Sandbox, Selbstevolution |
