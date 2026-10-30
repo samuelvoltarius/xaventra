@@ -18,8 +18,9 @@ const STATUS_ICON = (r: CheckResult) => r.ok ? '✅' : r.issues.some(i => i.seve
 /** Compact Telegram output (fits in one message) */
 export function formatReportCompact(report: DoctorReport): string {
     const { summary, checks } = report
-    const healthIcon = summary.healthy ? '✅' : summary.errors > 0 ? '❌' : '⚠️'
-    const healthLabel = summary.healthy ? 'Alles OK' : summary.errors > 0 ? `${summary.errors} Fehler` : `${summary.warnings} Warnung(en)`
+    // 2.92.2: „Alles OK“ only without warnings (it stood next to 4 warnings).
+    const healthIcon = summary.errors > 0 ? '❌' : summary.warnings > 0 ? '⚠️' : '✅'
+    const healthLabel = summary.errors > 0 ? `${summary.errors} Fehler` : summary.warnings > 0 ? `${summary.warnings} Warnung(en)` : 'Alles OK'
 
     const lines: string[] = [
         `🩺 *Xaventra Doctor* — ${healthIcon} ${healthLabel}`,

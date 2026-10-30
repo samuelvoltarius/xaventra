@@ -247,7 +247,12 @@ function walkDir(dir: string, cb: (path: string) => void, maxDepth: number): voi
 // 4. Port availability
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function checkPorts(config: Record<string, unknown> | null): Promise<CheckResult> {
+/**
+ * 2.92.2: inside the daemon the REST port is held by this very process - no conflict. A port change is never a safe
+ * fix (18789 → 18790 collides with Even G2, and "occupied" usually was the own service).
+ */
+export async function checkPorts(config: Record<string, unknown> | null, options: { ownService?: boolean } = {}): Promise<CheckResult> {
+    const ownService = options.ownService ?? Boolean((globalThis as any).__novaState)
     const restPort = Number((config as any)?.server?.port ?? 18789)
     const meshPort = 9090  // hardcoded in event-hub.ts
 
@@ -258,15 +263,13 @@ async function checkPorts(config: Record<string, unknown> | null): Promise<Check
 
     const issues: DoctorIssue[] = []
 
-    if (!restFree) {
+    if (!restFree && !ownService) {
         issues.push(issue('PORT_REST_OCCUPIED', 'warning',
-            `REST-Port ${restPort} ist belegt — ein anderer Prozess nutzt ihn`,
+            `REST-Port ${restPort} ist belegt — das kann auch ein laufender Xaventra-Dienst sein`,
             {
-                type: 'config_patch',
-                configPath: 'server.port',
-                configValue: restPort + 1,
-                hint: `Port von ${restPort} auf ${restPort + 1} ändern in xaventra.config.json`,
-                safe: true,
+                type: 'info',
+                hint: `Prüfe, welcher Prozess Port ${restPort} hält; läuft Xaventra schon, ist alles in Ordnung. Den Port nicht automatisch ändern (18790 gehört Even G2).`,
+                safe: false,
             }
         ))
     }
@@ -283,7 +286,7 @@ async function checkPorts(config: Record<string, unknown> | null): Promise<Check
     }
 
     if (issues.length === 0) {
-        return ok('Ports', `REST :${restPort} frei, Mesh :${meshPort} frei`)
+        return ok('Ports', `REST :${restPort} ${restFree ? 'frei' : 'eigener Dienst'}, Mesh :${meshPort} frei`)
     }
     const occCount = issues.length
     return fail('Ports', `${occCount} Port(s) belegt`, issues)
