@@ -796,8 +796,8 @@ Belegte Widersprüche:
   `src/process/nova-watchdog.ts` (startete die alte `dist/index.js`) und der
   `ResilienceManager` (leere Strategien, zweite Instanz) sind entfernt;
   `/supervisor` verweist nur noch auf `/doctor`. Fehlerzeilen aus Ausnahmen,
-  Zustellung und Werkzeugen landen über `recordErrorFinding` in einem Befund je
-  Signatur.
+  Zustellung und Werkzeugen sowie unlesbare Tresor-Speicher (`checkVault`) landen
+  über `recordErrorFinding` in einem Befund je Signatur.
 - **Offen:** drei Wege enden in `evolve()` — `src/layers/L0-self-repair.ts`
   `autoRepair`, `src/layers/auto-bug-fix.ts` (`auto_fix`) und
   `src/doctor/repair-candidate.ts`; freigebbar ist nur der Doctor-Weg (die
