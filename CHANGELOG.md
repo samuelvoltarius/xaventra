@@ -12,7 +12,7 @@
   helpers on nodes with a screen, maps and routes, music, a maker helper for
   boards and sensors.
 
-## [Next] — Nummer vergibt die Integration
+## [2.92.4] — 2026-10-30
 
 ### Fixed
 
