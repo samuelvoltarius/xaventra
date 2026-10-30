@@ -12,6 +12,19 @@
   helpers on nodes with a screen, maps and routes, music, a maker helper for
   boards and sensors.
 
+## [2.92.2] — 2026-10-30
+
+Abnahme 2.92.0/2.92.1: Ziel erreicht, trotzdem weitergearbeitet und im Abbruch gelandet. Jeder Punkt rot aus dem echten Ablauf, mit Gegentest.
+
+- **Ziel erreicht heißt fertig:** eine belegte Lese- oder Aufnahme-Aufgabe endet nach dem Ergebnis. Ein Budget-Stopp danach ist kein ❌, das belegte Ergebnis steht vorn. Der Aktions-Prüfschritt startet den Lauf nicht noch einmal (kein doppeltes Bild).
+- **Akku-Frage:** mit Profilbindung genau ein `hass_get`, feste Antwort mit Wert und Zeitstempel, ohne Modellrunde. Der Router lädt für Fragen mit eigenem Thema keine Pakete aus dem Verlauf.
+- **Kein Anhang „nicht aktuell … und 45 weitere“** hinter einem aktuellen Wert.
+- **„welche knoten sind offline?“** startet mit `mesh_status`, nicht mit der Geräte-Inventur.
+- **/doctor:** die Kopfzeile nennt Warnungen; eine Portänderung ist nie ein sicherer Fix.
+- **Test-Pods:** das offizielle nginx-Bild wird im Plan abgelehnt, mit Hinweis auf `nginxinc/nginx-unprivileged`.
+- **Version:** eine Quelle der laufenden Version (`src/core/running-version.ts`), nie das Arbeitsverzeichnis.
+- **Modellstufen:** Werkzeug-Folgeschritte laufen auf MiniMax-M3.1-Flash; nach Werkzeugfehler oder Ergebnis über 6000 Zeichen rechnet genau der nächste Schritt mit `MiniMax-M3`. Kein neuer Anbieter, Bilder und Privates (R1/R2) ohne Stufe, fällt M3 aus, antwortet Flash.
+
 ## [2.92.1] — 2026-10-30
 
 One way, step 1: the owner has one history on every surface. Plus cameras recognised without login and local stills for the vision model.

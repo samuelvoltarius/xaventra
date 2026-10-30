@@ -5,6 +5,7 @@
       "module": "src/acp/acp-server.ts",
       "imports": [
         "../core/lifecycle-policy.js",
+        "../core/running-version.js",
         "../runtime/mission-workspace.js",
         "../tools/complete-registry.js",
         "@agentclientprotocol/sdk",
@@ -1684,6 +1685,7 @@
         "./llm-factory.js",
         "./message-pipeline.js",
         "./nova-state.js",
+        "./running-version.js",
         "./slash-commands.js",
         "dotenv/config",
         "node:fs",
@@ -1787,6 +1789,7 @@
         "../security/secret-redaction.js",
         "../tools/ssh-tool-hosts.js",
         "./infrastructure-failure.js",
+        "./running-version.js",
         "node:fs",
         "node:path"
       ]
@@ -2526,6 +2529,12 @@
       ]
     },
     {
+      "module": "src/core/running-version.ts",
+      "imports": [
+        "node:fs"
+      ]
+    },
+    {
       "module": "src/core/runtime-event-log.ts",
       "imports": [
         "node:fs",
@@ -2675,6 +2684,7 @@
         "../config/config-path.js",
         "../users/principal-id.js",
         "./channel-name.js",
+        "./running-version.js",
         "./self-description.js",
         "./setup-confirmation.js",
         "node:fs",
@@ -3381,6 +3391,7 @@
       "module": "src/doctor/collect.ts",
       "imports": [
         "../config/config-path.js",
+        "../core/running-version.js",
         "../llm/active-runtime.js",
         "./gpu-runtime.js",
         "./types.js",
@@ -4112,6 +4123,7 @@
     {
       "module": "src/infra/auto-update.ts",
       "imports": [
+        "../core/running-version.js",
         "../core/upstream-update-command.js",
         "node:child_process",
         "node:fs",
@@ -4220,6 +4232,7 @@
       "module": "src/infra/telemetry.ts",
       "imports": [
         "../config/config-path.js",
+        "../core/running-version.js",
         "@opentelemetry/api",
         "@opentelemetry/exporter-metrics-otlp-http",
         "@opentelemetry/exporter-trace-otlp-http",

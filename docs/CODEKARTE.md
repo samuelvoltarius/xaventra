@@ -172,6 +172,12 @@ nur über `createAgentBackend` aus dem Benchmark erreichbar);
 bekommt kein `load_skill_pack`, keine Packs nur aus dem Verlauf und einen versiegelten Lauf.
 Gleiches Werkzeug mit gleichem Fehler zweimal im Lauf → kein dritter Aufruf
 (`src/core/tool-failure-escalation.ts` `repeatedFailureNote`, im Runner vor der Ausführung).
+
+Ziel erreicht (2.92.2): belegtes Ergebnis beendet Lese-/Aufnahme-Aufgaben im Runner über `goalAnswer`
+(gebundener `hass_get`: `src/agents/profile-live-value.ts` `boundLiveValueAnswer`; Aufnahmen:
+`capturedNodes`). Belegte Texte vorn: `withProvenResults`. Knotenstatus: `isNodeStatusQuestion`
+(`src/core/request-capabilities.ts`). Laufende Version: nur `src/core/running-version.ts` `runningVersion()`.
+Portbefunde des Doctors sind nie ein sicherer Fix (`src/doctor/collect.ts` `checkPorts`).
 Welche Packs und Live-Routen ein Satz selbst aktiviert (gleiche Bewertung):
 `requestRouteNames` (2.91.0, für Themen-Fäden).
 
@@ -180,7 +186,7 @@ Welche Packs und Live-Routen ein Satz selbst aktiviert (gleiche Bewertung):
 | Router | Datei:Funktion | entscheidet |
 |---|---|---|
 | Werkzeuge | `src/tools/tool-router.ts:613` `getRelevantTools` | angebotene Werkzeuge |
-| Modell je Aufgabe | `src/routing/task-model-routing.ts` `decideRunnerTaskModel` | Codex/lokal/Multi |
+| Modell je Aufgabe | `src/routing/task-model-routing.ts` `decideRunnerTaskModel` | Codex/lokal/Multi; `stepTier`: Flash/M3 je Folgeschritt, R1/R2 davor (`pickStepModel`, `stepTierClient`, unter dem Inferenzbudget) |
 | Knoten | `src/mesh/mesh-router.ts:38` `routeTask` | Zielknoten (siehe D11) |
 | Kontext | `src/core/context-policy.ts` | Denkmodus, Budgets |
 | Lernmuster | `src/routing/outcome-router.ts` | **nur** Stichproben, kein Routing |
