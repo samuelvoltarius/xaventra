@@ -95,7 +95,8 @@ describe('2.89.9 follow-up: explicit binding and stale values', () => {
         const result = await h.telegram('Wie viel Akku hat der Dolphin?', [{ text: 'Der Dolphin hat 64 % Akku.' }])
         expect(result.executedTools[0]).toBe('hass_get')
         expect(result.executedTools).not.toContain('hass_list')
-        expect(result.final).toBe('Der Dolphin hat 64 % Akku.')
+        // 2.92.2: the bound read is the answer (value + timestamp), no model round trip.
+        expect(result.final).toMatch(/64 % \(Stand \d\d:\d\d\)/)
         const range = await h.telegram('Wie groß ist die Reichweite vom Dolphin?', [{ text: 'Die Reichweite beträgt 210 km.' }])
         expect(range.executedTools[0]).toBe('hass_get')
         expect(range.final).toContain('210 km')
@@ -107,7 +108,8 @@ describe('2.89.9 follow-up: explicit binding and stale values', () => {
         const ok = await h.telegram('Wie viel Akku hat der Dolphin?', [{ text: 'Der Dolphin hat 64 % Akku.' }])
         expect(ok.executedTools[0]).toBe('hass_list')
         expect(ok.final).toContain('64 %')
-        expect(ok.final).toMatch(/Stand vor 2 Tagen/)
+        // 2.92.2: a current value stands alone, no list of old sensors behind it.
+        expect(ok.final).not.toMatch(/Stand vor 2 Tagen/)
         const frozen = await h.telegram('Wie viel Akku hat der Dolphin?', [{ text: 'Der Dolphin hat 41 % Akku.' }])
         expect(frozen.final).toContain('64 %')
         expect(frozen.final).toMatch(/Nicht aktuell ignoriert[^]*Stand vor 2 Tagen/)

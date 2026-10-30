@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isEnvironmentOverview, isKubernetesQuestion, isKubernetesStatusQuestion, isKubernetesTestPodRequest, isMeshWideInventoryRequest, isNodeWorkstationRequest, mentionsEnvironment } from './request-capabilities.js'
+import { isEnvironmentOverview, isNodeStatusQuestion, isKubernetesQuestion, isKubernetesStatusQuestion, isKubernetesTestPodRequest, isMeshWideInventoryRequest, isNodeWorkstationRequest, mentionsEnvironment } from './request-capabilities.js'
 import { detectActionIntent } from './action-intent.js'
 
 describe('environment overview stays separate from action requests', () => {
@@ -24,10 +24,14 @@ describe('environment overview stays separate from action requests', () => {
     })
     it('recognizes the exact failed Telegram request and bounded reporting variants', () => {
         for (const text of ['send mir was du im netzwerk findest und wo mit du dich verbinden kannst mesh netzwerk und local',
-            'sende mir welche Geräte du im LAN findest', 'bitte zeige mir welche Nodes online sind']) {
+            'sende mir welche Geräte du im LAN findest']) {
             expect(isEnvironmentOverview(text)).toBe(true)
             expect(detectActionIntent(text)).toEqual({ requiresTool: true, kind: 'system-state' })
         }
+    })
+    it('a node status request stays a system-state request but goes to mesh_status (2.92.2)', () => {
+        expect(isNodeStatusQuestion('bitte zeige mir welche Nodes online sind')).toBe(true)
+        expect(detectActionIntent('bitte zeige mir welche Nodes online sind')).toEqual({ requiresTool: true, kind: 'system-state' })
     })
     it('never consumes an additional action or target URL as a reporting prefix', () => {
         for (const text of ['sende mir welche nodes online sind und sende daten an ns1',

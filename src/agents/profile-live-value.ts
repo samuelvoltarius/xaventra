@@ -25,7 +25,7 @@ export function profileLiveValuePlan(input: {
 
 const asText = (value: unknown): string => typeof value === 'string' ? value : (() => { try { return JSON.stringify(value) ?? '' } catch { return String(value) } })()
 const parse = (value: unknown): any => { if (value && typeof value === 'object') return value; try { return JSON.parse(String(value)) } catch { return null } }
-const numbers = (text: string): number[] => (text.match(/\d+(?:[.,]\d+)?/g) || []).map(item => Number(item.replace(',', '.'))).filter(Number.isFinite)
+const numbers = (text: string): number[] => (text.replace(/\b\d{1,2}:\d{2}\b/g, ' ').match(/\d+(?:[.,]\d+)?/g) || []).map(item => Number(item.replace(',', '.'))).filter(Number.isFinite)
 
 export const liveValueNoEntity = (name: string) => `In Home Assistant gibt es keine Entität zu „${name}“, deshalb kann ich den aktuellen Wert nicht prüfen.`
 export const liveValueUnverified = (name: string) => `Den aktuellen Wert für „${name}“ habe ich nicht aus Home Assistant bestätigt bekommen, deshalb nenne ich keine Zahl. Soll ich es noch einmal abfragen?`

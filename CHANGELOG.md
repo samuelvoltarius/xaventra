@@ -14,16 +14,21 @@
 
 ## [2.92.2] — 2026-10-30
 
-Abnahme 2.92.0/2.92.1: Ziel erreicht, trotzdem weitergearbeitet und im Abbruch gelandet. Jeder Punkt rot aus dem echten Ablauf, mit Gegentest.
+Goal reached means done. Every fix red first from the real flow, with a counter-test.
 
-- **Ziel erreicht heißt fertig:** eine belegte Lese- oder Aufnahme-Aufgabe endet nach dem Ergebnis. Ein Budget-Stopp danach ist kein ❌, das belegte Ergebnis steht vorn. Der Aktions-Prüfschritt startet den Lauf nicht noch einmal (kein doppeltes Bild).
-- **Akku-Frage:** mit Profilbindung genau ein `hass_get`, feste Antwort mit Wert und Zeitstempel, ohne Modellrunde. Der Router lädt für Fragen mit eigenem Thema keine Pakete aus dem Verlauf.
-- **Kein Anhang „nicht aktuell … und 45 weitere“** hinter einem aktuellen Wert.
-- **„welche knoten sind offline?“** startet mit `mesh_status`, nicht mit der Geräte-Inventur.
-- **/doctor:** die Kopfzeile nennt Warnungen; eine Portänderung ist nie ein sicherer Fix.
-- **Test-Pods:** das offizielle nginx-Bild wird im Plan abgelehnt, mit Hinweis auf `nginxinc/nginx-unprivileged`.
-- **Version:** eine Quelle der laufenden Version (`src/core/running-version.ts`), nie das Arbeitsverzeichnis.
-- **Modellstufen:** Werkzeug-Folgeschritte laufen auf MiniMax-M3.1-Flash; nach Werkzeugfehler oder Ergebnis über 6000 Zeichen rechnet genau der nächste Schritt mit `MiniMax-M3`. Kein neuer Anbieter, Bilder und Privates (R1/R2) ohne Stufe, fällt M3 aus, antwortet Flash.
+### Fixed
+
+- **A proven result ends a read task.** A bound value or a node capture closes the run; a budget stop after it is no ❌ and the proven result stays in front. The action gate no longer reruns the agent, so a capture arrives once.
+- **Battery question.** With a profile binding exactly one `hass_get` and a fixed answer with value and time, no model round trip. Questions with their own topic load no packs from history.
+- **No „nicht aktuell … und 45 weitere“ appendix** behind a current value. A clock time in a reply is no value for the number guard.
+- **„welche knoten sind offline?“** and „zeige welche Nodes online sind“ start with `mesh_status`, not the device inventory.
+- **/doctor.** The headline names warnings; a port change is never a safe fix.
+- **Test pods.** The official nginx image is refused in the plan, with `nginxinc/nginx-unprivileged` as the hint.
+- **Version.** One source of the running version (`src/core/running-version.ts`), never the working directory.
+
+### Changed
+
+- **Model tiers per step.** Tool follow-up steps stay on MiniMax-M3.1-Flash; after a tool failure or a result above 6000 characters exactly the next step runs on `MiniMax-M3`. No new provider, pictures and private content (R1/R2) get no tier, and if M3 fails the step ends on Flash within one budgeted call.
 
 ## [2.92.1] — 2026-10-30
 

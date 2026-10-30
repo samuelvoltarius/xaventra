@@ -38,6 +38,9 @@ describe('guardLiveValueReply', () => {
         expect(guardLiveValueReply({ question, reply: 'Der Dolphin hat 64 % Akku.', executions: [list([car])] })).toBeNull()
         expect(guardLiveValueReply({ question, reply: 'Der Dolphin hat 80 % Akku.', executions: [list([car])] })).toBe('Laut Home Assistant: Car Akku: 64 %.')
     })
+    it('a clock time is no value: the fixed answer passes at every minute (2.92.2, CI at 13:56)', () => {
+        expect(guardLiveValueReply({ question, reply: 'BYD Dolphin Surf: 64 % (Stand 13:56), laut Home Assistant.', executions: [list([car])] })).toBeNull()
+    })
     it('says honestly when Home Assistant has no entity', () => {
         expect(guardLiveValueReply({ question, reply: 'Welches Gerät meinst du?', executions: [list([])] })).toMatch(/keine Entität/)
     })
