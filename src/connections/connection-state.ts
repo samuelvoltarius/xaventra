@@ -70,6 +70,7 @@ const SMART_CONNECTORS: ReadonlySet<string> = new Set(['hue-readonly', 'tasmota-
 const STATUS_GRUND: Record<ConnectionStatus, string> = {
     verbunden: 'verbunden', 'wartet-auf-anmeldung': 'Anmeldung fehlt noch', 'wartet-auf-zugang': 'Zugang fehlt noch',
     abgelaufen: 'Anmeldung abgelaufen', 'nicht-erreichbar': 'nicht erreichbar', fehler: 'letzter Test fehlgeschlagen', getrennt: 'getrennt',
+    'schluessel-fehlt': 'Der Zugang ist gespeichert, aber der Schlüssel fehlt — nichts gelöscht',
 }
 
 /** B3: „nicht erreichbar (http://…)“ — the address the owner can check, never a login request. */

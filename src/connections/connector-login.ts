@@ -39,7 +39,7 @@ import { getNovaDataDir } from '../core/data-root.js'
 import { isUnreachable } from '../core/infrastructure-failure.js'
 import { findConnector } from './connector-catalog.js'
 import {
-    getConnection, readConnectionSecrets, updateConnection, updateConnectionSecrets, type ConnectionRecord, type StoreOptions,
+    ConnectionSecretsLocked, getConnection, readConnectionSecrets, readConnectionSecretsStrict, updateConnection, updateConnectionSecrets, type ConnectionRecord, type StoreOptions,
 } from './connection-store.js'
 
 export const LOGIN_TTL_MS = 15 * 60_000
@@ -305,7 +305,8 @@ export async function finishLoginFromAddress(address: unknown, deps: LoginDeps):
 /** Marks the connection expired and asks the owner exactly once until the next successful login. */
 export async function markLoginExpired(connectionId: string, deps: LoginDeps): Promise<boolean> {
     const record = getConnection(connectionId, deps)
-    if (!record || record.status === 'getrennt') return false
+    // A locked vault store stays „Schlüssel fehlt“ (never turned into an expired login).
+    if (!record || record.status === 'getrennt' || record.status === 'schluessel-fehlt') return false
     const first = !record.loginAskedAt
     const updated = updateConnection(record.id, { status: 'abgelaufen', ...(first ? { loginAskedAt: new Date((deps.now || Date.now)()).toISOString() } : {}) }, deps)
     if (first && updated && deps.askLogin) {
@@ -350,8 +351,13 @@ export function isAuthFailure(error: unknown): boolean {
 export function haBearerFetch(connectionId: string, deps: LoginDeps): FetchLike {
     const fetchFn = deps.fetchFn || fetch
     return async (url, init) => {
+        let secrets: ReturnType<typeof readConnectionSecrets>['ha']
+        try { secrets = readConnectionSecretsStrict(connectionId, deps).ha } catch (error) {
+            // 30.10.2026: a locked vault store is no expired login — no new login request, no request to HA.
+            if (error instanceof ConnectionSecretsLocked) throw Object.assign(new Error(`Home Assistant: ${error.message}`), { status: 423 })
+            throw error
+        }
         const record = getConnection(connectionId, deps)
-        const secrets = readConnectionSecrets(connectionId, deps).ha
         if (!record?.basis || !secrets?.accessToken) {
             await markLoginExpired(connectionId, deps)
             throw Object.assign(new Error('Home Assistant: Anmeldung fehlt'), { status: 401 })

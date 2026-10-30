@@ -43,6 +43,9 @@ export type IssueCode =
     | 'CUDA_RUNTIME_MISSING'
     // SSH
     | 'SSH_KEY_MISSING'
+    // Vault (30.10.2026)
+    | 'VAULT_STORE_UNREADABLE'
+    | 'VAULT_KEY_IN_DATA_TREE'
 
 export type IssueSeverity = 'error' | 'warning' | 'info'
 

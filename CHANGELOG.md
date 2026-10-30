@@ -33,6 +33,13 @@
   which the new version never touches (it migrates only its own runtime and
   the key in `<root>/secrets`) — so the rollback works, but that old copy
   still holds the plaintext files until the old runtime folders are removed.
+- **A missing vault key is said, never hidden.** When a sealed store opens
+  with no known key, the connection shows „Der Zugang ist gespeichert, aber
+  der Schlüssel fehlt — nichts gelöscht“ (status `schluessel-fehlt`) instead
+  of looking empty, Home Assistant is no longer marked „Anmeldung abgelaufen“
+  and asks no new login, nothing is overwritten, and `/doctor` reports
+  „Tresor-Speicher nicht lesbar: <Pfad>“. With the right key everything is
+  as before.
 
 ## [2.90.3] — 2026-10-29
 

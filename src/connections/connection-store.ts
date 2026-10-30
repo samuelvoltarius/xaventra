@@ -21,6 +21,8 @@ import type { ConnectorCapability, ConnectorKategorie, Datenklasse } from './con
 
 /** `nicht-erreichbar` (B3): the address does not answer (network/timeout) — the login is fine, nobody is asked to sign in. */
 export type ConnectionStatus = 'wartet-auf-anmeldung' | 'wartet-auf-zugang' | 'verbunden' | 'abgelaufen' | 'nicht-erreichbar' | 'fehler' | 'getrennt'
+    // 30.10.2026: the access is stored sealed, but no known vault key opens it (nothing deleted).
+    | 'schluessel-fehlt'
 export type ConnectionTransport = { art: 'http'; url: string } | { art: 'stdio'; command: 'npx' | 'uvx'; args: string[]; env?: Record<string, string> }
 
 export interface ConnectionTestResult { ok: boolean; at: string; werkzeuge: number; lesend: number; fragend: number; gesperrt: number; fehler?: string }
@@ -49,6 +51,8 @@ export interface ConnectionRecord {
     loginAskedAt?: string
     /** B3: since when and under which address the service does not answer (status `nicht-erreichbar`). */
     nichtErreichbar?: { adresse: string; seit: string; fehler?: string }
+    /** 30.10.2026: since when the vault key is missing (status `schluessel-fehlt`) and the status before. */
+    schluesselFehlt?: { seit: string; vorher?: ConnectionStatus }
     /**
      * 2.86.1: how the connection is used. `rest` = Home Assistant without its MCP
      * server integration (POST /api/mcp → 404): the same login reads through the
@@ -128,11 +132,42 @@ const secretFile = (id: string, opts: StoreOptions) => {
     return join(secretsDir(opts), `${id}.json`)
 }
 
-export function readConnectionSecrets(id: string, opts: StoreOptions = {}): ConnectionSecrets {
+/** The access is stored sealed, but no known vault key opens it. Nothing was deleted. */
+export class ConnectionSecretsLocked extends Error {
+    constructor(readonly connectionId: string) {
+        super(`Der Zugang ist gespeichert, aber der Schlüssel fehlt — nichts gelöscht (${connectionId})`)
+        this.name = 'ConnectionSecretsLocked'
+    }
+}
+
+/** Like readConnectionSecrets, but a locked store throws ConnectionSecretsLocked instead of returning {}. */
+export function readConnectionSecretsStrict(id: string, opts: StoreOptions = {}): ConnectionSecrets {
+    const path = secretFile(id, opts)
+    let value: ConnectionSecrets
     try {
         // readSecretJson opens the sealed file (a leftover plaintext file is sealed on first read).
-        return readSecretJson(secretFile(id, opts)) || {}
-    } catch { return {} }
+        value = readSecretJson(path) || {}
+    } catch (error) {
+        let sealed = false
+        try { sealed = readFileSync(path, 'utf8').startsWith('nova-sealed:') } catch { /* unreadable file */ }
+        if (!sealed) return {}
+        markSecretsLocked(id, opts)
+        throw new ConnectionSecretsLocked(id)
+    }
+    const record = getConnection(id, opts)
+    if (record?.status === 'schluessel-fehlt') updateConnection(id, { status: record.schluesselFehlt?.vorher || 'verbunden', schluesselFehlt: undefined }, opts)
+    return value
+}
+
+/** Never a silent "no access": a locked store sets the visible status (the Doctor reports the file). */
+export function readConnectionSecrets(id: string, opts: StoreOptions = {}): ConnectionSecrets {
+    try { return readConnectionSecretsStrict(id, opts) } catch { return {} }
+}
+
+function markSecretsLocked(id: string, opts: StoreOptions): void {
+    const record = getConnection(id, opts)
+    if (!record || record.status === 'schluessel-fehlt' || record.status === 'getrennt') return
+    updateConnection(id, { status: 'schluessel-fehlt', schluesselFehlt: { seit: new Date((opts.now || Date.now)()).toISOString(), vorher: record.status } }, opts)
 }
 
 /** Sealed (AES-256-GCM), 0600 into a 0700 directory (temp file, chmod, rename). Never plaintext. */

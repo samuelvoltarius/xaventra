@@ -3831,6 +3831,15 @@
       "imports": []
     },
     {
+      "module": "src/doctor/vault-check.ts",
+      "imports": [
+        "../secrets/local-sealed-store.js",
+        "./types.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
       "module": "src/gateway.ts",
       "imports": [
         "./infra/gateway-auth.js",
