@@ -256,6 +256,15 @@ NOVA_DOCKER_HOST=http://host:2375   # For Docker provisioning
 NOVA_CREDENTIAL_KEY_FILE=/var/lib/xaventra-native-<ver>-<date>/secrets/credential.key  # vault key outside the data tree
 ```
 
+### Images to the vision model (30.10.2026)
+
+Local stills reach MiniMax only through `analyze_image` and one gate
+(`src/media/image-source-policy.ts`): files in `.nova-vision/mesh-captures` from released
+nodes (`XAVENTRA_VISION_NODES`, comma list, default `xaventra-lab`) and `.nova-vision/kamera`;
+PNG/JPEG up to 8 MB; no link, no free path. Images of the car (`auto/`) and local desktop
+screenshots are refused. Without a MiniMax key the answer says so; such an image never goes to
+another service. `minimax_vision` takes https addresses only.
+
 ### Vault key (30.10.2026)
 
 All sealed stores (Tresor `secrets/tresor`, connection access data `secrets/connections`,

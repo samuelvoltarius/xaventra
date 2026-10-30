@@ -33,6 +33,19 @@ One way, step 1: the owner has one history on every surface. Plus cameras recogn
   and maker it names openly, and a card „Neu gefunden: Kamera …“ says how she
   would connect. No image is fetched, nothing is logged in to, and default
   passwords are never tried; access data is entered only by the owner.
+- **Xaventra can read her own screenshots.** `analyze_image` now evaluates
+  lab captures (and later camera stills) with MiniMax, so she can say what is
+  on the page she opened. Only images from the private folders and released
+  sources leave, PNG or JPEG up to 8 MB; images of the car and of a local
+  desktop stay refused, and without a MiniMax key she says so instead of
+  using another service.
+
+### Fixed
+
+- **`minimax_vision` really sees the image.** The request format was accepted
+  by MiniMax but ignored: the model answered without seeing anything. It now
+  uses `image_url` (format test on the live key), and the tool takes https
+  addresses only.
 
 ## [2.92.0] — 2026-10-30
 

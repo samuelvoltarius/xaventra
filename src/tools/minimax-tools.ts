@@ -193,7 +193,8 @@ export async function minimaxImageGen(opts: ImageGenOptions): Promise<ImageGenRe
 // Image Vision — M3 multimodal
 // ============================================
 
-export async function minimaxVision(imageUrl: string, question: string): Promise<string> {
+/** 30.10.2026 (format test on VM 130): the model sees only `image_url`; the `source` forms answer 200 without seeing an image. */
+async function minimaxVisionRequest(imageUrl: string, question: string): Promise<string> {
     const key = getMiniMaxKey()
     if (!key) throw new Error('MiniMax API Key nicht konfiguriert')
 
@@ -203,7 +204,7 @@ export async function minimaxVision(imageUrl: string, question: string): Promise
             role: 'user',
             content: [
                 { type: 'text', text: question },
-                { type: 'image', source: { type: 'url', url: imageUrl } },
+                { type: 'image_url', image_url: { url: imageUrl } },
             ],
         }],
         max_tokens: 1000,
@@ -222,6 +223,17 @@ export async function minimaxVision(imageUrl: string, question: string): Promise
 
     const data = await res.json() as any
     return data?.choices?.[0]?.message?.content || 'Keine Antwort'
+}
+
+export async function minimaxVision(imageUrl: string, question: string): Promise<string> {
+    return minimaxVisionRequest(imageUrl, question)
+}
+
+/** A local still from a private image folder; assertSendableImage is the only gate (no free path, no other source). */
+export async function minimaxVisionFile(path: string, question: string): Promise<string> {
+    const { assertSendableImage } = await import('../media/image-source-policy.js')
+    const image = assertSendableImage(path)
+    return minimaxVisionRequest(`data:${image.mime};base64,${image.base64}`, question)
 }
 
 // ============================================
@@ -377,7 +389,10 @@ export const minimaxTools: NovaTool[] = [
         ],
         handler: async (params) => {
             const question = (params.question as string) || 'Beschreibe dieses Bild detailliert auf Deutsch.'
-            const answer = await minimaxVision(params.image_url as string, question)
+            // Local images go through analyze_image and its source rules, never as a path or data URL here.
+            const address = String(params.image_url || '')
+            if (!/^https:\/\//i.test(address)) throw new Error('minimax_vision nimmt nur https-Adressen; lokale Bilder über analyze_image.')
+            const answer = await minimaxVision(address, question)
             return { success: true, analysis: answer }
         },
     },

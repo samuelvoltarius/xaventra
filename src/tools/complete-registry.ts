@@ -2126,6 +2126,15 @@ export const mediaProviderTools: NovaTool[] = [
             const requested = String(params.path || '')
             const resolved = resolveInboxImagePath(requested)
             if (!resolved) throw new Error(`Bilddatei nicht gefunden: ${requested.slice(0, 200)}`)
+            // 30.10.2026: captures and camera stills have one way out (source rules, MiniMax); no silent fallback.
+            const { isPrivateImagePath, assertSendableImage } = await import('../media/image-source-policy.js')
+            if (isPrivateImagePath(resolved)) {
+                assertSendableImage(resolved)
+                const { hasMiniMaxKey, minimaxVisionFile } = await import('./minimax-tools.js')
+                if (!hasMiniMaxKey()) throw new Error('Bildauswertung nicht möglich: kein MiniMax-Schlüssel. Es wurde nichts an einen anderen Dienst gesendet.')
+                const analysis = await minimaxVisionFile(resolved, String(params.prompt || 'Beschreibe dieses Bild auf Deutsch. Nenne sichtbare Überschriften wörtlich.'))
+                return { success: true, analysis, provider: 'minimax' }
+            }
             return await processMedia(resolved, 'image', { prompt: params.prompt as string, provider: params.provider as string })
         },
     },
