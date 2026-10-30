@@ -68,6 +68,38 @@ describe('the step tier hangs on the rule table', () => {
     })
 })
 
+describe('a hanging M3 step (Koordinator 2.92.2)', () => {
+    const hanging = () => {
+        const seen: any[] = []
+        return { seen, make: async () => ({ modelId: 's', complete: (_m: any, _t: any, options: any) => { seen.push(options); return new Promise(() => {}) } }) as any }
+    }
+    it('falls back to Flash inside the same call, well before the step deadline, and stays there', async () => {
+        const executions: any[] = [{ success: false, result: 'kaputt' }]
+        const strongClient = hanging()
+        const fastCalls: string[] = []
+        const client = stepTierClient({ modelId: 'f', complete: async () => { fastCalls.push('f'); return { content: 'a' } } } as any, () => executions, strongClient.make)
+        const begin = Date.now()
+        await expect(client.complete([], [], { timeoutMs: 100 })).resolves.toEqual({ content: 'a' })
+        expect(Date.now() - begin).toBeLessThan(90)
+        expect(strongClient.seen[0].signal.aborted).toBe(true)
+        expect(client.modelId).toBe('f')
+        executions.push({ success: false, result: 'wieder kaputt' })
+        await client.complete([], [], { timeoutMs: 100 })
+        expect(strongClient.seen).toHaveLength(1)
+        expect(fastCalls).toHaveLength(2)
+    })
+    it('a cancelled run stays cancelled, no Flash call behind it', async () => {
+        const controller = new AbortController()
+        const strongClient = hanging()
+        const fast = vi.fn(async () => ({ content: 'a' }))
+        const client = stepTierClient({ modelId: 'f', complete: fast } as any, () => [{ success: false }], strongClient.make)
+        const running = client.complete([], [], { timeoutMs: 10_000, signal: controller.signal })
+        setTimeout(() => controller.abort(new Error('AbortError: hard cancel')), 10)
+        await expect(running).rejects.toThrow(/hard cancel/)
+        expect(fast).not.toHaveBeenCalled()
+    })
+})
+
 describe('over the real entry', () => {
     let h: E2EHarness | undefined
     beforeEach(() => { strong.calls.length = 0; strong.configs.length = 0; strong.fail = false })

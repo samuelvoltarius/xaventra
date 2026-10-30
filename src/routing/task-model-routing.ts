@@ -269,6 +269,8 @@ export interface StepTier {
 }
 
 export const STEP_TIER_RESULT_CHARS = 6000
+/** The strong step gets at most this, and at most half of the step's deadline: Flash needs the rest. */
+export const STEP_TIER_STRONG_TIMEOUT_MS = 30_000
 
 /** `MiniMax-M3`: platform.minimax.io/docs/faq/models and src/llm/models.ts. */
 function stepTierFor(model: string | undefined, provider: string | undefined): StepTier | undefined {
@@ -287,19 +289,40 @@ export function stepTierClient<T extends { complete: (...args: any[]) => Promise
 ): T {
     let seen = 0
     let strong: Promise<T> | undefined
+    let strongDown = false
     let used: T = fast
+    // Own deadline, shared with the caller's cancel; rejects even if the client ignores the signal.
+    const completeStrong = async (client: T, args: any[]) => {
+        const [messages, tools, options = {}] = args
+        const limit = Math.min(STEP_TIER_STRONG_TIMEOUT_MS, Math.floor((options.timeoutMs ?? STEP_TIER_STRONG_TIMEOUT_MS * 2) / 2))
+        const controller = new AbortController()
+        const stop = () => controller.abort(options.signal?.reason ?? new Error(`Timeout: strong step exceeded ${limit} ms`))
+        const timer = setTimeout(stop, limit)
+        options.signal?.addEventListener('abort', stop, { once: true })
+        if (options.signal?.aborted) stop()
+        try {
+            return await Promise.race([
+                client.complete(messages, tools, { ...options, timeoutMs: limit, signal: controller.signal }),
+                new Promise<never>((_, reject) => controller.signal.addEventListener('abort', () => reject(controller.signal.reason), { once: true })),
+            ])
+        } finally {
+            clearTimeout(timer)
+            options.signal?.removeEventListener('abort', stop)
+        }
+    }
     const complete = async (...args: any[]) => {
         const all = executions()
         const pick = pickStepModel(all.slice(seen))
         seen = all.length
         used = fast
-        if (pick === 'strong') {
+        if (pick === 'strong' && !strongDown) {
             try {
                 const client = await (strong ||= createStrong())
                 used = client
-                return await client.complete(...args)
+                return await completeStrong(client, args)
             } catch (err) {
                 if (args[2]?.signal?.aborted) throw err
+                strongDown = true
                 console.warn(`[StepTier] strong model failed, step stays on ${fast.modelId}: ${String(err).slice(0, 160)}`)
                 used = fast
             }
