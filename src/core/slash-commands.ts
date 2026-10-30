@@ -3821,6 +3821,10 @@ Schalter: Messung ${contextSwitch('metrics')}, Aufgaben-Prompt ${contextSwitch('
             const { handleGeraeteCommand } = await import('../sensing/runtime.js')
             return handleGeraeteCommand(args, principalContext, from)
         }
+        case 'panoptes': {
+            const { handlePanoptesCommand } = await import('../sensing/panoptes-standbild.js')
+            return handlePanoptesCommand(args, principalContext)
+        }
 
         case 'setup': {
             const sub = args.trim().split(/\s+/)[0]?.toLowerCase() || 'status'

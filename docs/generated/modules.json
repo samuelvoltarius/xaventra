@@ -2319,6 +2319,10 @@
       "imports": []
     },
     {
+      "module": "src/core/panoptes-notify.ts",
+      "imports": []
+    },
+    {
       "module": "src/core/paths.ts",
       "imports": [
         "../config/config-path.js",
@@ -5807,7 +5811,10 @@
       "imports": [
         "../host/capture-agent.js",
         "../host/desktop-input.js",
-        "node:crypto"
+        "../sensing/camera-client.js",
+        "../sensing/net-scope.js",
+        "node:crypto",
+        "node:net"
       ]
     },
     {
@@ -6797,6 +6804,23 @@
       ]
     },
     {
+      "module": "src/sensing/camera-access.ts",
+      "imports": [
+        "../core/data-root.js",
+        "../secrets/local-sealed-store.js",
+        "./device-registry.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
+      "module": "src/sensing/camera-client.ts",
+      "imports": [
+        "node:crypto"
+      ]
+    },
+    {
       "module": "src/sensing/camera-discovery.ts",
       "imports": [
         "./net-scope.js",
@@ -7086,6 +7110,21 @@
       ]
     },
     {
+      "module": "src/sensing/panoptes-client.ts",
+      "imports": []
+    },
+    {
+      "module": "src/sensing/panoptes-standbild.ts",
+      "imports": [
+        "../core/data-root.js",
+        "../secrets/local-sealed-store.js",
+        "./panoptes-client.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
       "module": "src/sensing/ports.ts",
       "imports": [
         "../security/secret-redaction.js",
@@ -7130,6 +7169,7 @@
         "./adapters/proxmox.js",
         "./adapters/system.js",
         "./awareness.js",
+        "./camera-access.js",
         "./camera-discovery.js",
         "./config.js",
         "./device-registry.js",
@@ -7163,6 +7203,7 @@
       "module": "src/sensing/smart-access-api.ts",
       "imports": [
         "../connections/connection-state.js",
+        "./camera-access.js",
         "./device-registry.js",
         "./matter-client.js",
         "./smart-control-http.js",
@@ -7614,6 +7655,7 @@
         "./developer-capability-tools.js",
         "./environment-inventory-tool.js",
         "./homeassistant.js",
+        "./kamera-tool.js",
         "./knowledge-system.js",
         "./mesh-desktop-input-tool.js",
         "./mesh-exchange-tools.js",
@@ -7759,6 +7801,14 @@
       "module": "src/tools/image.ts",
       "imports": [
         "node:fs"
+      ]
+    },
+    {
+      "module": "src/tools/kamera-tool.ts",
+      "imports": [
+        "../core/lifecycle-policy.js",
+        "../users/multi-user-middleware.js",
+        "./complete-registry.js"
       ]
     },
     {

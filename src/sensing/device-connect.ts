@@ -26,7 +26,7 @@ import { join } from 'node:path'
 import { connectionState, geraetFrageKey, standKontext, verbindungsFrageOffen } from '../connections/connection-state.js'
 import { createApprovalCard, listApprovalCards, type ApprovalCard, type CardExecutor, type CardStoreOptions } from '../core/approval-cards.js'
 import { consolidateDevices, defaultConsolidationContext, migrateDeviceRegistry, type Geraet, type KonsolidierungsKontext } from './device-consolidation.js'
-import { deviceId, loadDevices, recordCandidates, setDeviceStatus, type Approver, type DeviceRecord } from './device-registry.js'
+import { approveDevice, deviceId, loadDevices, recordCandidates, setDeviceStatus, type Approver, type DeviceRecord } from './device-registry.js'
 import { identifyHardware } from './hardware-recognition.js'
 import { identifyHttp, type HttpProbeResult } from './discovery.js'
 import { approvedSmartRoute, chooseSmartRoute, type SmartRoute } from './smart-device-route.js'
@@ -230,7 +230,11 @@ export async function connectDevice(deps: DeviceConnectDeps, ref: string, approv
         return approved
     }
     if (geraet.art === 'hue') return connectHue(deps, record, approver)
-    if (geraet.art === 'kamera') return { ok: true, message: 'Vorgemerkt. Der Kamera-Anschluss kommt im nächsten Schritt; dann gibst du Benutzer und Passwort in der App ein. Bis dahin ist nichts angemeldet und es gibt kein Bild.' }
+    if (geraet.art === 'kamera') {
+        // Ja = this camera may get a login. The login itself is entered only by the owner in the app.
+        const approved = approveDevice(deps.dataDir, record.id, approver, nowOf(deps))
+        return approved.ok ? { ok: true, message: 'Freigegeben. Bitte Benutzer und Passwort der Kamera in der App unter Verbindungen eingeben (nicht im Chat). Bis dahin ist nichts angemeldet und es gibt kein Bild.' } : { ok: false, message: approved.message }
+    }
     if (geraet.art === 'tuya' || geraet.art === 'matter') {
         const way: SmartRoute = geraet.art === 'tuya' && route === 'cloud' ? 'cloud' : 'local'
         const chosen = chooseSmartRoute(deps.dataDir, id, way, approver, nowOf(deps))

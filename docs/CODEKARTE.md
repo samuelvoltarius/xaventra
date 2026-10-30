@@ -418,6 +418,9 @@ Werkzeuge `mesh_screenshot` + `mesh_desktop_input` (`docs/COMPUTER_USE.md`).
 spricht nur `/api/desktop` an. „Relay" in diesem Repo = Mesh-Relay
 (`src/mesh/relay-server.ts`).
 
+Panoptes-Standbild: `src/sensing/panoptes-client.ts` (Erlaubnisliste) und
+`src/sensing/panoptes-standbild.ts`; Bildquellen-Sperre `src/media/image-source-policy.ts`.
+
 **Tests:** `src/desktop/*.test.ts`, `src/desktop-direct/*.test.ts`,
 `src/host/*.test.ts`, `desktop/tests/*` (`npm run test:desktop`),
 `check:desktop-ui`, `check:desktop-core`.
@@ -836,7 +839,7 @@ verantwortet. Der Check (unten) schlägt fehl, wenn ein Werkzeug fehlt.
 - **Mesh/Knoten (Bereich 8):** `mesh_delegate` `mesh_route` `mesh_repo_task`
   `mesh_capabilities` `mesh_deploy` `mesh_download_file` `mesh_exchange_list`
   `mesh_exchange_send` `mesh_exchange_write` `mesh_inspect_url` `mesh_nodes`
-  `mesh_recommendations` `mesh_scan` `mesh_screenshot` `mesh_desktop_input` `mesh_services`
+  `mesh_recommendations` `mesh_scan` `mesh_screenshot` `mesh_desktop_input` `kamera_standbild` `mesh_services`
   `mesh_status` `mesh_strengths` `mesh_transport_status` `mesh_update`
 - **Infra (Bereich 9):** `proxmox_vm` `cluster_status` `docker_control` `docker_logs`
   `docker_ps` `docker_status` `ssh_command` `port_scan` `network_info`

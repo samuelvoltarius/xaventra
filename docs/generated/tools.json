@@ -1571,6 +1571,18 @@
       ]
     },
     {
+      "name": "kamera_standbild",
+      "category": "media",
+      "description": "Holt EIN Standbild einer angebundenen Kamera (nur lesend, nur auf Anfrage, ohne Ton, kein Video) und schickt es dem fragenden Besitzer. delivered sagt, ob es angekommen ist; nur dann behaupten. Zum Auswerten danach analyze_image auf path. Fehlt der Zugang, sag das ehrlich: Benutzer und Passwort gibt nur der Besitzer in der App ein, nie im Chat; rate nichts.",
+      "parameters": [
+        {
+          "name": "kamera",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
       "name": "kg_remember",
       "category": "memory",
       "description": "Speichert eine Tatsache direkt im Knowledge Graph. Z.B. \"Sample nutzt tmux\" → kg_remember(\"Sample\", \"uses\", \"tmux\")",

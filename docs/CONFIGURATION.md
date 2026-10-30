@@ -265,6 +265,26 @@ PNG/JPEG up to 8 MB; no link, no free path. Images of the car (`auto/`) and loca
 screenshots are refused. Without a MiniMax key the answer says so; such an image never goes to
 another service. `minimax_vision` takes https addresses only.
 
+### Panoptes still on a guard event (30.10.2026)
+
+`"autonomy": { "panoptes": { "enabled": true, "urls": ["http://<car-tailscale-address>:8180"] } }` (default off; `urls` is a list because the car can have two tailnet addresses,
+Main only). `/panoptes koppeln` (owner) requests a pairing of kind `dienst` and shows the check number;
+the owner allows it at the car and switches on „Standbild bei Ereignis“ there. The JWT stays sealed in
+the vault (written and read back before success is reported, because Panoptes hands the JWT out once) and renewed daily. Stream drops are normal: it reconnects with a growing pause up to 5 minutes and logs at most once an hour. Then one still per `ereignisId` is fetched, kept at most 72 h in `.nova-vision/auto`,
+evaluated with MiniMax and sent to the owner. The client (`src/sensing/panoptes-client.ts`) has a hard
+path allowlist: pairing, `/api/ha/v1/ereignisse`, `/api/waechter/standbild/<id>`,
+`/api/surveillance/status`, `/api/sitzung/erneuern|abmelden`. No clips, recordings, vehicle endpoints
+or coordinates. An event without `ereignisId` is logged honestly and nothing is fetched.
+
+### Cameras (30.10.2026)
+
+The search recognises cameras without login. After the owner's Ja on the card, user and password
+are entered only in the desktop app (Verbindungen) and stay sealed in the vault. `kamera_standbild`
+fetches one still on request: the login goes only to the node that found the camera, only for that
+address, in a signed ephemeral `capture.request` over the encrypted direct mesh path; without such a
+path it ends with an error. The still lies at most 24 h in `.nova-vision/kamera`. No stream, no
+sound, no polling. Only ONVIF for now; a pure RTSP camera gets an honest answer.
+
 ### Vault key (30.10.2026)
 
 All sealed stores (Tresor `secrets/tresor`, connection access data `secrets/connections`,

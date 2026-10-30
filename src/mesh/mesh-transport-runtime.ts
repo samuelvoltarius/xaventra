@@ -22,7 +22,7 @@ import { checkDelegatedFence } from './fence-highwater.js'
 import { collectLiveLoad, heartbeatProfileFields, peerWantsProfile, sanitizeLiveLoad, sanitizeNodeProfile, type NodeLiveLoad, type NodeProfile, type ProfilePublishState } from '../core/node-profile.js'
 import { sanitizeSelfHealSummary, type SelfHealMeshSummary } from '../doctor/self-heal.js'
 import { executeExchange, validExchangeRequest, validateExchangeResult, type ExchangeRequest, type ExchangeFile } from './node-exchange.js'
-import { captureEnrolledNode, inputEnrolledNode, validateNodeCapture, validateNodeInput, validNodeCaptureRequest, type NodeCaptureRequest, type NodeCaptureReceipt, type NodeInputRequest, type NodeInputReceipt } from './node-capture.js'
+import { captureEnrolledNode, inputEnrolledNode, kameraEnrolledNode, validateNodeCapture, validateNodeInput, validateNodeKamera, validNodeCaptureRequest, type NodeCaptureRequest, type NodeCaptureReceipt, type NodeInputRequest, type NodeInputReceipt, type NodeKameraRequest, type NodeKameraReceipt } from './node-capture.js'
 import { executeGitRequest, validateGitReceipt, validGitRequest, type GitReceipt, type GitRequest } from './mesh-git.js'
 
 
@@ -210,7 +210,19 @@ export async function requestNodeInput(node: string, payload: NodeInputRequest):
     return validateNodeInput(reply, node, payload.requestId)
 }
 
-async function sendCaptureEnvelope(node: string, payload: NodeCaptureRequest | NodeInputRequest, timeoutMs: number, timeoutError: string): Promise<unknown> {
+/** One camera still on the finding node. Ephemeral kind: encrypted direct or local only; no route means an error, never a fallback. */
+export async function requestNodeKamera(node: string, payload: NodeKameraRequest): Promise<NodeKameraReceipt> {
+    if (!node || node === '*' || !validNodeCaptureRequest(payload) || payload.operation !== 'kamera') throw new Error('invalid camera target/context')
+    const check = async () => { await assertFenced('nova-main', { live: true, mode: 'enforce', effect: 'mesh:capture.request' }) }
+    await check()
+    if (node === getLocalNodeId()) return kameraEnrolledNode(node, payload, check)
+    if (!currentCaptureNodes().includes(node)) throw new Error('No direct node capture path')
+    const reply = await sendCaptureEnvelope(node, payload, 30_000, 'Node camera timed out; no image confirmed')
+    await check()
+    return validateNodeKamera(reply, node)
+}
+
+async function sendCaptureEnvelope(node: string, payload: NodeCaptureRequest | NodeInputRequest | NodeKameraRequest, timeoutMs: number, timeoutError: string): Promise<unknown> {
     if (capturePending.size >= 4) throw new Error('Capture concurrency limit reached')
     const transport = router || initMeshTransportRuntime()
     const envelope = transport.create('capture.request', node, payload, { ttlMs: timeoutMs, fence: currentMainMeshFence() })
@@ -594,6 +606,7 @@ async function handleEnvelope(envelope: MeshEnvelope, messageHandler?: MessageHa
             await check()
             result = makeResult(envelope.id, true, request.operation === 'input'
                 ? await inputEnrolledNode(getLocalNodeId(), request, check)
+                : request.operation === 'kamera' ? await kameraEnrolledNode(getLocalNodeId(), request, check)
                 : await captureEnrolledNode(getLocalNodeId(), check))
         } catch (error) { result = makeResult(envelope.id, false, undefined, String(error).slice(0, 200)) }
         await router.send(envelope.sourceNode, router.create('capture.response', envelope.sourceNode, result, { ttlMs: 30_000 }))
