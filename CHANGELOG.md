@@ -12,6 +12,39 @@
   helpers on nodes with a screen, maps and routes, music, a maker helper for
   boards and sensors.
 
+## [2.91.0] — 2026-10-29
+
+Topic threads, step 1 (shadow). Alfred keeps one chat; inside, every message
+gets a topic. Nothing the model sees changes with the default.
+
+### Added
+
+- **Topic threads (shadow), fully automatic.** Every owner message in a
+  direct chat is assigned to a thread without any command: fixed topics
+  (Haus, Auto, Hunde, Infra, Computer, Arbeit/Projekte, Recherche, Pakete,
+  Xaventra) from the request's own tool route and the owner profile, an open
+  question or approval (a one-time code goes to the thread that waits for it),
+  a short follow-up — and for anything else with real content a thread of its
+  own, named from its keywords (e.g. „Bricks Website“). A sentence that
+  joins two threads merges them; a thread rests after 7 days and wakes when
+  its topic comes back; „nein, ich meine das Auto“ moves the previous message
+  and learns from it. Small talk never opens a thread. In `shadow` all of this
+  is measured (`/kontext`: rules, foreign history, created/merged/corrected)
+  and visible with `/themen` (optional); the history stays shared until
+  2.91.1. Subagents and missions record their thread. Switch `context.threads`
+  (`XAVENTRA_THREADS`). Stored per thread: name, times, counts and at most 12
+  keywords — never a sentence.
+
+### Fixed
+
+- **Telegram: an answer that starts like a progress line arrives.** An answer
+  such as „Ich arbeite noch nicht mit Docker auf dieser VM …“ was taken for a
+  progress line and disappeared into the status card. Only what the run
+  itself emits (a ⏳ status line, a ⚙️ step, a tool label) is progress now.
+- A non-blocking channel-parity report runs with the tests: the HUD still
+  shows only the last part of a multi-part answer and the screenshot fallback
+  is Telegram-only (planned for 2.91.1/2.91.2).
+
 ## [2.90.5] — 2026-10-30
 
 Fix from the acceptance of 2.90.4.

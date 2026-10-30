@@ -2187,7 +2187,12 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
         const MAX_SYSTEM_PROMPT = contextPolicy.maxPromptChars
         // 2.90.0 Kontext je Aufgabe: Lagebild + Aufgaben-Prompt (context-switches.ts) and one measurement line per turn.
         const { prepareTurnPrompt } = await import('./turn-context.js')
-        const turnContext = await prepareTurnPrompt({ prompt: systemPrompt, request: content, policy: contextPolicy, toolNames: execution?.allowedTools })
+        // 2.91.0: topic threads only for the owner in a direct chat (groups, guests, phone and system turns keep one history).
+        const threadEligible = !isSystemAuthored && principalContext.permission === 'owner' && isGroupMessage === false && !requestIsGroup
+        const turnContext = await prepareTurnPrompt({
+            prompt: systemPrompt, request: content, policy: contextPolicy, toolNames: execution?.allowedTools,
+            principalId: threadEligible ? principalId : undefined, roomId: desktopContext?.roomId, isGroup: !threadEligible,
+        })
         const turnStartedAt = Date.now()
         systemPrompt = turnContext.prompt
         let budgetSections: import('./prompt-budget.js').PromptBudgetResult['sections'] | null = null
@@ -2255,7 +2260,9 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
         try {
             traceStep('agent:start')
             execution?.abortSignal?.throwIfAborted()
-            result = await runWithAbortDeadline(agentSignal =>
+            // 2.91.0: the run carries its topic thread, so background work it starts (subagents, missions) records it.
+            const { runInThread } = await import('./topic-threads.js')
+            result = await runInThread(turnContext.threadId, () => runWithAbortDeadline(agentSignal =>
                 runNovaAgent({
                     ...agentRunBase,
                     abortSignal: agentSignal,
@@ -2280,7 +2287,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                             stageFailure('Fortschritt', err)
                         }
                     },
-                }), { timeoutMs: TOTAL_TIMEOUT, parentSignal: execution?.abortSignal })
+                }), { timeoutMs: TOTAL_TIMEOUT, parentSignal: execution?.abortSignal }))
 
             // Orchestrator: Task completed successfully
             if (orchestrator) {
@@ -2299,6 +2306,8 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                 outcome: !result ? 'error' : result.incompleteSynthesis ? 'incomplete' : 'answer',
                 durationMs: Date.now() - turnStartedAt,
                 stats: result?.contextStats,
+                awaitingApproval: result?.actionState?.awaitingApproval === true,
+                answer: typeof result?.content === 'string' ? result.content : undefined,
             })
         }
 

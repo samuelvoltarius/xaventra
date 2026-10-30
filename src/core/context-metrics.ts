@@ -59,6 +59,20 @@ export interface ContextTurnMetrics {
     taskPromptUntagged?: string[]
     lagebildMode?: string
     lagebildChars?: number
+    /** 2.91.0 topic threads (shadow): which thread, by which rule, and how much of the recent history is foreign. */
+    threadMode?: string
+    threadId?: string
+    threadKey?: string
+    threadRule?: string
+    threadNew?: boolean
+    foreignHistoryShare?: number
+    /** Automatic thread care (measured in shadow): name, merges, waking from rest, self-correction, counts. */
+    threadName?: string
+    threadMerged?: number
+    threadWoke?: boolean
+    threadCorrected?: boolean
+    activeThreads?: number
+    restingThreads?: number
 }
 
 const FILE = 'context-metrics.jsonl'
@@ -90,6 +104,8 @@ const KEYS: ReadonlyArray<keyof ContextTurnMetrics> = [
     'reducedHeadings', 'modelInputChars', 'systemChars', 'historyChars', 'toolSchemaChars', 'toolsOffered', 'modelCalls',
     'maxModelInputChars', 'toolCalls', 'selfInfoCalls', 'outcome', 'durationMs', 'taskPromptMode', 'taskPromptChars',
     'taskPromptWouldCap', 'taskPromptTopics', 'taskPromptOmitted', 'taskPromptRescued', 'taskPromptUntagged', 'lagebildMode', 'lagebildChars',
+    'threadMode', 'threadId', 'threadKey', 'threadRule', 'threadNew', 'foreignHistoryShare',
+    'threadName', 'threadMerged', 'threadWoke', 'threadCorrected', 'activeThreads', 'restingThreads',
 ]
 
 /** Only known fields; heading lists bounded. */
@@ -156,6 +172,13 @@ export interface ContextMetricsSummary {
     taskPromptWouldCap: number
     /** Headings the cap cut most often. */
     topReduced: Array<{ heading: string; count: number }>
+    threadTurns: number
+    /** Median share of the recent history that belongs to another topic (what one shared history drags in). */
+    medianForeignHistoryPercent: number
+    threadRules: Record<string, number>
+    threadsCreated: number
+    threadMerges: number
+    threadCorrections: number
 }
 
 export function summarizeContextMetrics(entries: readonly ContextTurnMetrics[]): ContextMetricsSummary {
@@ -178,6 +201,15 @@ export function summarizeContextMetrics(entries: readonly ContextTurnMetrics[]):
         medianTaskPromptChars: median(task.map(entry => entry.taskPromptChars as number)),
         taskPromptWouldCap: task.filter(entry => entry.taskPromptWouldCap).length,
         topReduced: [...reduced].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([heading, count]) => ({ heading, count })),
+        threadTurns: entries.filter(entry => entry.threadKey).length,
+        medianForeignHistoryPercent: Math.round(median(numbers(entry => entry.foreignHistoryShare).map(value => value * 100))),
+        threadRules: entries.reduce<Record<string, number>>((out, entry) => {
+            if (entry.threadRule) out[entry.threadRule] = (out[entry.threadRule] ?? 0) + 1
+            return out
+        }, {}),
+        threadsCreated: entries.filter(entry => entry.threadNew).length,
+        threadMerges: entries.reduce((sum, entry) => sum + (entry.threadMerged ?? 0), 0),
+        threadCorrections: entries.filter(entry => entry.threadCorrected).length,
     }
 }
 
@@ -194,6 +226,8 @@ export function formatKontext(entries: readonly ContextTurnMetrics[]): string {
         s.medianModelInputChars ? `Ganze Modelleingabe Median: ${k(s.medianModelInputChars)} Zeichen` : '',
         `Werkzeugaufrufe Median: ${s.medianToolCalls} · Selbstauskunft höchstens ${s.maxSelfInfoCalls}× in einem Zug`,
         s.taskPromptTurns ? `Aufgaben-Prompt (Probe): Median ${k(s.medianTaskPromptChars)}, müsste ${s.taskPromptWouldCap}× gekappt werden` : '',
+        s.threadTurns ? `Themen (Probe): ${s.threadTurns} Züge zugeordnet, Fremd-Verlauf Median ${s.medianForeignHistoryPercent} % · Regeln ${Object.entries(s.threadRules).map(([rule, count]) => `${rule} ${count}`).join(', ')}` : '',
+        s.threadTurns ? `Automatisch: ${s.threadsCreated} neu angelegt, ${s.threadMerges} zusammengeführt, ${s.threadCorrections} selbst korrigiert` : '',
         s.topReduced.length ? `Am häufigsten weggekappt: ${s.topReduced.map(item => `${item.heading.replace(/^## /, '')} (${item.count})`).join(', ')}` : '',
     ]
     return lines.filter(Boolean).join('\n')

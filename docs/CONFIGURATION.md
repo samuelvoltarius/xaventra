@@ -217,6 +217,8 @@ without `roles` only gets `worker`; grant more only explicitly:
 
 The environment wins: `XAVENTRA_CONTEXT_METRICS`, `XAVENTRA_TASK_PROMPT`, `XAVENTRA_LAGEBILD`. Switching back is `off` plus a restart; no rollback needed.
 
+`context.threads` (2.91.0, `XAVENTRA_THREADS`): `off` / `shadow` (default). Every owner message in a direct chat is assigned to a topic thread automatically (reply, open question or approval, correction, tool route, owner-profile entity, shared keywords, short follow-up; own threads named from content, merged, resting after 7 days); `shadow` measures it in `context-metrics.jsonl` (`threadKey`, `threadRule`, `foreignHistoryShare`) and in `/themen`, the history stays shared. Groups, guests, phone and system turns get no threads. No message text is stored in `.nova-data/topic-threads.json`.
+
 Two capabilities of 2.90.0 are on by default and can each be turned off:
 
 | Key | Environment | Effect when off |

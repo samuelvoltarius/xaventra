@@ -91,8 +91,10 @@ export function isTelegramProgress(text: string): boolean {
     const value = String(text || '').trim()
     if (!value) return false
     if (value.includes('\n') || /[*`]/.test(value)) return false
+    // 2.91.0: only what the run itself emits counts as progress — a ⏳ status line (progress-notice.ts),
+    // a ⚙️ step line, an exact tool label. A plain answer that merely starts alike („Ich arbeite noch nicht
+    // mit Docker …“) went into the card and never reached the owner.
     return /^(?:⏳|⚙️\s*Schritt\s+\d+\s*\/)/u.test(value)
-        || /^Ich arbeite noch\b/i.test(value)
         || isToolProgressLabel(value)
 }
 

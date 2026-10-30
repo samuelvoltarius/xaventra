@@ -126,6 +126,12 @@ describe('2.90.0 summary and /kontext', () => {
         expect(text).toContain('4 Züge')
         expect(text).toContain('75 %')
         expect(formatKontext([])).toContain('Noch keine')
+        const threads = formatKontext([
+            turn({ threadKey: 'frei', threadRule: 'inhalt', threadNew: true, foreignHistoryShare: 0.5 }),
+            turn({ threadKey: 'frei', threadRule: 'inhalt', threadMerged: 1, foreignHistoryShare: 0.25 }),
+            turn({ threadKey: 'auto', threadRule: 'korrektur', threadCorrected: true, foreignHistoryShare: 0 }),
+        ])
+        expect(threads).toContain('1 neu angelegt, 1 zusammengeführt, 1 selbst korrigiert')
     })
 })
 
@@ -148,5 +154,16 @@ describe('2.90.0 /kontext and /lage commands', () => {
             if (previous === undefined) delete process.env.NOVA_RUNTIME_ROOT
             else process.env.NOVA_RUNTIME_ROOT = previous
         }
+    })
+})
+
+describe('2.91.0 /themen', () => {
+    it('answers the owner (view only) and refuses a guest', async () => {
+        const { handleCommand } = await import('./slash-commands.js')
+        const state: any = { tools: { getAll: () => [] }, config: {} }
+        const owner = await handleCommand('themen', '', 'o1', state, [], { permission: 'owner', channel: 'telegram', principalId: 'o1', rawUserId: 'o1' } as any)
+        expect(owner).toContain('🧵')
+        const guest = await handleCommand('themen', '', 'g1', state, [], { permission: 'guest', channel: 'telegram', principalId: 'g1', rawUserId: 'g1' } as any)
+        expect(guest).toContain('🔒')
     })
 })

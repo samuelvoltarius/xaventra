@@ -67,6 +67,8 @@ const TARGET_LABEL: Record<NonNullable<MissionStep['an']>, string> = { claude: '
 
 export interface Mission {
     id: string
+    /** 2.91.0: topic thread of the turn that started it. */
+    threadId?: string
     goal: string                 // Original user request
     summary: string              // LLM-generated summary
     steps: MissionStep[]
@@ -372,8 +374,12 @@ export async function startMission(goal: string, userId: string, channel: string
     // Decompose goal into steps
     const steps = await decomposeMission(goal)
 
+    const { currentThreadId } = await import('./topic-threads.js')
+    const threadId = currentThreadId()
     const mission: Mission = {
         id: `m_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        // 2.91.0: the topic thread the mission was started from (measured; the finish note names it from 2.91.1).
+        ...(threadId ? { threadId } : {}),
         goal,
         summary: goal.slice(0, 150),
         steps,

@@ -6,6 +6,7 @@ import { selectContextPolicy } from './context-policy.js'
 import { readContextMetrics } from './context-metrics.js'
 import { applySystemPromptBudget } from './prompt-budget.js'
 import { prepareTurnPrompt } from './turn-context.js'
+import { TopicThreadStore, currentThreadId, runInThread } from './topic-threads.js'
 
 const block = (heading: string, size: number) => `\n\n## ${heading}\n${'x'.repeat(size)}`
 const PROMPT = 'Du bist Xaventra.'.repeat(20)
@@ -90,5 +91,56 @@ describe('2.90.0 turn context: measurement', () => {
         expect(entry.toolCalls).toBe(2)
         expect(entry.channel).toBe('telegram')
         expect(entry.mode).toBe(policy.mode)
+    })
+})
+
+describe('2.91.0 Themen-Fäden im Zug (Schattenbetrieb)', () => {
+    const profile = [{ name: 'BYD Dolphin Surf', kind: 'vehicle', aliases: ['Dolphin'] }]
+    const make = () => {
+        const dir = mkdtempSync(join(tmpdir(), 'turn-threads-')); dirs.push(dir)
+        return { dir, store: new TopicThreadStore(join(dir, 'topic-threads.json')) }
+    }
+    it('shadow (default): the thread is assigned and measured, the prompt is unchanged', async () => {
+        const { dir, store } = make()
+        const turn = await prepareTurnPrompt({ prompt: PROMPT, request: 'Wie voll ist der Akku vom Dolphin?', policy, env: { XAVENTRA_TASK_PROMPT: 'off' }, principalId: 'owner', threadStore: store, profileEntities: profile })
+        expect(turn.prompt).toBe(PROMPT)
+        expect(turn.threadId).toBe('thread:auto')
+        turn.afterCap(null, turn.prompt.length, 12_000)
+        turn.record({ channel: 'telegram', outcome: 'answer', durationMs: 1 }, { dir })
+        const [entry] = readContextMetrics({ dir })
+        expect(entry.threadMode).toBe('shadow')
+        expect(entry.threadKey).toBe('auto')
+        expect(entry.threadRule).toBe('marke')
+        expect(entry.threadNew).toBe(true)
+        expect(typeof entry.foreignHistoryShare).toBe('number')
+        expect(entry.threadName).toBe('Auto')
+        expect(entry.threadMerged).toBe(0)
+        expect(entry.activeThreads).toBe(1)
+    })
+    it('off: no thread, no thread fields', async () => {
+        const { store } = make()
+        const turn = await prepareTurnPrompt({ prompt: PROMPT, request: 'Wie voll ist der Akku vom Dolphin?', policy, env: { XAVENTRA_THREADS: 'off', XAVENTRA_TASK_PROMPT: 'off' }, principalId: 'owner', threadStore: store, profileEntities: profile })
+        expect(turn.threadId).toBeUndefined()
+        expect(store.threads('owner')).toHaveLength(0)
+    })
+    it('an open approval of the printer turn pulls the next code into Haus', async () => {
+        const { dir, store } = make()
+        const first = await prepareTurnPrompt({ prompt: PROMPT, request: 'Mach die Steckdose vom Drucker an', policy, env: { XAVENTRA_TASK_PROMPT: 'off' }, principalId: 'owner', threadStore: store, profileEntities: profile })
+        first.record({ channel: 'telegram', outcome: 'answer', durationMs: 1, awaitingApproval: true }, { dir })
+        await prepareTurnPrompt({ prompt: PROMPT, request: 'Wie voll ist der Akku vom Dolphin?', policy, env: { XAVENTRA_TASK_PROMPT: 'off' }, principalId: 'owner', threadStore: store, profileEntities: profile })
+        const code = await prepareTurnPrompt({ prompt: PROMPT, request: '482913', policy, env: { XAVENTRA_TASK_PROMPT: 'off' }, principalId: 'owner', threadStore: store, profileEntities: profile })
+        expect(code.threadId).toBe(first.threadId)
+        expect(code.metrics.threadRule).toBe('rueckfrage')
+    })
+    it('a question in the answer is remembered for the short reply', async () => {
+        const { dir, store } = make()
+        const pods = await prepareTurnPrompt({ prompt: PROMPT, request: 'Leg im Cluster einen Test-Pod mit busybox an', policy, env: { XAVENTRA_TASK_PROMPT: 'off' }, principalId: 'owner', threadStore: store, profileEntities: profile })
+        pods.record({ channel: 'telegram', outcome: 'answer', durationMs: 1, answer: 'Welches Image soll ich nehmen?' }, { dir })
+        const reply = await prepareTurnPrompt({ prompt: PROMPT, request: 'busybox 1.36', policy, env: { XAVENTRA_TASK_PROMPT: 'off' }, principalId: 'owner', threadStore: store, profileEntities: profile })
+        expect(reply.threadId).toBe(pods.threadId)
+    })
+    it('background work started inside the turn sees the thread', async () => {
+        expect(currentThreadId()).toBeUndefined()
+        expect(await runInThread('thread:infra', async () => { await Promise.resolve(); return currentThreadId() })).toBe('thread:infra')
     })
 })

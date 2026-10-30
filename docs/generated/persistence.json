@@ -1498,6 +1498,10 @@
       "path": ".nova-data/tool-health.json"
     },
     {
+      "owner": "src/core/topic-threads.ts",
+      "path": ".nova-data/topic-threads.json"
+    },
+    {
       "owner": "src/core/upstream-update-command.ts",
       "path": ".nova-data/upstream-updates"
     },

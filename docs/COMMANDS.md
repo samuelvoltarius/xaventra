@@ -28,7 +28,7 @@
 | Users | `/users` `/users promote` `/users block` |
 | SSH & Mesh | `/hosts` `/nodes` `/update` `/preflight` |
 | Autonomy | `/autonom` `/auftrag` `/remind` `/jetzt` `/gedanken` `/arbeit` `/delegiert` `/entscheidungen` `/heilung` `/software` `/modelle` `/waechter` |
-| Kontext *(2.90)* | `/lage` `/kontext` |
+| Kontext *(2.90/2.91)* | `/lage` `/kontext` `/themen` |
 | Proxmox *(Phase 6c)* | `/vms` `/vms meine` `/vms neu` `/vms wegwerf` `/vms snapshot` `/vms entfernen` |
 | Session | `/clear` `/save` `/compact` `/monitor` `/log` |
 | Desktop | `/desktop` |
@@ -253,6 +253,9 @@ Owner, nur lesend (2.90). Gemessenes Lagebild: wo Xaventra läuft (z. B. VM auf 
 
 ### `/kontext`
 Owner, nur lesend (2.90). Messung der letzten 50 Züge mit Modell: wie oft der Systemprompt gekappt wurde, Größe gebaut/gesendet, ganze Modelleingabe, Werkzeugaufrufe, Selbstauskünfte, Größe des Aufgaben-Prompts (Probe) und die am häufigsten weggekappten Blöcke. Datei: `.nova-data/context-metrics.jsonl` (nur Größen und Überschriften, nie der Text). Schalter `context.metrics` (`on`/`off`).
+
+### `/themen`
+Owner, nur Einsicht (2.91), nie nötig. Die automatisch erkannten Themen-Fäden — feste (Haus, Auto, Hunde, Infra, …) und selbst benannte aus dem Inhalt (z. B. „Bricks Website“) — mit Anzahl, letzter Aktivität und „ruht“. Alfred sieht weiter einen Chat; Anlegen, Benennen, Zusammenführen, Ruhen und Korrigieren („nein, ich meine das Auto“) passieren von selbst. Schalter `context.threads` (`off`/`shadow`, Standard `shadow`: zuordnen und messen, der Verlauf bleibt gemeinsam; eigener Verlauf je Faden ab 2.91.1).
 
 ### `/vms [meine|snapshots <vmid>|snapshot|start|stop|rollback|neu|wegwerf|vergroessern|entfernen|cloudinit|hilfe]`
 Owner. Proxmox-Gäste (nur lesend) mit Markierung der eigenen VM, des Pools `xaventra` und „meiner VMs“ (Tag `xaventra-created`) samt freiem Ressourcen-Deckel. Alle schreibenden Unterbefehle erzeugen nur eine Knopf-Karte (Wirkung `infra`, nie „Immer erlauben“); ausgeführt wird erst nach dem Ja. Standard aus. Details: `docs/PROXMOX.md`.

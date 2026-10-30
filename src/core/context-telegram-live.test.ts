@@ -127,3 +127,27 @@ describe('2.90.0 Übergabe an einen benannten Knoten über den Telegram-Eingang 
         } finally { setKnownNodeNamesForTests(null) }
     }, 120_000)
 })
+
+describe('2.91.0 Themen-Fäden über den Telegram-Eingang (Schattenbetrieb)', () => {
+    it('the battery question is assigned to Auto, the run carries the thread, the prompt stays the same', async () => {
+        const { currentThreadId } = await import('./topic-threads.js')
+        let seen: string | undefined = 'unset'
+        fixtures.agent.mockImplementationOnce(async () => {
+            seen = currentThreadId()
+            return { content: 'Der Akku steht bei 80 %.', toolsExecuted: [], sessionId: 's', toolExecutions: [], actionState: { requiresTool: false, kind: 'none', fulfilled: true }, contextStats: STATS }
+        })
+        vi.stubEnv('XAVENTRA_THREADS', 'off')
+        const before = await ask('Wie voll ist der Akku vom Dolphin?')
+        vi.stubEnv('XAVENTRA_THREADS', 'shadow')
+        fixtures.agent.mockImplementationOnce(async () => {
+            seen = currentThreadId()
+            return { content: 'Der Akku steht bei 80 %.', toolsExecuted: [], sessionId: 's', toolExecutions: [], actionState: { requiresTool: false, kind: 'none', fulfilled: true }, contextStats: STATS }
+        })
+        const { prompt, metrics } = await ask('Wie voll ist der Akku vom Dolphin?')
+        expect(metrics.threadMode).toBe('shadow')
+        expect(metrics.threadKey).toBe('auto')
+        expect(metrics.threadRule).toBe('marke')
+        expect(seen).toBe('thread:auto')
+        expect(prompt.replace(/\d{1,2}:\d{2}(:\d{2})?/g, '')).toBe(before.prompt.replace(/\d{1,2}:\d{2}(:\d{2})?/g, ''))
+    }, 120_000)
+})

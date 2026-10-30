@@ -19,6 +19,7 @@
 import { agentToolsForTarget, RISKY_AGENT_TOOLS } from '../mesh/mesh-policy.js'
 import { randomUUID } from 'node:crypto'
 import { appendFileSync, mkdirSync, existsSync } from 'node:fs'
+import { currentThreadId } from '../core/topic-threads.js'
 import { join } from 'node:path'
 
 
@@ -56,7 +57,9 @@ function writeAuditLog(entry: {
     try {
         const dir = join(process.cwd(), '.nova-data')
         if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
-        const line = JSON.stringify({ ...entry, ts: new Date().toISOString() }) + '\n'
+        // 2.91.0: the topic thread of the turn that started this subagent (measured; the finish note names it from 2.91.1).
+        const threadId = currentThreadId()
+        const line = JSON.stringify({ ...entry, ...(threadId ? { threadId } : {}), ts: new Date().toISOString() }) + '\n'
         appendFileSync(join(dir, 'subagent-audit.jsonl'), line)
     } catch { /* non-critical */ }
 }
