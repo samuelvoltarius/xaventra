@@ -514,6 +514,10 @@
       "path": ".nova-data"
     },
     {
+      "owner": "src/e2e/repeated-failure-2-90-4.test.ts",
+      "path": ".nova-data"
+    },
+    {
       "owner": "src/e2e/standby-provider-fallback.test.ts",
       "path": ".nova-data"
     },

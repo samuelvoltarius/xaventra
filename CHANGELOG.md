@@ -12,6 +12,24 @@
   helpers on nodes with a screen, maps and routes, music, a maker helper for
   boards and sensors.
 
+## [2.90.4] — 2026-10-30
+
+Fixes from the Telegram acceptance of 2.90.3.
+
+### Fixed
+
+- **A task handed to a node says why it was not handed over.** `mesh_delegate`
+  answered "Knoten nicht erreichbar" for every problem, although all nodes
+  were online. A node that refuses is now "abgelehnt" with the reason (and the
+  task ends there); "nicht erreichbar" only when there is really no route,
+  with the transport's reason.
+- **The same failure is not tried a third time.** When a tool fails twice in
+  one task with the same error, it is not run again; the answer says what did
+  not work (it was tried three times in a row).
+- **"test" stays a test.** A probe or greeting such as "test" or "hallo" no
+  longer makes Xaventra load tool packs from the previous topic and work on it
+  again; she simply answers.
+
 ## [2.90.3] — 2026-10-29
 
 Fixes from the Telegram acceptance of 2.90.2.

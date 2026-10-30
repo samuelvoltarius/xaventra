@@ -149,6 +149,10 @@ nur über `createAgentBackend` aus dem Benchmark erreichbar);
 (`NovaToolRegistry`, `getToolRegistry` ~3601, `ALL_TOOLS`). Auswahl je Anfrage
 `src/tools/tool-router.ts:613` `getRelevantTools` (einziger Aufrufer
 `src/core/intent-dispatcher.ts`). Nachladen im Lauf `src/core/tool-admission.ts`.
+2.90.4: ein Probe-/Grußwort ohne eigenes Thema („test“, „hallo“, `isTopiclessShortMessage`)
+bekommt kein `load_skill_pack`, keine Packs nur aus dem Verlauf und einen versiegelten Lauf.
+Gleiches Werkzeug mit gleichem Fehler zweimal im Lauf → kein dritter Aufruf
+(`src/core/tool-failure-escalation.ts` `repeatedFailureNote`, im Runner vor der Ausführung).
 
 **Weitere Router (je eine Entscheidung):**
 
