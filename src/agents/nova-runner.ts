@@ -344,13 +344,15 @@ export async function runNovaAgent(params: AgentRunParams): Promise<AgentRespons
         const codexConfig = (globalThis as any).__novaState?.config?.codex
         // CL-20260930-12: Codex or local is decided per task by a fixed rule
         // table (task kind, picture/privacy, role, switch), never by the model.
-        const [{ decideRunnerTaskModel, codexFallbackNotice }, { currentLlmPermission }] = await Promise.all([
+        const [{ decideRunnerTaskModel, codexFallbackNotice, stepTierClient }, { currentLlmPermission }] = await Promise.all([
             import('../routing/task-model-routing.js'), import('../llm/llm-principal.js'),
         ])
         let taskModel = decideRunnerTaskModel({
             content, hasImage: Boolean(image), intentKind: actionIntent.kind,
             permission: currentLlmPermission(), codexConfig,
+            primaryModel: (llmClient as any)?.modelId, primaryProvider: (llmClient as any)?.providerId,
         })
+        const stepTier = modelOverride?.model ? undefined : taskModel.stepTier
         if (!modelOverride?.model) {
             outcomeLedger.recordRoute(kernel.contract.id, {
                 taskType: actionIntent.kind || 'agent',
@@ -873,6 +875,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
 
         // Every native planning, follow-up and repair round shares one budget.
         // Do not mutate the global/shared client used by other users or runs.
+        const unbudgetedClient = llmClient
         llmClient = kernel.inference.wrap(llmClient)
         const primaryTimeoutMs = primaryLlmTimeoutMs(JSON.stringify(messages).length, toolDefinitions.length)
         llmClient = cancellableCompletion(llmClient, abortSignal, primaryTimeoutMs)
@@ -1916,7 +1919,12 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                     modelOptions: {
                         isOffered: name => toolAdmission.isOffered(name),
                         admitTools: names => toolAdmission.admit(names, 'model-call'),
-                        client: speakableClient(llmClient), timeoutMs: sdkFollowupTimeoutMs(isDiagnosticRun ? kernel.contract : undefined, outcomeStartedAt),
+                        client: speakableClient(stepTier && (llmClient as any)?.modelId === stepTier.fast
+                            // One budgeted call around both tiers: a failed M3 call must not stop the run for its Flash fallback.
+                            ? cancellableCompletion(kernel.inference.wrap(stepTierClient(unbudgetedClient, () => toolExecutions, async () => (await import('../llm/nova-llm-sdk.js')).createNovaLLMClient({
+                                provider: stepTier.provider as any, model: stepTier.strong, role: 'chat', isolated: true,
+                            }))), abortSignal, primaryTimeoutMs)
+                            : llmClient), timeoutMs: sdkFollowupTimeoutMs(isDiagnosticRun ? kernel.contract : undefined, outcomeStartedAt),
                         maxTokens: kernel.cognition.executionBudget.maxOutputTokens,
                         beforeCall: async (sdkMessages, sdkTools) => {
                             if (policyBlocked) throw new ToolAuthorizationError('Run stopped at policy gate')

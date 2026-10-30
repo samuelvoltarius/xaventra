@@ -93,6 +93,8 @@ export interface TaskModelDecision {
     reason: string
     /** User-facing message when a Codex task falls back to local. */
     notice?: string
+    /** Stronger model of the same provider for follow-up steps; never on private runs. */
+    stepTier?: StepTier
 }
 
 export type TaskModelRuleId =
@@ -238,11 +240,79 @@ export function decideRunnerTaskModel(params: {
     intentKind?: ActionIntent['kind']
     permission: string | undefined
     codexConfig?: { enabled?: boolean } | null
+    primaryModel?: string
+    primaryProvider?: string
 }): TaskModelDecision {
-    return decideTaskModel({
+    const decision = decideTaskModel({
         signals: { content: params.content, hasImage: params.hasImage, intentKind: params.intentKind },
         permission: params.permission,
         codexEnabled: params.codexConfig?.enabled === true,
+    })
+    const stepTier = decision.private || decision.rule === 'R1-vision-local' || decision.target !== 'local'
+        ? undefined : stepTierFor(params.primaryModel, params.primaryProvider)
+    return stepTier ? { ...decision, stepTier } : decision
+}
+
+// ---------------------------------------------------------------------------
+// 2.92.2 — model tier per follow-up step (same provider, never a new one)
+// ---------------------------------------------------------------------------
+//
+// The turn starts on the fast model. Only the step right after a failed tool
+// or a tool result above STEP_TIER_RESULT_CHARS runs on the strong model; a
+// failure of the strong model falls back to the fast one. Pictures and private
+// content (R1/R2) never get a tier. L18 selectModel stays out of this.
+
+export interface StepTier {
+    provider: string
+    fast: string
+    strong: string
+}
+
+export const STEP_TIER_RESULT_CHARS = 6000
+
+/** `MiniMax-M3`: platform.minimax.io/docs/faq/models and src/llm/models.ts. */
+function stepTierFor(model: string | undefined, provider: string | undefined): StepTier | undefined {
+    if (provider !== 'minimax' || !/^MiniMax-M3\.1-Flash(?:-|$)/i.test(String(model || ''))) return undefined
+    return { provider, fast: String(model), strong: 'MiniMax-M3' }
+}
+
+/** Decided on the tool results of the last step only. */
+export function pickStepModel(executions: Array<{ success?: boolean; result?: unknown }>): 'fast' | 'strong' {
+    return executions.some(item => item.success === false || String(item.result ?? '').length > STEP_TIER_RESULT_CHARS) ? 'strong' : 'fast'
+}
+
+/** Follow-up client: `executions` is the growing tool list of this run. */
+export function stepTierClient<T extends { complete: (...args: any[]) => Promise<any>; modelId?: string }>(
+    fast: T, executions: () => Array<{ success?: boolean; result?: unknown }>, createStrong: () => Promise<T>,
+): T {
+    let seen = 0
+    let strong: Promise<T> | undefined
+    let used: T = fast
+    const complete = async (...args: any[]) => {
+        const all = executions()
+        const pick = pickStepModel(all.slice(seen))
+        seen = all.length
+        used = fast
+        if (pick === 'strong') {
+            try {
+                const client = await (strong ||= createStrong())
+                used = client
+                return await client.complete(...args)
+            } catch (err) {
+                if (args[2]?.signal?.aborted) throw err
+                console.warn(`[StepTier] strong model failed, step stays on ${fast.modelId}: ${String(err).slice(0, 160)}`)
+                used = fast
+            }
+        }
+        return fast.complete(...args)
+    }
+    return new Proxy(fast, {
+        get(target, key) {
+            if (key === 'complete') return complete
+            if (key === 'modelId') return used.modelId
+            const value = Reflect.get(target, key, target)
+            return typeof value === 'function' ? value.bind(target) : value
+        },
     })
 }
 

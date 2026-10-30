@@ -139,8 +139,8 @@ function isAgentCall(messages: Array<{ role: string; content: any }>, current: s
 
 /** The one fake: a model that follows a script and records what it was offered. */
 export class ScriptedModel {
-    readonly modelId = 'e2e-scripted-model'
-    readonly providerId = 'local'
+    modelId = 'e2e-scripted-model'
+    providerId = 'local'
     readonly provider = 'local'
     calls: LlmCall[] = []
     current = ''
