@@ -1700,7 +1700,9 @@
     },
     {
       "module": "src/core/clock-answer.ts",
-      "imports": []
+      "imports": [
+        "./relay-text.js"
+      ]
     },
     {
       "module": "src/core/complexity-router.ts",
@@ -2430,6 +2432,10 @@
       ]
     },
     {
+      "module": "src/core/relay-text.ts",
+      "imports": []
+    },
+    {
       "module": "src/core/release-button.ts",
       "imports": [
         "./approval-cards.js",
@@ -2853,7 +2859,9 @@
     {
       "module": "src/core/topic-threads.ts",
       "imports": [
+        "./clock-answer.js",
         "./data-root.js",
+        "./relay-text.js",
         "node:async_hooks",
         "node:fs",
         "node:path"
@@ -2867,6 +2875,7 @@
         "./context-switches.js",
         "./lagebild.js",
         "./prompt-budget.js",
+        "./relay-text.js",
         "./request-tracer.js",
         "./side-effects.js",
         "./task-prompt.js",
@@ -5426,6 +5435,7 @@
       "imports": [
         "../core/atomic-storage.js",
         "../core/data-root.js",
+        "../core/relay-text.js",
         "./memory-governance.js",
         "node:fs"
       ]

@@ -15,6 +15,7 @@ import { cachedLagebildBlock, replaceStaticEnvironment } from './lagebild.js'
 import { currentTraceId } from './request-tracer.js'
 import { assignThread, sharedTopicThreadStore, type TopicThreadStore } from './topic-threads.js'
 import { sideEffectsDisabled } from './side-effects.js'
+import { relayQuestionText } from './relay-text.js'
 
 /** What the runner measured (AgentResponse.contextStats). */
 export interface RunnerContextStats {
@@ -99,7 +100,7 @@ export async function prepareTurnPrompt(input: {
         let entities = input.profileEntities
         if (!entities) try { entities = (await import('../memory/owner-profile.js')).loadOwnerProfile()?.entities ?? [] } catch { entities = [] }
         const assigned = assignThread({
-            principalId: input.principalId, content: input.request, routes: router.requestRouteNames!(input.request).map(item => item.route),
+            principalId: input.principalId, content: input.request, routes: router.requestRouteNames!(relayQuestionText(input.request)).map(item => item.route),
             profileEntities: entities, roomId: input.roomId, isGroup: input.isGroup, replyTo: input.replyTo,
         }, threadStore)
         if (assigned.rule !== 'aus') threadId = assigned.threadId

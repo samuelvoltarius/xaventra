@@ -119,6 +119,11 @@ Nachtrag des Zugs, `/clear`). Ohne Raum und in Räumen mit `ownerHistory`
 anderen Räume behalten ihren eigenen. Owner-Principals verknüpft allein
 `src/users/owner-accounts.ts` (Konfiguration, Token-Zugang, Link-Code), nie Namen.
 
+**Stil-Anhang des Hubs:** „(Antworte knapp …)“ entfernt nur
+`src/core/relay-text.ts` `relayQuestionText`; alles, was die Frage selbst liest
+(`/freigabe`, Profil- und Uhrzeit-Antwort, Fäden, Routen), nimmt diesen Text.
+Das Modell bekommt die Nachricht unverändert.
+
 **Themen-Fäden (2.91.0, Schalter `context.threads`, Standard shadow):** die eine
 Zuordnung je Nachricht ist `src/core/topic-threads.ts` `assignThread` (Regeln
 raum → antwort → rueckfrage → korrektur → smalltalk → inhalt → marke → folge → unklar → allgemein;

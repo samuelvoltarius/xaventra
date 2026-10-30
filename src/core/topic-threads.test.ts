@@ -1,9 +1,9 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import * as router from '../tools/tool-router.js'
-import { assignThread, formatThemen, TopicThreadStore, type ThreadInput } from './topic-threads.js'
+import { assignThread, contentTerms, formatThemen, TopicThreadStore, type ThreadInput } from './topic-threads.js'
 
 const PROFILE = [
     { name: 'BYD Dolphin Surf', kind: 'vehicle', aliases: ['Dolphin'] },
@@ -54,7 +54,7 @@ describe('2.91.0 Themen-Fäden: a sentence goes to its topic (real tool routes)'
 })
 
 describe('2.91.0 Gegenproben: no topic, no new thread', () => {
-    it.each(['Wie spät ist es?', 'Wer bist du?', 'Erzähl mir einen Witz', 'Wie geht es dir heute?'])('„%s“ → Allgemein', content => {
+    it.each(['Wer bist du?', 'Erzähl mir einen Witz', 'Wie geht es dir heute?'])('„%s“ → Allgemein', content => {
         const result = ask(content)
         expect(result.key).toBe('allgemein')
         expect(result.rule).toBe('allgemein')
@@ -222,5 +222,57 @@ describe('2.91.0 automatic: threads appear, get a name, merge, rest and correct 
     it.each(['nein, das stimmt nicht', 'Nein danke', 'nein'])('„%s“ is no correction', content => {
         ask('Welche Lichter sind an?')
         expect(ask(content).rule).not.toBe('korrektur')
+    })
+})
+
+describe('Hub-Eingang: der Stil-Anhang ist nie Inhalt (live 30.10. 17:50, Faden „Antworte Deutsch“)', () => {
+    const NOTE = '(Antworte knapp auf Deutsch, ohne Markdown.)'
+    it.each([`wie spät ist es?\n${NOTE}`, `wie spät ist es? ${NOTE}`, 'wie spät ist es?', 'Welches Datum haben wir?'])('„%s“ opens no thread', content => {
+        const result = ask(content)
+        expect(result.isNew).toBe(false)
+        expect(result.rule).toBe('smalltalk')
+        expect(store.threads('owner')).toHaveLength(0)
+    })
+    it('the note gives neither keyword nor name; the topic of the question counts', () => {
+        const auto = ask(`Wie voll ist der Akku vom Dolphin?\n${NOTE}`, { routes: routesOf('Wie voll ist der Akku vom Dolphin?') })
+        expect(auto.key).toBe('auto')
+        const own = ask(`Plane die Hochzeit von Lisa im Mai\n${NOTE}`, { routes: [] })
+        expect(own.name).toBe('Hochzeit Lisa')
+        for (const thread of store.threads('owner')) expect(thread.terms.join(' ')).not.toMatch(/antworte|markdown/)
+    })
+    it('a short reply with the note is still a follow-up', () => {
+        ask('Welche Lichter sind an?')
+        expect(ask(`und jetzt alle aus\n${NOTE}`, { routes: [] }).key).toBe('haus')
+    })
+    it('a sentence start after a colon is no keyword', () => {
+        expect(contentTerms('Gib diese Aufgabe an ns1: Sag mir, wie spät es dort ist. Prüfe dann den Server')).toEqual(['aufgabe', 'server'])
+    })
+})
+
+describe('Altbestand: der falsche Faden-Name wird beim Laden repariert, nichts geht verloren', () => {
+    const write = (threads: unknown[]) => writeFileSync(join(dir, 'old.json'), JSON.stringify({ version: 2, principals: { owner: { threads, recent: [], outgoing: [] } } }))
+    const old = { id: 'thread:frei-1', key: 'frei', name: 'Antworte Deutsch', createdAt: T0, lastAt: T0, turns: 1, status: 'aktiv', terms: ['antworte', 'deutsch', 'markdown'] }
+    it('a thread made only of the note keeps id and count, loses the wrong name and attracts nothing', () => {
+        write([old, { id: 'thread:haus', key: 'haus', name: 'Haus', createdAt: T0, lastAt: T0, turns: 4, status: 'aktiv', terms: ['lichter'] }])
+        const reloaded = new TopicThreadStore(join(dir, 'old.json'))
+        const [repaired] = reloaded.threads('owner').filter(thread => thread.id === 'thread:frei-1')
+        expect(repaired.name).toBe('Ohne Thema')
+        expect(repaired.terms).toEqual([])
+        expect(repaired.turns).toBe(1)
+        expect(reloaded.threads('owner')).toHaveLength(2)
+        reloaded.save()
+        expect(readFileSync(join(dir, 'old.json'), 'utf8')).not.toContain('Antworte Deutsch')
+    })
+    it('a mixed thread keeps its real keywords and is renamed from them', () => {
+        write([{ ...old, name: 'Antworte Bricks', terms: ['antworte', 'bricks', 'website', 'markdown'] }])
+        const [repaired] = new TopicThreadStore(join(dir, 'old.json')).threads('owner')
+        expect(repaired.name).toBe('Bricks Website')
+        expect(repaired.terms).toEqual(['bricks', 'website'])
+    })
+    it('Gegenprobe: a healthy thread stays untouched', () => {
+        write([{ ...old, id: 'thread:frei-2', name: 'Deutsch Kurs', terms: ['deutsch', 'kurs'] }])
+        const [thread] = new TopicThreadStore(join(dir, 'old.json')).threads('owner')
+        expect(thread.name).toBe('Deutsch Kurs')
+        expect(thread.terms).toEqual(['deutsch', 'kurs'])
     })
 })

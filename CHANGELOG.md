@@ -12,6 +12,20 @@
   helpers on nodes with a screen, maps and routes, music, a maker helper for
   boards and sensors.
 
+## [Next] — Nummer vergibt die Integration
+
+### Fixed
+
+- **The relay's style note is never content.** The Quiet Hub appends
+  „(Antworte knapp auf Deutsch, ohne Markdown.)“ to a question; live that
+  opened a topic thread named „Antworte Deutsch“ and sent „wie spät ist es?“
+  past the fast clock answer. One function now removes the note for everything
+  that reads the question itself (approvals, profile and clock answers, topic
+  threads, routing); the model still gets it. A wrongly named thread is repaired
+  when the store loads: only the wrong name and words go.
+- **A time or date question opens no thread**, and the first word of a
+  sentence is no keyword any more („…: Sag mir …“).
+
 ## [2.92.3] — 2026-10-30
 
 Cameras connected on request, one still per guard event from the car, and a stable Matter wire test.

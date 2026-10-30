@@ -3371,7 +3371,8 @@ _Deaktivieren: /verbose off_`
             // Not in COMMAND_MINIMUM_ROLE, so owner-only; checked again here.
             if (requestPermission !== 'owner') return '🔒 Freigaben kann nur der Owner erteilen.'
             // 2.89.13 (Quiet-Hub relay): only the first line - an appended "(Antworte knapp …)" must not join the detail.
-            const firstLine = (args.trim().split(/\r?\n/)[0] || '').split(/\s+/).filter(Boolean)
+            const { relayQuestionText } = await import('./relay-text.js')
+            const firstLine = (relayQuestionText(args).trim().split(/\r?\n/)[0] || '').split(/\s+/).filter(Boolean)
             // 2.90.x: `/freigabe merken <werkzeug> <detail>` = the „📌 merken“ button as text (Desktop, Hub, any channel).
             const remember = firstLine[0] === 'merken'
             const [toolName, ...rest] = remember ? firstLine.slice(1) : firstLine

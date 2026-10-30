@@ -6,6 +6,8 @@
  * time zone (owner profile > autonomy.briefing.timeZone > Europe/Vienna). Only the WHOLE message counts:
  * a compound request ("wie spät ist es und wie ist das Wetter") still goes to the model.
  */
+import { relayQuestionText } from './relay-text.js'
+
 export const DEFAULT_OWNER_TIME_ZONE = 'Europe/Vienna'
 
 export type ClockQuestion = 'zeit' | 'datum'
@@ -22,7 +24,7 @@ function normalize(input: string): string {
 
 /** The whole message is one clock question, nothing else. */
 export function detectClockQuestion(input: string): ClockQuestion | null {
-    const text = normalize(input)
+    const text = normalize(relayQuestionText(input))
     if (!text || text.length > 80) return null
     if (TIME_QUESTION.test(text) || TIME_SHORT.test(text)) return 'zeit'
     if (DATE_QUESTION.test(text)) return 'datum'

@@ -10,6 +10,7 @@
  *     through memory governance (kept and audited, never deleted),
  *   - can only be changed by the canonical owner (canEditOwnerProfile) or by editing the file.
  */
+import { relayQuestionText } from '../core/relay-text.js'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { atomicWriteJsonSync } from '../core/atomic-storage.js'
 import { getNovaDataDir } from '../core/data-root.js'
@@ -158,7 +159,7 @@ export function entitiesMentioned(profile: OwnerProfile, text: string): ProfileE
 /** 2.89.13 (live 29.10., Quiet-Hub relay): only the question itself - the first line without a trailing
  * "(Antworte knapp …)" style instruction - is matched against the anchored profile patterns. */
 export function profileQuestionPart(input: string): string {
-    return String(input || '').split(/\r?\n/).map(line => line.trim()).find(Boolean)?.replace(/\s*\([^()]*\)\s*$/, '') || ''
+    return relayQuestionText(input).split(/\r?\n/).map(line => line.trim()).find(Boolean)?.replace(/\s*\([^()]*\)\s*$/, '') || ''
 }
 
 export function answerProfileQuestion(profile: OwnerProfile, input: string): string | null {

@@ -15,7 +15,7 @@
  *   rueckfrage  one-time code / /freigabe → the thread waiting for approval;
  *               a short answer → the thread that asked a question
  *   korrektur   „nein, ich meine das Auto“ → moves the previous message too and learns its keywords
- *   smalltalk   „danke“, „test“ … never creates a thread
+ *   smalltalk   „danke“, „test“, „wie spät ist es?“ … never creates a thread
  *   inhalt      shared keywords with a thread (a sentence joining two threads merges them);
  *               real content without a fixed topic opens its own thread, named from the content
  *   marke       fixed topic from the tool route (tool-router.ts) and owner-profile entities
@@ -29,6 +29,8 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { getNovaDataDir } from './data-root.js'
+import { detectClockQuestion } from './clock-answer.js'
+import { relayQuestionText } from './relay-text.js'
 
 const threadContext = new AsyncLocalStorage<string>()
 /** Run the agent turn inside its thread: background work it starts (subagents, missions) records the threadId. */
@@ -137,6 +139,7 @@ const REST_MS = 7 * 24 * 60 * 60_000
 const RECENT = 12
 const DAY_MS = 24 * 60 * 60_000
 const MAX_TERMS = 12
+const STYLE_NOTE_TERMS = new Set(['antworte', 'markdown', 'deutsch', 'knapp', 'kurz'])
 
 const fold = (value: string) => value.toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '')
 const escape = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -153,15 +156,18 @@ const GENERIC = new Set([
 ])
 
 /**
- * Keywords of a message: its capitalised words after the first (German nouns and names),
- * minus generic words. Only these ever reach the store.
+ * Keywords of a message: capitalised words inside a sentence (German nouns and names),
+ * minus generic words; the first word of a sentence is capitalised anyway. Only these ever reach the store.
  */
 export function contentTerms(content: string): string[] {
     // Explicit type: tsc can mis-infer regex match results to `never` depending on the import graph (see llm-factory.ts).
-    const tokens: string[] = Array.from(String(content || '').match(/[\p{L}][\p{L}\p{N}-]*/gu) ?? [])
+    const text = String(content || '')
+    const tokens = Array.from(text.matchAll(/[\p{L}][\p{L}\p{N}-]*/gu))
     const out: string[] = []
-    tokens.forEach((token, index) => {
-        if (index === 0 || token.length < 3 || !/^\p{Lu}/u.test(token)) return
+    tokens.forEach((match, index) => {
+        const token = match[0]
+        const sentenceStart = /[.:!?\n]\s*$/.test(text.slice(0, match.index))
+        if (index === 0 || sentenceStart || token.length < 3 || !/^\p{Lu}/u.test(token)) return
         const term = fold(token).replace(/-+$/, '')
         if (!GENERIC.has(term) && !out.includes(term)) out.push(term)
     })
@@ -207,6 +213,19 @@ export class TopicThreadStore {
 
     constructor(private readonly path: string) {
         try { if (existsSync(path)) this.data = JSON.parse(readFileSync(path, 'utf8'))?.principals ?? {} } catch { this.data = {} }
+        this.repairStyleNoteThreads()
+    }
+
+    /** Until 2.92.3 the relay's style note was read as content (live: a thread named „Antworte Deutsch“). Only the wrong words go. */
+    private repairStyleNoteThreads(): void {
+        for (const state of Object.values(this.data)) {
+            for (const thread of state?.threads ?? []) {
+                if (!thread.terms?.some(term => term === 'antworte' || term === 'markdown')) continue
+                thread.terms = thread.terms.filter(term => !STYLE_NOTE_TERMS.has(term))
+                if (thread.key === 'frei') thread.name = nameFrom(thread.terms) || 'Ohne Thema'
+                this.dirty = true
+            }
+        }
     }
 
     state(principalId: string): PrincipalState {
@@ -272,7 +291,7 @@ const opensThread = (content: string, terms: readonly string[]) => terms.length 
 
 export function assignThread(input: ThreadInput, store: TopicThreadStore): ThreadAssignment {
     const now = input.now ?? Date.now()
-    const content = String(input.content || '').trim()
+    const content = relayQuestionText(String(input.content || '')).trim()
     const none = { merged: 0, woke: false, corrected: false, activeThreads: 0, restingThreads: 0, foreignHistoryShare: 0, isNew: false }
     if (input.roomId) return { ...none, threadId: `room:${input.roomId}`, key: 'raum', name: `Raum ${input.roomId}`, rule: 'raum' }
     if (input.isGroup || !input.principalId) return { ...none, threadId: 'default', key: 'allgemein', name: 'Allgemein', rule: 'aus' }
@@ -286,7 +305,7 @@ export function assignThread(input: ThreadInput, store: TopicThreadStore): Threa
     }
     const last = [...state.threads].sort((a, b) => b.lastAt - a.lastAt)[0]
     const lastFresh = last && now - last.lastAt <= FOLLOW_MS ? last : undefined
-    const keys = topicKeys(input)
+    const keys = topicKeys({ ...input, content })
     const terms = contentTerms(content)
     const overlap = (thread: TopicThread) => terms.filter(term => thread.terms.includes(term)).length
     const fixed = (key: string) => state.threads.find(thread => thread.key === key)
@@ -326,7 +345,7 @@ export function assignThread(input: ThreadInput, store: TopicThreadStore): Threa
         chosen.turns++
         learn(chosen, state.lastTerms)
         previous.threadId = chosen.id; previous.rule = 'korrektur'
-    } else if (SMALLTALK.test(content)) { chosen = lastFresh; key = chosen ? chosen.key : 'allgemein'; rule = 'smalltalk' }
+    } else if (SMALLTALK.test(content) || detectClockQuestion(content)) { chosen = lastFresh; key = chosen ? chosen.key : 'allgemein'; rule = 'smalltalk' }
     else if (state.pendingQuestion && now - state.pendingQuestion.at <= QUESTION_MS && words(content) <= ANSWER_WORDS
         && resolve(state.pendingQuestion.threadId) && (keys.length === 0 || keys.includes(resolve(state.pendingQuestion.threadId)!.key))) {
         chosen = resolve(state.pendingQuestion.threadId); rule = 'rueckfrage'; state.pendingQuestion = undefined
