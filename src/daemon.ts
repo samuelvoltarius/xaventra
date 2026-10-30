@@ -202,11 +202,26 @@ async function startDaemon() {
     // 2.85 Integration: the docks between Verbindungen (A), Erster Start (B), KI-Modelle (C)
     // and the one need rule (F) — also for Telegram and the autonomy loop without the desktop API.
     try {
-        // 30.10.2026: plaintext connection secrets are sealed once at start (ids only in the log).
+        // 30.10.2026: plaintext secrets are sealed once at start, then re-keyed to the external
+        // vault key (outside the copied data tree). Only ids/paths in the log, never values.
         const { migrateConnectionSecretsToVault } = await import('./connections/connection-store.js')
-        const sealed = migrateConnectionSecretsToVault()
-        if (sealed.migrated.length) console.log(`[Nova] Zugangsdaten in den Tresor verschoben: ${sealed.migrated.join(', ')}`)
-        if (sealed.failed.length) console.warn(`[Nova] Zugangsdaten nicht verschoben (unverändert): ${sealed.failed.join(', ')}`)
+        const { migrateSmartDeviceSecretsToVault } = await import('./sensing/smart-device-access.js')
+        const { rekeySealedStores, vaultKeySource } = await import('./secrets/local-sealed-store.js')
+        const { getNovaDataDir } = await import('./core/data-root.js')
+        const sealedConnections = migrateConnectionSecretsToVault()
+        const sealedDevices = migrateSmartDeviceSecretsToVault(join(process.cwd(), '.nova-data'))
+        const moved = [...sealedConnections.migrated, ...sealedDevices.migrated], stuck = [...sealedConnections.failed, ...sealedDevices.failed]
+        if (moved.length) console.log(`[Nova] Zugangsdaten in den Tresor verschoben: ${moved.join(', ')}`)
+        if (stuck.length) console.warn(`[Nova] Zugangsdaten nicht verschoben (unverändert): ${stuck.join(', ')}`)
+        const keySource = vaultKeySource()
+        if (keySource.kind === 'datenbaum') console.warn('[Nova] Tresor-Schlüssel liegt im Datenbaum — NOVA_CREDENTIAL_KEY_FILE (außerhalb), systemd LoadCredential xaventra-credential-key oder Docker-Secret setzen')
+        else {
+            for (const dataDir of [...new Set([getNovaDataDir(), join(process.cwd(), '.nova-data')])]) {
+                const rekey = rekeySealedStores(dataDir)
+                if (rekey.rekeyed.length || rekey.removedKeys) console.log(`[Nova] Tresor auf externen Schlüssel (${keySource.kind}) umgestellt: ${rekey.rekeyed.length} Speicher, ${rekey.removedKeys} alte Schlüssel entfernt`)
+                if (rekey.failed.length) console.warn(`[Nova] Tresor-Umstellung unvollständig (unverändert): ${rekey.failed.join(', ')}`)
+            }
+        }
         const { registerConnectionDocks } = await import('./connections/connection-docks.js')
         registerConnectionDocks()
         // 2.89: a Home Assistant configured via HASS_URL / xaventra.config.json becomes one

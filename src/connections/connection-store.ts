@@ -11,10 +11,10 @@
  *   access values. Read only by connector-login.ts / the runtime; never logged,
  *   never put into memos, thoughts, cards or chat.
  */
-import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
-import { openCredential, readSecretJson, writeSecretJson } from '../secrets/local-sealed-store.js'
+import { readSecretJson, sealPlaintextSecretsDir, writeSecretJson } from '../secrets/local-sealed-store.js'
 import { atomicWriteJsonSync } from '../core/atomic-storage.js'
 import { getNovaDataDir } from '../core/data-root.js'
 import type { ConnectorCapability, ConnectorKategorie, Datenklasse } from './connector-catalog.js'
@@ -143,38 +143,9 @@ export function writeConnectionSecrets(id: string, secrets: ConnectionSecrets, o
     writeSecretJson(secretFile(id, opts), secrets)
 }
 
-/**
- * Start migration (Sicherheitsbefund 30.10.2026): every plaintext secrets file is sealed.
- * Per file: temporary 0600 backup, seal, read back and compare, then the backup goes; on any
- * failure the original stays untouched. Returns connection ids only — values are never logged.
- */
+/** Start migration (Sicherheitsbefund 30.10.2026): plaintext connection secrets are sealed (ids only in results). */
 export function migrateConnectionSecretsToVault(opts: StoreOptions = {}): { migrated: string[]; failed: string[] } {
-    const dir = secretsDir(opts)
-    const migrated: string[] = [], failed: string[] = []
-    if (!existsSync(dir)) return { migrated, failed }
-    for (const name of readdirSync(dir).sort()) {
-        const id = /^(c-[a-z0-9][a-z0-9-]{1,60})\.json$/.exec(name)?.[1]
-        if (!id) continue
-        const path = join(dir, name), backup = `${path}.vor-tresor`
-        const raw = readFileSync(path, 'utf8')
-        if (raw.startsWith('nova-sealed:')) continue
-        let backedUp = false
-        try {
-            const value = JSON.parse(raw)
-            writeFileSync(backup, raw, { mode: 0o600 })
-            try { chmodSync(backup, 0o600) } catch { /* not supported on this filesystem */ }
-            backedUp = true
-            writeSecretJson(path, value)
-            const readBack = JSON.parse(openCredential(readFileSync(path, 'utf8'), path))
-            if (JSON.stringify(readBack) !== JSON.stringify(value)) throw new Error('read-back mismatch')
-            rmSync(backup, { force: true })
-            migrated.push(id)
-        } catch {
-            if (backedUp && existsSync(backup)) renameSync(backup, path)
-            failed.push(id)
-        }
-    }
-    return { migrated, failed }
+    return sealPlaintextSecretsDir(secretsDir(opts), ID)
 }
 
 export function updateConnectionSecrets(id: string, patch: (current: ConnectionSecrets) => ConnectionSecrets, opts: StoreOptions = {}): ConnectionSecrets {

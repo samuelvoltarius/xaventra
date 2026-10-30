@@ -1,5 +1,6 @@
 /** Direct LAN protocols, independent of HA. Fixed reads only, except explicit
  * owner-approved Hue application registration during a bounded button window. */
+import { readSecretJson, writeSecretJson } from '../secrets/local-sealed-store.js'
 import { mkdirSync, readFileSync, writeFileSync, chmodSync } from 'node:fs'
 import { join } from 'node:path'
 import { atomicWriteJsonSync } from '../core/atomic-storage.js'
@@ -34,7 +35,7 @@ const keyFile = (root: string, id: string) => {
     return join(root, 'secrets', 'smart-devices', id + '.json')
 }
 export function hueKey(root: string, id: string): string | undefined {
-    try { const key = JSON.parse(readFileSync(keyFile(root, id), 'utf8')).hueKey; return typeof key === 'string' && /^[a-zA-Z0-9]{16,80}$/.test(key) ? key : undefined } catch { return undefined }
+    try { const key = readSecretJson(keyFile(root, id))?.hueKey; return typeof key === 'string' && /^[a-zA-Z0-9]{16,80}$/.test(key) ? key : undefined } catch { return undefined }
 }
 
 /** Called ONLY by the current owner approval path, never by discovery. */
@@ -200,7 +201,8 @@ export async function refreshDirectInventory(root: string, signal: AbortSignal, 
                         if (Array.isArray(reply) && reply.length === 1 && /^[a-zA-Z0-9]{16,80}$/.test(reply[0]?.success?.username || '')) {
                             key = reply[0].success.username
                             const dir = join(root, 'secrets', 'smart-devices'); mkdirSync(dir, { recursive: true, mode: 0o700 }); try { chmodSync(dir, 0o700) } catch {}
-                            writeFileSync(keyFile(root, d.id), JSON.stringify({ hueKey: key }), { mode: 0o600 }); try { chmodSync(keyFile(root, d.id), 0o600) } catch {}
+                            // 30.10.2026: sealed in the vault (local-sealed-store), never plaintext.
+                            writeSecretJson(keyFile(root, d.id), { hueKey: key })
                             row.accessRevision = nativeAccessRevision(root, d)
                             pair.status = 'connected'; store(root, 'smart-pairing', requests)
                         } else if (!Array.isArray(reply) || reply[0]?.error?.type !== 101) pair.status = 'expired'

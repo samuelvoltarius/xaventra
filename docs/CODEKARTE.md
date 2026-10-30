@@ -346,7 +346,10 @@ Alt-Erinnerungen `reminders.json` + Croner-Prüfer (nur Rückfall, siehe D10).
   (`NOVA_PATCH_GATE_TOKEN`); `self-evolution.ts` legt nur Vorschläge an.
 - Code: `src/security/code-guardian.ts` `fullSecurityCheck`; Befehle
   `src/security/exec-approvals.ts` `evaluateCommand`.
-- Tresor: `src/secrets/` (`credential-broker.ts`, `tresor-cards.ts`).
+- Tresor: `src/secrets/` (`credential-broker.ts`, `tresor-cards.ts`). Versiegelung: eine Stelle
+  `src/secrets/local-sealed-store.ts` mit **einem** Schlüssel außerhalb des Datenbaums
+  (`vaultKeySource`: systemd LoadCredential → `NOVA_CREDENTIAL_KEY_FILE` → Docker-Secret);
+  genutzt von Tresor, Verbindungs-Zugangsdaten, Hue/Tuya-Schlüsseln, `auth.json`.
 
 **Tests:** `src/security/*.test.ts`, `src/core/approval-cards*.test.ts`,
 `src/tools/owner-approval.test.ts`, `src/e2e/freigaben-merken.test.ts`,

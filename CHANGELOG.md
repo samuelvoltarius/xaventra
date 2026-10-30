@@ -20,7 +20,14 @@
   written sealed (AES-256-GCM, separate owner-only key). Existing plain files
   are moved at start: a short backup, seal, read back, then the plain copy is
   gone; a file that cannot be read stays untouched. Only connection ids are
-  logged, never values.
+  logged, never values. Hue and Tuya keys of smart devices are sealed the same way.
+- **The vault key no longer travels with the data.** All sealed stores use one
+  key that can live outside the data tree (systemd credential,
+  `NOVA_CREDENTIAL_KEY_FILE`, or a Docker secret), so a copied backup or the
+  rollback copy of the runtime no longer holds lock and key together. Existing
+  stores are re-sealed with it at start and read back; the old keys in the
+  data tree are removed only when everything worked. See
+  `docs/CONFIGURATION.md` → Vault key.
 
 ## [2.90.3] — 2026-10-29
 
