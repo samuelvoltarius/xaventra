@@ -17,6 +17,8 @@ export interface TopicRoom {
     workspaceId?: string
     /** Explicit governed memory assets equipped for this room. */
     memoryAssetIds: string[]
+    /** Ein Weg: this room is one more surface of the owner's history (core/conversation-scope.ts), set explicitly by its client. */
+    ownerHistory?: boolean
     archived: boolean
     createdAt: string
     updatedAt: string
@@ -43,7 +45,7 @@ export interface RoomMessage {
 }
 
 interface RoomData { rooms: TopicRoom[]; messages: RoomMessage[] }
-type RoomInput = Pick<TopicRoom, 'title' | 'topic' | 'botIds' | 'preferredNodeIds' | 'modelMode'> & { pinnedModel?: string; pinnedRouteId?: string; workspaceId?: string; memoryAssetIds?: string[] }
+type RoomInput = Pick<TopicRoom, 'title' | 'topic' | 'botIds' | 'preferredNodeIds' | 'modelMode'> & { ownerHistory?: boolean; pinnedModel?: string; pinnedRouteId?: string; workspaceId?: string; memoryAssetIds?: string[] }
 
 function clean(value: unknown, max: number): string { return String(value || '').trim().slice(0, max) }
 function unique(values: unknown, max: number): string[] {
@@ -75,6 +77,7 @@ export class TopicRoomStore {
             pinnedRouteId: clean(input.pinnedRouteId, 500) || undefined,
             workspaceId: clean(input.workspaceId, 120) || undefined,
             memoryAssetIds: unique(input.memoryAssetIds || [], 100),
+            ...(input.ownerHistory === true ? { ownerHistory: true } : {}),
             archived: false, createdAt: now, updatedAt: now,
         }
         if (room.botIds.length === 0) room.botIds = ['nova']
@@ -96,6 +99,7 @@ export class TopicRoomStore {
         if (updates.pinnedRouteId !== undefined) room.pinnedRouteId = clean(updates.pinnedRouteId, 500) || undefined
         if (updates.workspaceId !== undefined) room.workspaceId = clean(updates.workspaceId, 120) || undefined
         if (updates.memoryAssetIds !== undefined) room.memoryAssetIds = unique(updates.memoryAssetIds, 100)
+        if (updates.ownerHistory !== undefined) room.ownerHistory = updates.ownerHistory === true
         if (updates.archived !== undefined) room.archived = Boolean(updates.archived)
         if (room.botIds.length === 0) room.botIds = ['nova']
         if (room.modelMode === 'pinned' && !room.pinnedModel) throw new Error('Pinned rooms require a model')

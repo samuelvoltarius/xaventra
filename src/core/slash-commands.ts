@@ -1107,7 +1107,8 @@ Dann: /llm local`
             const desktop = getDesktopAgentContext()
             const channel = principalContext?.channel || 'unknown'
             const principal = principalContext?.principalId || resolvePrincipalId(state.config, channel, from)
-            const cleared = clearSession(principal, channel, { conversationId: desktop?.roomId, botId: desktop?.botId })
+            const { conversationScope } = await import('./conversation-scope.js')
+            const cleared = clearSession(principal, channel, conversationScope(desktop, { owner: principalContext?.permission === 'owner' }))
 
             console.log(`[Nova] Session cleared for ${from}`)
             return cleared

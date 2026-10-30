@@ -12,6 +12,21 @@
   helpers on nodes with a screen, maps and routes, music, a maker helper for
   boards and sensors.
 
+## [Next] — Nummer vergibt die Integration
+
+One way, step 1: the owner has one history on every surface.
+
+### Added
+
+- **One history for the owner.** Telegram, HUD, CLI and every Desktop room
+  marked `ownerHistory` share the owner's history and run through the topic
+  threads; which history a turn belongs to is decided in one place. The mark
+  is set explicitly by the client (`POST`/`PATCH /api/desktop/rooms`) and only
+  counts for the owner; a room without it keeps its own history, so
+  acceptance and probe rooms stay apart.
+- **`/kontext` per channel.** Prompt built and sent, cut rate and model input
+  for each channel, rooms with their own history shown apart.
+
 ## [2.92.0] — 2026-10-30
 
 Self-repair, step 1: real errors become findings. Nothing here executes
