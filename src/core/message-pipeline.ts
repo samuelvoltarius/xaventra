@@ -2469,7 +2469,15 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
         // The later evidence gate must not overwrite that sentence.
         let actionObservationClosed = false
         const actionOnlyIntent = isSystemMessage ? { requiresTool: false as const, kind: 'none' as const } : detectActionIntent(content)
-        if (!isSystemMessage && !image && !(result as any).error
+        // 2.92.2 („mach mir ein bild vom lab-bildschirm“: Bild 2× geliefert, 139 s): who asks for a picture of a node
+        // got it with the proven capture; the gate stays for "öffne/klick …" unless the node was really operated.
+        if (!isSystemMessage && actionOnlyIntent.requiresTool && isNodeTargetRequest(content)) {
+            const { capturedNodes } = await import('./tool-failure-escalation.js')
+            const executions: any[] = (result as any).toolExecutions || []
+            const operate = /(?<![\p{L}])(?:[oö]ffne|oeffne|klick|tipp|geh\p{L}*\s+auf|ruf\p{L}*\s.{0,60}auf|scroll|bedien)/iu.test(content)
+            if (capturedNodes(executions).length && (!operate || executions.some(item => item.toolName === 'mesh_desktop_input' && item.success !== false))) actionObservationClosed = true
+        }
+        if (!actionObservationClosed && !isSystemMessage && !image && !(result as any).error
             && actionOnlyIntent.requiresTool
             && actionOnlyIntent.kind !== 'screenshot'
             && actionOnlyIntent.kind !== 'system-state') {

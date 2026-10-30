@@ -40,13 +40,13 @@ import type { ResponseConstraint } from '../core/response-contract.js'
 import { isReasoningOnlyResponse, reasoningEffortForTurn, recoverReasoningOnlyResponse } from '../core/reasoning-policy.js'
 import { recoverMissingResource } from '../core/missing-resource-recovery.js'
 import { recoverTransientReadOnlyTool } from '../core/typed-tool-recovery.js'
-import { escalateVerifiedToolFailures, escalationWithCompletedEffects, repeatedFailureNote, withProvenResults, type VerifiedToolFailureObservation } from '../core/tool-failure-escalation.js'
+import { capturedNodes, escalateVerifiedToolFailures, escalationWithCompletedEffects, repeatedFailureNote, withProvenResults, type VerifiedToolFailureObservation } from '../core/tool-failure-escalation.js'
 import { NativeToolReceiptStore } from '../core/native-tool-receipts.js'
 import { hydrateNativeToolCheckpoint, publishNativeToolCheckpoint } from '../core/native-tool-takeover.js'
 import { selectContractTools } from './tool-contract-selection.js'
 import { ToolAdmission } from './tool-admission.js'
 import { toolProgressLabel, THINKING_LABEL } from '../core/tool-progress-label.js'
-import { profileLiveValuePlan, guardLiveValueReply } from './profile-live-value.js'
+import { boundLiveValueAnswer, profileLiveValuePlan, guardLiveValueReply } from './profile-live-value.js'
 import type { LiveValueQuestion } from '../memory/owner-profile.js'
 import { homeAssistantStatusPlan, SHELL_SEARCH_TOOLS, HASS_NOT_CONNECTED_HINT } from './home-assistant-status-plan.js'
 import { kubernetesStatusPlan, kubernetesStatusResponse, isK8sShellFallback, K8S_NO_SSH_HINT, isKubernetesQuestion } from './kubernetes-status-plan.js'
@@ -1132,7 +1132,7 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
         // 2.90.2 (Abnahme 2.90.1, Langtest B): a refused hand-over ends the run with its sentence.
         let handoffRefusal: string | undefined
         // 2.90.5 (Desktop 03:44:52): the proven result of a whole task handed to a node is the answer.
-        let handoffAnswer: string | undefined
+        let goalAnswer: string | undefined
         // 2.89: failed tool calls of this run, escalated once if the run ends
         // without a model answer (a failure is an observation, not a stop).
         const runFailureObservations: VerifiedToolFailureObservation[] = []
@@ -1643,11 +1643,33 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                                 const same = target && knownNodeNames().some(item => item.nodeId === target.nodeId
                                     && [item.nodeId, item.hostname].filter(Boolean).map(value => String(value).toLowerCase()).includes(node.toLowerCase()))
                                 if (target && (same || target.nodeId.toLowerCase() === node.toLowerCase())) {
-                                    handoffAnswer = `Ergebnis von ${target.nodeId}:\n${body}`
+                                    goalAnswer = `Ergebnis von ${target.nodeId}:\n${body}`
                                     console.log(`[Xaventra Agent] Whole task handed to ${target.nodeId}; the run ends with its result`)
                                     hardStop = true
                                     break
                                 }
+                            }
+                        }
+                        // 2.92.2 (Abnahme 2.92.0, „Ziel erreicht, macht weiter, landet im Abbruch“): a read task ends with
+                        // its proven result - the bound value, or the node capture (once; the image came twice).
+                        if (!goalAnswer && liveValueAsked?.binding && call.name === 'hass_get' && verifiedSuccess) {
+                            const answer = boundLiveValueAnswer(liveValueAsked, toolExecutions)
+                            if (answer) {
+                                goalAnswer = answer
+                                console.log('[Xaventra Agent] Bound live value read; the run ends with it')
+                                hardStop = true
+                                break
+                            }
+                        }
+                        if (!goalAnswer && (call.name === 'mesh_screenshot' || call.name === 'analyze_image')) {
+                            const { isNodeTargetRequest, compoundRemainder } = await import('../core/request-capabilities.js')
+                            const nodes = capturedNodes(toolExecutions as any)
+                            const asksContent = /\b(?:was steht|was siehst|was zeigt|was ist (?:da )?zu sehen|sag mir|beschreib\w*|lies|überschrift\w*|titel)\b/i.test(content)
+                            if (nodes.length && isNodeTargetRequest(content) && !compoundRemainder(content) && (!asksContent || (call.name === 'analyze_image' && verifiedSuccess))) {
+                                goalAnswer = asksContent ? resultStr.trim() : `Aufnahme von ${nodes.join(', ')} erstellt.`
+                                console.log('[Xaventra Agent] Node capture proven; the run ends with it')
+                                hardStop = true
+                                break
                             }
                         }
                     } catch (err) {
@@ -1836,7 +1858,9 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                     return notice ? `${notice}\n\n${body}` : body
                 }
                 incompleteAnswerReady = true
-                if (failureEscalationContent) return notice ? `${notice}\n\n${failureEscalationContent}` : failureEscalationContent
+                // 2.92.2: what is proven comes first; a limit after a proven result is a side note, no ❌.
+                if (failureEscalationContent) return !notice ? failureEscalationContent
+                    : /^(?:Erledigt|Gelesen):/.test(failureEscalationContent) ? `${failureEscalationContent}\n\n${notice}` : `${notice}\n\n${failureEscalationContent}`
                 let summary = ''
                 try {
                     const prompt = policyBlocked || abortSignal?.aborted ? '' : exhaustionSynthesisPrompt(toolExecutions)
@@ -1925,8 +1949,8 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                 // budget, tool timeout) instead of a vague „nicht fertig“.
                 const notice = policyBlocked ? '' : limitStopNotice(runLimitError ?? error)
                 if (notice && !policyBlocked && behelfCalls >= 2) capabilityGap = true
-                if (handoffAnswer && !policyBlocked) {
-                    finalContent = handoffAnswer
+                if (goalAnswer && !policyBlocked) {
+                    finalContent = goalAnswer
                     incompleteSynthesis = false
                 } else if (handoffRefusal && !policyBlocked) {
                     // 2.90.3 (probe 00:06): proven hand-over results of this run survive the refusal; the stop

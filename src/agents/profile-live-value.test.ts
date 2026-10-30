@@ -84,3 +84,19 @@ describe('a replacement value belongs to the asked entity', () => {
         expect(out).toMatch(/Stand vor|nicht aktuell/)
     })
 })
+
+// 2.92.2 („wie voll ist das auto?“: Wert stimmt, Anhang „nicht aktuell … und 45 weitere“): a reply with the current
+// value of the asked entity needs no list of old sensors; a reply without it keeps the hint (counter-test).
+describe('no stale list behind a current value', () => {
+    const at = (iso: string) => ({ last_changed: iso, last_updated: iso })
+    const get = (entity: unknown) => ({ toolName: 'hass_get', success: true, result: JSON.stringify({ entity }) })
+    const now = Date.parse('2026-10-30T12:00:00Z')
+    const fresh = { entity_id: 'sensor.byd_dolphin_soc', state: '77', attributes: { friendly_name: 'BYD Dolphin Surf Akku', unit_of_measurement: '%' }, ...at('2026-10-30T11:58:00Z') }
+    const old = Array.from({ length: 48 }, (_, i) => ({ entity_id: `sensor.byd_dolphin_old_${i}`, state: 'x', attributes: { friendly_name: `BYD Dolphin Surf Alt ${i}` }, ...at('2026-10-20T10:00:00Z') }))
+    it('the current value stands alone', () => {
+        expect(guardLiveValueReply({ question, reply: 'Der Dolphin steht bei 77 %.', executions: [get(fresh), ...old.map(get)], now })).toBeNull()
+    })
+    it('a reply without the current value keeps the short hint', () => {
+        expect(guardLiveValueReply({ question, reply: 'Der Dolphin steht gut da.', executions: [get(fresh), ...old.map(get)], now })).toMatch(/nicht aktuell/)
+    })
+})

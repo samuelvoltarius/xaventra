@@ -318,8 +318,26 @@ export function withProvenResults(text: string, executions: ReadonlyArray<Execut
         if (!results.includes(line)) results.push(line)
     }
     const effects = completedEffects(executions, tools).filter(line => !value.includes(line))
-    const proven = [...results, ...(effects.length ? [`Erledigt: ${effects.join('; ')}.`] : [])]
+    // 2.92.2 (Abnahme 2.92.0): read values and node captures are proven results too; a limit after them is no ❌.
+    const reads = readValues(executions).filter(line => !value.includes(line))
+    const captures = capturedNodes(executions).filter(node => !value.includes(node)).map(node => `Aufnahme von ${node} erstellt.`)
+    const proven = [...results, ...(effects.length ? [`Erledigt: ${effects.join('; ')}.`] : []),
+        ...(reads.length ? [`Gelesen: ${reads.join('; ')}.`] : []), ...captures]
     return proven.length ? `${proven.join('\n\n')}\n\n${value}`.trim() : value
+}
+
+/** Nodes a mesh_screenshot of this run really captured (`captured:true`, also when delivery failed). */
+export function capturedNodes(executions: ReadonlyArray<Execution>): string[] {
+    const nodes: string[] = []
+    for (const item of executions) {
+        if (item.toolName !== 'mesh_screenshot') continue
+        let data: any = item.result
+        if (typeof data === 'string') { try { data = JSON.parse(data) } catch { data = null } }
+        for (const row of Array.isArray(data?.captures) ? data.captures : []) {
+            if (row?.captured === true && typeof row.nodeId === 'string' && !nodes.includes(row.nodeId)) nodes.push(row.nodeId)
+        }
+    }
+    return nodes
 }
 
 /** Values a successful hass_get returned in this run (at most 3); other reads have no safe short form. */

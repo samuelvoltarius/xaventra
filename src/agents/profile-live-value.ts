@@ -38,6 +38,23 @@ function describe(entities: any[]): string {
     }).join('; ')
 }
 
+/**
+ * 2.92.2 (Abnahme 2.92.0, Akku 13:20): a question that hits the profile's binding has its answer in the one hass_get of
+ * the bound entity: a fixed sentence with the value and its time, no model round trip, no other sensor.
+ * A stale value says its age. Null while the bound entity has not been read successfully.
+ */
+export function boundLiveValueAnswer(question: LiveValueQuestion, executions: readonly LiveValueToolExecution[], now = Date.now()): string | null {
+    const bound = question.binding?.entityId
+    if (!bound) return null
+    const entity = evidenceEntities(executions).find(item => item?.entity_id === bound)
+    if (!entity || entity.state === undefined) return null
+    const age = ageMinutes(entity, now)
+    if (age !== null && age > question.maxAgeMinutes) return `Stand vor ${ageText(age)}: ${label(entity)}: ${entity.state}${unitOf(entity)}. Der Wert ist nicht aktuell, Home Assistant hat ihn seit längerem nicht aktualisiert.`
+    const stamp = Date.parse(entity.last_updated || entity.last_changed || '')
+    const time = Number.isFinite(stamp) ? ` (Stand ${new Date(stamp).toLocaleTimeString('de-AT', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Vienna' })})` : ''
+    return `${question.entity.name}: ${entity.state}${unitOf(entity)}${time}, laut Home Assistant.`
+}
+
 /** Replacement text when the reply must not stand; null = the reply may be delivered. */
 export function ageText(minutes: number): string {
     if (minutes < 60) return `${Math.max(1, Math.round(minutes))} ${Math.round(minutes) === 1 ? 'Minute' : 'Minuten'}`
@@ -111,6 +128,9 @@ function staleness(input: { question: LiveValueQuestion; executions: readonly Li
         const old = [...citedStale].sort((a, b) => a.age - b.age)[0]
         return `Stand vor ${ageText(old.age)}: ${label(old.entity)}: ${old.entity.state}${unitOf(old.entity)}. Der Wert ist nicht aktuell, Home Assistant hat ihn seit längerem nicht aktualisiert.`
     }
+    // 2.92.2 („wie voll ist das auto?“, „… und 45 weitere“): a reply that states a current value of the asked entity
+    // needs no list of old sensors behind it.
+    if (fresh.some(item => belongs(item.entity) && cites(reply, item.entity))) return null
     // 2.90.1 (live 29.10. 14:02:28): the hint listed 95 unrelated sensors ("… und 92 weitere") - only the asked entity's.
     const ownStale = stale.filter(item => belongs(item.entity))
     return mentionsAge || !ownStale.length ? null : `${reply}
