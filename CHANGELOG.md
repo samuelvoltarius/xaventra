@@ -24,6 +24,20 @@
   needs the key it was sealed with (see `docs/KUBERNETES.md`).
 - `/doctor` names this Helm value when the vault key still lies in the data
   tree inside Kubernetes (a warning, as before).
+- **Limit the scout to chosen networks.** `autonomy.sensing.discovery.subnets`
+  (e.g. `["192.168.0.0/24"]`) restricts device search to these networks inside
+  the node's own private networks; it never widens it, and public or foreign
+  entries are ignored with a log line.
+
+### Fixed
+
+- **`scout: true` alone makes a worker a scout.** On a worker it also needed
+  `sensing.enabled` and `discovery.enabled`, and without them nothing started —
+  silently. Now it implies both (unless they are set to false) with gentle
+  worker defaults (first search after 5 minutes, then every 6 hours, slow
+  probing), and a scout that does not start says why in the log.
+- **Docker networks on a Synology NAS are not scanned as home network.**
+  Its `docker-<hex>` bridges were searched like the LAN.
 
 ## [2.91.1] — 2026-10-30
 
