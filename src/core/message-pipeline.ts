@@ -2962,18 +2962,6 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
         if (err instanceof ReplyDeliveryError) throw err
         const disposition = agentFailureDisposition(err, execution?.abortSignal)
 
-        // Resilience: Track error and attempt auto-fix
-        try {
-            const resilience = (state as any).resilience
-            if (resilience) {
-                const errMsg = err instanceof Error ? err : new Error(String(err))
-                const category = String(err).match(/rate.?limit|429/i) ? 'llm' :
-                    String(err).match(/ECONNREFUSED|ETIMEDOUT|network/i) ? 'network' :
-                        String(err).match(/token|auth|401/i) ? 'auth' : 'runtime'
-                await resilience.trackError(category, errMsg, 'high')
-            }
-        } catch (err) { console.debug('[Pipeline] non-critical error:', err) }
-
         // A deadline or abort stopped the agent on purpose. Never replace it
         // with an unguarded plain completion (no tools, no evidence, no RBAC).
         if (disposition === 'cancelled') {

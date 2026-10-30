@@ -8,12 +8,10 @@
     "xaventra": "dist/cli.js",
     "xaventra-daemon": "dist/daemon.js",
     "xaventra-boot": "dist/nova-boot.js",
-    "xaventra-watchdog": "dist/process/nova-watchdog.js",
     "xaventra-acp": "dist/acp/acp-server.js",
     "nova": "dist/cli.js",
     "nova-daemon": "dist/daemon.js",
     "nova-boot": "dist/nova-boot.js",
-    "nova-watchdog": "dist/process/nova-watchdog.js",
     "nova-acp": "dist/acp/acp-server.js"
   },
   "scripts": {
@@ -107,8 +105,6 @@
     "desktop:build": "cd desktop && npm run build",
     "desktop:package": "cd desktop && npm run package",
     "full": "npm run build && node dist/daemon.js",
-    "watchdog": "node dist/process/nova-watchdog.js",
-    "watchdog:dev": "tsx src/process/nova-watchdog.ts",
     "debug": "NOVA_DEBUG=1 tsx src/daemon.ts",
     "prepublishOnly": "npm run build"
   },

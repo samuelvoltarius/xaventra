@@ -1,7 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { shouldSendOwnerAlarm } from '../supervisor/circuit-breaker.js'
 
 const source = (relative: string) => readFileSync(fileURLToPath(new URL(relative, import.meta.url)), 'utf8')
 
@@ -12,36 +11,6 @@ const source = (relative: string) => readFileSync(fileURLToPath(new URL(relative
  * These tests are source-inspection + injected-dep only: no mesh, no network.
  */
 describe('owner effects need the nova-main lease (2.89.6)', () => {
-    describe('the trip alarm is a fenced owner message', () => {
-        const standby = {
-            mainEligible: () => true,
-            liveLeader: async () => false,
-            fenced: () => false,
-        }
-
-        it('sends nothing on a main-capable node that holds no lease', async () => {
-            await expect(shouldSendOwnerAlarm(standby)).resolves.toBe(false)
-        })
-
-        it('sends once the live Main fence is confirmed', async () => {
-            await expect(shouldSendOwnerAlarm({ ...standby, liveLeader: async () => true })).resolves.toBe(true)
-        })
-
-        it('sends for a node that holds the cached fence', async () => {
-            await expect(shouldSendOwnerAlarm({ ...standby, fenced: () => true })).resolves.toBe(true)
-        })
-
-        it('still alarms on a worker — no Main speaks for it', async () => {
-            await expect(shouldSendOwnerAlarm({ ...standby, mainEligible: () => false })).resolves.toBe(true)
-        })
-
-        it('alarms rather than goes silent when the gate itself is unavailable', async () => {
-            await expect(shouldSendOwnerAlarm({
-                ...standby, liveLeader: async () => { throw new Error('mesh unavailable') },
-            })).resolves.toBe(true)
-        })
-    })
-
     describe('daemon surfaces follow the existing lease pattern', () => {
         const daemon = source('../daemon.ts')
 

@@ -741,34 +741,9 @@ _Bei ON sieht der User mehr durchdachte Antworten.
         }
 
         case 'supervisor': {
-            const { getSupervisor } = await import('../supervisor/supervisor-manager.js')
-            const supervisor = getSupervisor()
-            const mode = args.trim().toLowerCase()
-
-            if (mode === 'auto') {
-                // 2.90.2 (Codekarte D14-16): no automatic code fixes past PATCH_GATE.
-                return 'Automatische Code-Fixes laufen nur über PATCH_GATE/Freigabe (/patches, /patch approve). Der Supervisor bleibt im manuellen Modus.'
-            } else if (mode === 'manual') {
-                return `👤 *Supervisor: MANUAL Mode*
-
-Fehler werden erkannt, aber du musst Fixes manuell genehmigen.`
-            }
-
-            // Show status
-            const status = supervisor.getStatus()
-            const config = (supervisor as any).config
-            return `🔧 *Supervisor Status*
-
-**Modus:** ${config.autoFix ? '🤖 AUTO-FIX' : '👤 MANUAL'}
-**Läuft:** ${status.isRunning ? '✅ Ja' : '❌ Nein'}
-**Errors erkannt:** ${status.totalErrors}
-**Patterns matched:** ${status.totalMatches}
-**Fixes vorgeschlagen:** ${status.totalFixesProposed}
-**Fixes angewendet:** ${status.totalFixesApplied}
-**Fixes fehlgeschlagen:** ${status.totalFixesFailed}
-
-*Befehle:*
-/supervisor manual - Manueller Modus (Code-Fixes nur über PATCH_GATE)`
+            // 2.92.0: the old LLM auto-fix supervisor (branch, build, merge, git reset) is gone.
+            // Errors become Doctor findings by themselves; this command only points there.
+            return 'Den alten Supervisor gibt es nicht mehr. Fehler landen automatisch als Befund je Signatur — Einsicht mit /doctor.'
         }
 
         case 'skills': {
@@ -1851,15 +1826,20 @@ Noch einfacher: schick den Schlüssel im Direktchat („nimm den Tavily-Key und 
                     return '```json\n' + formatReportJson(report) + '\n```'
                 }
 
+                // 2.92.0: one finding per real error line — signature · count · last seen.
+                const { flushErrorFindings, formatErrorSignatures } = await import('./self-doctor.js')
+                flushErrorFindings()
+                const signatures = formatErrorSignatures()
+
                 // /doctor --deep — full CLI-style output
                 if (subCmd === '--deep' || subCmd === 'deep') {
                     const report = await collectDiagnostics()
-                    return '```\n' + formatReportFull(report) + '\n```'
+                    return '```\n' + formatReportFull(report) + (signatures ? `\n\n${signatures}` : '') + '\n```'
                 }
 
                 // /doctor — compact Telegram output (default)
                 const report = await collectDiagnostics()
-                const text = formatReportCompact(report)
+                const text = formatReportCompact(report) + (signatures ? `\n\n${signatures}` : '')
 
                 // Send with inline buttons for safe fixes
                 const safeFixes = report.issues.filter(i => i.fix?.safe)
@@ -1926,7 +1906,7 @@ Noch einfacher: schick den Schlüssel im Direktchat („nimm den Tavily-Key und 
         case 'commands': {
             const cmds = [
                 '/help', '/status', '/layers', '/layer0', '/model', '/llm',
-                '/think', '/strict', '/persona', '/supervisor', '/info',
+                '/think', '/strict', '/persona', '/info',
                 '/memory', '/skills', '/learned', '/learn', '/lernstatus', '/korrektur',
                 '/hosts',
                 '/clear', '/apikey', '/save', '/compact',

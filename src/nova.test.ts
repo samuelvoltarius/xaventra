@@ -355,11 +355,6 @@ describe('Integration', () => {
         expect(LearningEngine).toBeDefined()
     })
 
-    it('should have resilience layer', async () => {
-        const { Layer0Controller } = await import('./resilience/index.js')
-        expect(Layer0Controller).toBeDefined()
-    })
-
     it('should have all channel adapters', async () => {
         const { createChannel } = await import('./channels/index.js')
         expect(createChannel).toBeDefined()
