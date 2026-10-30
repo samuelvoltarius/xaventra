@@ -9,6 +9,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { hostname } from 'node:os'
 import { join } from 'node:path'
 import { resolveConfigPath } from '../config/config-path.js'
+import { runningVersion } from '../core/running-version.js'
 
 
 export interface TelemetryConfig {
@@ -41,7 +42,7 @@ let _evidenceCounter: Counter | null = null
 let _mainRoleCounter: Counter | null = null
 
 function packageVersion(): string {
-    try { return JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')).version || '0.0.0' } catch { return '0.0.0' }
+    return runningVersion()
 }
 
 function normalizeEndpoint(value: string): string {

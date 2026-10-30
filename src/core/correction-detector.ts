@@ -18,6 +18,7 @@ import { getMemoryGovernanceCoordinator } from '../memory/memory-governance.js'
 import { loadHosts, saveHosts } from '../tools/ssh-tool-hosts.js'
 import { isInfrastructureFailure } from './infrastructure-failure.js'
 import { redactSecrets } from '../security/secret-redaction.js'
+import { runningVersion } from './running-version.js'
 
 // ============================================
 // Types
@@ -356,13 +357,7 @@ export { isInfrastructureFailure }
 let cachedVersion: string | undefined
 function currentVersion(): string {
     if (cachedVersion !== undefined) return cachedVersion
-    cachedVersion = ''
-    for (const file of [join(process.cwd(), 'package.json'), join(process.cwd(), '..', 'package.json')]) {
-        try {
-            const version = JSON.parse(readFileSync(file, 'utf-8'))?.version
-            if (typeof version === 'string' && version) { cachedVersion = version; break }
-        } catch { /* next */ }
-    }
+    cachedVersion = runningVersion()
     return cachedVersion
 }
 

@@ -12,21 +12,11 @@ import { compatiblePrincipalScopes, principalScope, resolvePrincipalId, type Pri
 import type { CodexDisplayModel } from '../auth/codex-runtime.js'
 import { resolveConfigPath } from '../config/config-path.js'
 import { XAVENTRA_IDENTITY, describeRegisteredCapabilities } from './self-description.js'
+import { runningVersion } from './running-version.js'
 
 
-// Dynamic version from package.json
-const NOVA_VERSION = (() => {
-    try {
-        const pkgPath = join(process.cwd(), 'package.json')
-        if (existsSync(pkgPath)) {
-            const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'))
-            return pkg.version || '0.0.0'
-        }
-        return '0.0.0'
-    } catch {
-        return '0.0.0'
-    }
-})()
+// Version of the running installation (never the working directory)
+const NOVA_VERSION = runningVersion()
 
 // ============================================
 // Types

@@ -15,6 +15,7 @@ import { handleCommand as handleSlashCommand } from './slash-commands.js'
 import { createLLM, availableLLMs } from './llm-factory.js'
 import type { DaemonState } from './message-pipeline.js'
 import { resolveConfigPath } from '../config/config-path.js'
+import { runningVersion } from './running-version.js'
 
 
 let runtimeState: DaemonState | null = null
@@ -55,11 +56,8 @@ export async function initCliPipelineRuntime(): Promise<DaemonState> {
         config,
     })
 
-    try {
-        const pkg = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf-8'))
-        ;(state as any).version = pkg.version || '0.0.0'
-        getNovaState().version = (state as any).version
-    } catch { /* non-critical */ }
+    ;(state as any).version = runningVersion()
+    getNovaState().version = (state as any).version
 
     state.llm = await createLLM(config)
     state.internalLlm = state.llm

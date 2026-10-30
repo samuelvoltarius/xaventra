@@ -19,6 +19,7 @@ import type {
 import { probeGpuRuntime, type GpuRuntimeStatus } from './gpu-runtime.js'
 import { resolveConfigPath } from '../config/config-path.js'
 import { describeActiveRuntime } from '../llm/active-runtime.js'
+import { runningVersion } from '../core/running-version.js'
 
 
 const NOVA_DIR = process.cwd()
@@ -701,13 +702,7 @@ export async function collectDiagnostics(): Promise<DoctorReport> {
     } : undefined
 
     // Build package.json version
-    let version = '?.?.?'
-    try {
-        const pkgPath = join(NOVA_DIR, 'package.json')
-        if (existsSync(pkgPath)) {
-            version = JSON.parse(readFileSync(pkgPath, 'utf-8')).version || version
-        }
-    } catch { /* non-critical */ }
+    const version = runningVersion()
 
     return {
         timestamp: new Date().toISOString(),

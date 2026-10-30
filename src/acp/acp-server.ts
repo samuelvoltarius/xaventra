@@ -12,6 +12,7 @@ import {
 import { getLifecyclePolicy } from '../core/lifecycle-policy.js'
 import { getToolRegistry } from '../tools/complete-registry.js'
 import { getMissionWorkspaceManager } from '../runtime/mission-workspace.js'
+import { runningVersion } from '../core/running-version.js'
 
 interface AcpSession {
     id: string
@@ -27,8 +28,7 @@ const READ_ONLY_TOOLS = new Set([
 ])
 
 function runtimeVersion(): string {
-    try { return String(JSON.parse(readFileSync(resolve(process.cwd(), 'package.json'), 'utf8')).version || '0.0.0') }
-    catch { return '0.0.0' }
+    return runningVersion()
 }
 
 function invalid(detail: string): RequestError { return RequestError.invalidParams(undefined, detail) }

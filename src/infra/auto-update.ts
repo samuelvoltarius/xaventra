@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { configuredUpstreamSource } from '../core/upstream-update-command.js'
+import { runningVersion } from '../core/running-version.js'
 
 export async function checkForUpdates() { return configuredUpstreamSource().check() }
 export async function pullAndRebuild() {
@@ -12,7 +13,7 @@ export async function pullAndRebuild() {
 }
 export function getVersionInfo() {
     const git = (...args: string[]) => { try { return execFileSync('git', args, { encoding: 'utf8', timeout: 5000, windowsHide: true }).trim() } catch { return 'unknown' } }
-    return { commit: git('rev-parse', 'HEAD'), branch: git('branch', '--show-current'), date: git('log', '-1', '--format=%ci'), message: git('log', '-1', '--format=%s') }
+    return { version: runningVersion(), commit: git('rev-parse', 'HEAD'), branch: git('branch', '--show-current'), date: git('log', '-1', '--format=%ci'), message: git('log', '-1', '--format=%s') }
 }
 /** Historical read only. Private log entries are never release artifacts. */
 export function getUpdateHistory(limit = 10) {
