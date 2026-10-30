@@ -37,7 +37,7 @@ export const meshDesktopInputTool: NovaTool = {
             const h = createHash('sha256').update(JSON.stringify(['mesh_desktop_input/v1', context.runId, context.authUserId, node, params.step])).digest('hex')
             const requestId = `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`
             const receipt = await requestNodeInput(node, { operation: 'input', principalId: context.authUserId, runId: context.runId, requestId, action })
-            const path = storePrivateNodeCapture(receipt.capture)
+            const path = storePrivateNodeCapture(receipt.capture, node)
             const replayed = receipt.input.replayed
             // Pixels stay out of model text; the path is for analyze_image.
             return { success: true, status: replayed ? 'replayed' : 'executed', executedNow: !replayed, nodeId: node,

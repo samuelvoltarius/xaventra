@@ -12,6 +12,22 @@
   helpers on nodes with a screen, maps and routes, music, a maker helper for
   boards and sensors.
 
+### Added (next patch, version set at release)
+
+- **Xaventra can read her own screenshots.** `analyze_image` now evaluates
+  lab captures (and later camera stills) with MiniMax, so she can say what is
+  on the page she opened. Only images from the private folders and released
+  sources leave, PNG or JPEG up to 8 MB; images of the car and of a local
+  desktop stay refused, and without a MiniMax key she says so instead of
+  using another service.
+
+### Fixed (next patch, version set at release)
+
+- **`minimax_vision` really sees the image.** The request format was accepted
+  by MiniMax but ignored: the model answered without seeing anything. It now
+  uses `image_url` (format test on the live key), and the tool takes https
+  addresses only.
+
 ## [2.91.2] — 2026-10-30
 
 ### Added

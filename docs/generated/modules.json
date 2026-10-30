@@ -5195,6 +5195,14 @@
       ]
     },
     {
+      "module": "src/media/image-source-policy.ts",
+      "imports": [
+        "../core/data-root.js",
+        "node:fs",
+        "node:path"
+      ]
+    },
+    {
       "module": "src/media/media-providers.ts",
       "imports": [
         "../core/model-defaults.js",

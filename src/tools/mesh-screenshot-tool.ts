@@ -18,7 +18,7 @@ export function resolveCaptureNode(target: string, known: readonly string[]): st
 }
 
 /** Private local copy of a verified node capture (for analyze_image); never overwrites or prunes. */
-export function storePrivateNodeCapture(receipt: { bytes: number; base64: string }): string {
+export function storePrivateNodeCapture(receipt: { bytes: number; base64: string }, nodeId: string): string {
     const parent = join(getRuntimeRoot(), '.nova-vision')
     mkdirSync(parent, { recursive: true, mode: 0o700 })
     if (lstatSync(parent).isSymbolicLink()) throw new Error('Capture directory must not be a link')
@@ -33,7 +33,9 @@ export function storePrivateNodeCapture(receipt: { bytes: number; base64: string
         storedBytes += stat.size
     }
     if (files.length >= 256 || storedBytes + receipt.bytes > 256 * 1024 * 1024) throw new Error('Private capture quota reached; no files overwritten or removed')
-    const path = join(dir, `node_${Date.now()}_${randomBytes(12).toString('hex')}.png`)
+    // The node in the name is the image source (src/media/image-source-policy.ts).
+    const node = /^[a-zA-Z0-9._-]{1,80}$/.test(nodeId) ? nodeId : 'unbekannt'
+    const path = join(dir, `node_${node}__${Date.now()}_${randomBytes(12).toString('hex')}.png`)
     writeFileSync(path, Buffer.from(receipt.base64, 'base64'), { mode: 0o600, flag: 'wx' })
     return path
 }
@@ -78,7 +80,7 @@ export const meshScreenshotTool: NovaTool = {
             try {
                 const receipt = await requestNodeCapture(nodeId, { operation: 'capture', principalId: context.authUserId, runId: context.runId })
                 row = { nodeId, captured: true, delivered: false, capturedAt: receipt.capturedAt, sha256: receipt.sha256, bytes: receipt.bytes }
-                const path = storePrivateNodeCapture(receipt)
+                const path = storePrivateNodeCapture(receipt, nodeId)
                 row = { nodeId, captured: true, delivered: false, capturedAt: receipt.capturedAt, sha256: receipt.sha256, bytes: receipt.bytes, path }
                 if (send) {
                     const { executeSendFile } = await import('./send-file-tool.js')
