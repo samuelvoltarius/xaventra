@@ -40,7 +40,7 @@ import type { ResponseConstraint } from '../core/response-contract.js'
 import { isReasoningOnlyResponse, reasoningEffortForTurn, recoverReasoningOnlyResponse } from '../core/reasoning-policy.js'
 import { recoverMissingResource } from '../core/missing-resource-recovery.js'
 import { recoverTransientReadOnlyTool } from '../core/typed-tool-recovery.js'
-import { escalateVerifiedToolFailures, escalationWithCompletedEffects, repeatedFailureNote, type VerifiedToolFailureObservation } from '../core/tool-failure-escalation.js'
+import { escalateVerifiedToolFailures, escalationWithCompletedEffects, repeatedFailureNote, withProvenResults, type VerifiedToolFailureObservation } from '../core/tool-failure-escalation.js'
 import { NativeToolReceiptStore } from '../core/native-tool-receipts.js'
 import { hydrateNativeToolCheckpoint, publishNativeToolCheckpoint } from '../core/native-tool-takeover.js'
 import { selectContractTools } from './tool-contract-selection.js'
@@ -1131,6 +1131,8 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
         let failureEscalationContent: string | undefined
         // 2.90.2 (Abnahme 2.90.1, Langtest B): a refused hand-over ends the run with its sentence.
         let handoffRefusal: string | undefined
+        // 2.90.5 (Desktop 03:44:52): the proven result of a whole task handed to a node is the answer.
+        let handoffAnswer: string | undefined
         // 2.89: failed tool calls of this run, escalated once if the run ends
         // without a model answer (a failure is an observation, not a stop).
         const runFailureObservations: VerifiedToolFailureObservation[] = []
@@ -1624,12 +1626,28 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                         })
                         logRuntimeEvent({ event: effectiveSuccess ? 'tool.completed' : 'tool.failed', channel, userId: authUserId, canonicalUserId: userId, tool: call.name, success: effectiveSuccess })
                         if ((call.name === 'spawn_subagent' || call.name === 'mesh_delegate') && !handoffRefusal) {
-                            const { isHandoffRefusal, handoffRefusalText } = await import('../mesh/peer-refusal.js')
+                            const { isHandoffRefusal, handoffRefusalText, handoffResultText } = await import('../mesh/peer-refusal.js')
                             if (isHandoffRefusal(resultStr)) {
                                 handoffRefusal = handoffRefusalText(resultStr)
                                 console.log(`[Xaventra Agent] Hand-over refused (${call.name}); the run ends with that sentence`)
                                 hardStop = true
                                 break
+                            }
+                            // 2.90.5 (Desktop 03:44:52): "Gib diese Aufgabe an <Knoten>: …" hands over the WHOLE task -
+                            // the node's proven result is the answer; no further model step wanders off locally.
+                            const node = String(call.arguments?.mesh_node || call.arguments?.node_id || '')
+                            const body = verifiedSuccess ? handoffResultText(resultStr) : null
+                            if (body && node) {
+                                const { handoffTargetNode, knownNodeNames } = await import('../mesh/known-node-names.js')
+                                const target = handoffTargetNode(content)
+                                const same = target && knownNodeNames().some(item => item.nodeId === target.nodeId
+                                    && [item.nodeId, item.hostname].filter(Boolean).map(value => String(value).toLowerCase()).includes(node.toLowerCase()))
+                                if (target && (same || target.nodeId.toLowerCase() === node.toLowerCase())) {
+                                    handoffAnswer = `Ergebnis von ${target.nodeId}:\n${body}`
+                                    console.log(`[Xaventra Agent] Whole task handed to ${target.nodeId}; the run ends with its result`)
+                                    hardStop = true
+                                    break
+                                }
                             }
                         }
                     } catch (err) {
@@ -1805,7 +1823,11 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
             }
             // 2.89: out of rounds/time/model patience -> ONE last model call without tools
             // over the results so far; only if that fails a short honest sentence (no raw data).
-            const finishUnfinished = async (notice = ''): Promise<string> => {
+            // 2.90.5: every stop/summary text (self-description stop, budget, "noch nicht fertig") keeps the run's proven
+            // results - hand-over results and done effects - by the one rule in tool-failure-escalation.
+            const finishUnfinished = async (notice = ''): Promise<string> =>
+                withProvenResults(await finishUnfinishedText(notice), toolExecutions as any, getToolRegistry().getAll() as any)
+            const finishUnfinishedText = async (notice = ''): Promise<string> => {
                 if (isDiagnosticRun || contract) {
                     // Bound runs (outer contract, Doctor diagnosis) keep strict one-call semantics and their evidence text.
                     incompleteSynthesis = true
@@ -1903,7 +1925,10 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                 // budget, tool timeout) instead of a vague „nicht fertig“.
                 const notice = policyBlocked ? '' : limitStopNotice(runLimitError ?? error)
                 if (notice && !policyBlocked && behelfCalls >= 2) capabilityGap = true
-                if (handoffRefusal && !policyBlocked) {
+                if (handoffAnswer && !policyBlocked) {
+                    finalContent = handoffAnswer
+                    incompleteSynthesis = false
+                } else if (handoffRefusal && !policyBlocked) {
                     // 2.90.3 (probe 00:06): proven hand-over results of this run survive the refusal; the stop
                     // sentence is appended, it never replaces them.
                     const { handoffResultText } = await import('../mesh/peer-refusal.js')

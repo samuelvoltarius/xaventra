@@ -6,6 +6,7 @@ import { classifyToolFailure, type ToolFailureKind } from './typed-tool-recovery
 import { getSessionContinuityStore, type SessionContinuityStore } from '../memory/session-summarizer.js'
 import { getFailureResearchCoordinator, type FailureResearchCoordinator } from '../doctor/failure-research-coordinator.js'
 import { redactSecrets } from '../security/secret-redaction.js'
+import { handoffResultText } from '../mesh/peer-refusal.js'
 
 export interface VerifiedToolFailureObservation {
     callId: string
@@ -292,6 +293,28 @@ export function repeatedFailureNote(executions: ReadonlyArray<Execution>, toolNa
         if (count >= 2) return `⚠️ ${toolName}: in diesem Auftrag zweimal mit demselben Fehler gescheitert („${key.slice(0, 120)}“) — nicht erneut ausgeführt. Sag dem Nutzer ehrlich, was nicht ging.`
     }
     return null
+}
+
+/**
+ * 2.90.5 (Desktop 03:44:52): "Ich habe mehrmals nur nachgesehen, was ich kann … die Uhrzeit auf ns1 wurde nicht
+ * abgefragt" - while ns1 had answered. Every stop/summary text keeps the run's proven results: hand-over results
+ * (spawn_subagent/mesh_delegate) and done effects (completedEffects), placed before the stop text unless it
+ * already contains them.
+ */
+export function withProvenResults(text: string, executions: ReadonlyArray<Execution>, tools: ReadonlyArray<EffectTool>): string {
+    const value = String(text || '')
+    const results: string[] = []
+    for (const item of executions) {
+        if ((item.toolName !== 'spawn_subagent' && item.toolName !== 'mesh_delegate') || item.success === false) continue
+        const body = handoffResultText(item.result)
+        if (!body || value.includes(body)) continue
+        const node = String(item.params?.mesh_node || item.params?.node_id || '').trim()
+        const line = node ? `Ergebnis von ${node}:\n${body}` : body
+        if (!results.includes(line)) results.push(line)
+    }
+    const effects = completedEffects(executions, tools).filter(line => !value.includes(line))
+    const proven = [...results, ...(effects.length ? [`Erledigt: ${effects.join('; ')}.`] : [])]
+    return proven.length ? `${proven.join('\n\n')}\n\n${value}`.trim() : value
 }
 
 /** Values a successful hass_get returned in this run (at most 3); other reads have no safe short form. */
