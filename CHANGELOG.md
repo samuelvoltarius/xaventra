@@ -12,6 +12,19 @@
   helpers on nodes with a screen, maps and routes, music, a maker helper for
   boards and sensors.
 
+## [2.91.2] — 2026-10-30
+
+### Added
+
+- **Vault key from a Kubernetes Secret.** The Helm chart takes
+  `vaultKey.existingSecret` (key `vaultKey.key`, default `credential.key`):
+  every worker and an in-cluster Main mount the key read-only at
+  `/run/secrets/xaventra-credential-key`, outside the node's runtime folder.
+  Without the value nothing changes. A node whose stores are already sealed
+  needs the key it was sealed with (see `docs/KUBERNETES.md`).
+- `/doctor` names this Helm value when the vault key still lies in the data
+  tree inside Kubernetes (a warning, as before).
+
 ## [2.91.1] — 2026-10-30
 
 Sealed access data with the key outside the data tree, and a scout node for the home network.
