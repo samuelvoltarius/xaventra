@@ -16,8 +16,12 @@ const pods = (objects: Obj[]) => objects.filter(o => ['StatefulSet', 'DaemonSet'
 const mountOf = (pod: Obj) => pod.spec.template.spec.containers.flatMap((c: Obj) => c.volumeMounts || []).find((m: Obj) => m.mountPath === PATH)
 const volumeOf = (pod: Obj, name: string) => (pod.spec.template.spec.volumes || []).find((v: Obj) => v.name === name)
 
-describe.skipIf(!existsSync(join(CHART, 'Chart.yaml')))('Helm: vault key from a Secret', () => {
-    const chart = new HelmLite(CHART)
+// The repair sandbox snapshots no deploy/ files: the chart is only loaded where it exists (like helm-chart.test.ts).
+const CHART_PRESENT = existsSync(join(CHART, 'Chart.yaml')) && existsSync(join(CHART, 'templates'))
+const chart = (CHART_PRESENT ? new HelmLite(CHART) : null) as HelmLite
+
+if (!CHART_PRESENT) it.skip('Helm-Chart fehlt in diesem Abbild (Reparatur-Sandbox)', () => {})
+else describe('Helm: vault key from a Secret', () => {
 
     it('with vaultKey.existingSecret every worker and the Main mount the key read-only (0400, group of the container user)', () => {
         const objects = chart.objects({ values: { ...MAIN_ON, vaultKey: { existingSecret: 'xv-vault-key' } } })
