@@ -511,7 +511,7 @@ export async function runNovaAgent(params: AgentRunParams): Promise<AgentRespons
                 const { delegateTask } = await import('../mesh/mesh-registry.js')
                 // 2.90.1 (D1): the requester travels along, as with mesh_delegate and spawn_subagent.
                 const taskResult = await delegateTask(meshDelegation.host, content, { userId: authUserId })
-                if (taskResult) {
+                if (taskResult && taskResult.status !== 'failed') {
                     console.log(`[L18 Router] 🌐 Task delegated to ${meshDelegation.host}, taskId: ${taskResult.id}`)
                     // Wait briefly for result, otherwise return delegation notice
                     const { getTaskResult } = await import('../mesh/mesh-registry.js')

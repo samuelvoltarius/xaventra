@@ -143,6 +143,8 @@ export interface TaskDelegation {
     task: string
     status: 'pending' | 'accepted' | 'running' | 'done' | 'failed'
     result?: string
+    /** 2.90.4: why the transport did not hand the task over (status 'failed'); never guessed as "unreachable". */
+    failure?: { status: 'rejected' | 'unreachable' | 'error'; reason: string }
     created_at: number
     run_id?: string
     idempotency_key?: string
@@ -966,8 +968,15 @@ export async function delegateTask(
             console.log(`[Mesh] Task ${delegation.id} delegated to ${targetNodeId} via ${sent.ack.transport}`)
             return delegation
         }
+        // 2.90.4 (Telegram 23:23:51): the transport's answer is kept - a rejection was reported as "nicht erreichbar".
+        if (sent.ack.status === 'rejected' || sent.ack.status === 'unreachable') {
+            const reason = String(sent.ack.reason || (sent.ack.status === 'rejected' ? 'ohne Angabe' : 'keine Route')).slice(0, 200)
+            console.warn(`[Mesh] Task to ${targetNodeId} not handed over: ${sent.ack.status} (${reason})`)
+            return { ...delegation, status: 'failed', failure: { status: sent.ack.status, reason } }
+        }
     } catch (error) {
         console.warn(`[Mesh] Typed transport unavailable: ${String(error).slice(0, 160)}`)
+        return { ...delegation, status: 'failed', failure: { status: 'error', reason: String((error as Error)?.message || error).slice(0, 200) } }
     }
 
     // 2.90.1 (Codekarte D1): the old Supabase task-table fallback carried no user id (the peer ran the task

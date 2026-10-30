@@ -2743,7 +2743,14 @@ const meshTools: NovaTool[] = [
             const requested = Number(params.wait_seconds)
             const waitMs = Math.min(maxWait, Number.isFinite(requested) && requested >= 0 ? requested : maxWait) * 1000
             const result = await delegateTask(node.nodeId, String(params.task), { userId: requester, timeoutMs: waitMs || maxWait * 1000 })
-            if (!result) return '❌ Nicht an den Knoten übergeben: Knoten nicht erreichbar.'
+            if (!result) return '❌ Nicht an den Knoten übergeben: der Transport hat den Auftrag nicht angenommen.'
+            // 2.90.4: the real reason - a refusal ends the run like any refused hand-over (peer-refusal).
+            if (result.status === 'failed' && result.failure) {
+                if (result.failure.status === 'rejected') return { success: false, error: (await import('../mesh/peer-refusal.js')).peerRejectionSentence(node.nodeId, result.failure.reason) }
+                return { success: false, error: result.failure.status === 'unreachable'
+                    ? `Knoten ${node.nodeId} nicht erreichbar (${result.failure.reason}) — nicht übergeben.`
+                    : `Nicht an ${node.nodeId} übergeben: ${result.failure.reason}` }
+            }
             const handedOver = `An Knoten übergeben.\nID: ${result.id}\nKnoten: ${result.to_node}\nStatus: ${result.status}\nTransport: ${result.transport || 'legacy'}`
             // 2.89.12 (Telegram 28.10., ns2: uptime + df): the tool returned "pending" and the run went on
             // locally on the Main. Wait for the node's own result (direct runtime or task queue).
