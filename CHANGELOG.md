@@ -60,7 +60,7 @@ below), never a downgrade in place.
   of looking empty, Home Assistant is no longer marked „Anmeldung abgelaufen“
   and asks no new login, nothing is overwritten, and `/doctor` reports
   „Tresor-Speicher nicht lesbar: <Pfad>“. With the right key everything is
-  as before.
+  as before. „Ich komm nicht weiter“ says the same (no new login).
 
 ## [2.91.0] — 2026-10-30
 
