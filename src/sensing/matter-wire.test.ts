@@ -1,21 +1,19 @@
 import { it, expect } from 'vitest'
-import { buildSync } from 'esbuild'
-import { execFileSync } from 'node:child_process'
-import { fileURLToPath } from 'node:url'
-it('builds real pinned SDK wildcard read and argument-free exact OnOff invoke/readback paths', () => {
-    // Exercise the actual source against the real SDK in native Node ESM,
-    // rather than routing thousands of SDK modules through Vitest's mock loader.
-    // The child still has a stricter 15 s deadline; no mocks or relaxed oracle.
-    const source = buildSync({ entryPoints: [fileURLToPath(new URL('./matter-wire.ts', import.meta.url))], bundle: true,
-        packages: 'external', platform: 'node', format: 'esm', write: false }).outputFiles[0].text
-    const output = execFileSync(process.execPath, ['--input-type=module', '-e', source + `
-        const refresh = await matterRefreshRequest();
-        const switches = await Promise.all([true, false].map(on => matterSwitchRequests(7, on)));
-        let invalidRejected = false;
-        try { await matterSwitchRequests(0, true) } catch { invalidRejected = true }
-        console.log(JSON.stringify({ refresh, switches, invalidRejected }));
-    `], { cwd: fileURLToPath(new URL('../..', import.meta.url)), encoding: 'utf8', timeout: 15_000 })
-    const result = JSON.parse(output.trim())
+import { matterRefreshRequest, matterSwitchRequests } from './matter-wire.js'
+
+// The first load of the SDK (about 6200 files) took 10 to 18 s with cold files
+// and 1.3 s afterwards, on an idle machine: a child process with a 15 s limit
+// failed on the file cache, not on the code. The real SDK loads natively here
+// (Vitest externalizes node_modules, nothing below is mocked), so one generous
+// bound for the slow first load replaces the child process.
+const COLD_SDK_LOAD_MS = 120_000
+
+it('builds real pinned SDK wildcard read and argument-free exact OnOff invoke/readback paths', async () => {
+    const refresh = await matterRefreshRequest()
+    const switches = await Promise.all([true, false].map(on => matterSwitchRequests(7, on)))
+    await expect(matterSwitchRequests(0, true)).rejects.toThrow('Invalid Matter output')
+    // The requests as they leave for the wire: plain JSON, no SDK objects.
+    const result = JSON.parse(JSON.stringify({ refresh, switches }))
     expect(result.refresh).toMatchObject({ attributeRequests: [{}], isFabricFiltered: true })
     for (const [index, on] of [true, false].entries()) {
         const request = result.switches[index]
@@ -23,5 +21,4 @@ it('builds real pinned SDK wildcard read and argument-free exact OnOff invoke/re
         expect(request.invoke.invokeRequests[0].commandPath).toEqual({ endpointId: 7, clusterId: 6, commandId: on ? 1 : 0 })
         expect(request.read.attributeRequests).toEqual([{ endpointId: 7, clusterId: 6, attributeId: 0 }])
     }
-    expect(result.invalidRejected).toBe(true)
-}, 20_000)
+}, COLD_SDK_LOAD_MS)
