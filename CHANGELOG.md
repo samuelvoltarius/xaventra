@@ -28,6 +28,11 @@
   stores are re-sealed with it at start and read back; the old keys in the
   data tree are removed only when everything worked. See
   `docs/CONFIGURATION.md` → Vault key.
+  **Rollback note:** after this start migration an older version cannot read
+  the sealed stores any more. The native rollback uses the old runtime copy,
+  which the new version never touches (it migrates only its own runtime and
+  the key in `<root>/secrets`) — so the rollback works, but that old copy
+  still holds the plaintext files until the old runtime folders are removed.
 
 ## [2.90.3] — 2026-10-29
 
