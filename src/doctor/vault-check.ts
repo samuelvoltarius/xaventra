@@ -6,6 +6,7 @@
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
+import { recordErrorFinding } from '../core/self-doctor.js'
 import { openCredential, vaultKeySource } from '../secrets/local-sealed-store.js'
 import type { CheckResult, DoctorIssue } from './types.js'
 
@@ -23,9 +24,13 @@ export function checkVault(dataDirs: readonly string[]): CheckResult {
             try { raw = readFileSync(path, 'utf8') } catch { continue }
             if (!raw.startsWith('nova-sealed:')) continue
             try { openCredential(raw, path) } catch {
+                const store = relative(dataDir, path).split('\\').join('/')
+                // 2.92.0: one finding per store (signature = path); repeated checks only raise its count.
+                recordErrorFinding({ source: 'vault', key: `unreadable ${store}`, line: `Tresor-Speicher nicht lesbar: ${store}`,
+                    title: 'Tresor-Speicher nicht lesbar', category: 'config', severity: 'critical' })
                 issues.push({
                     code: 'VAULT_STORE_UNREADABLE', severity: 'error',
-                    message: `Tresor-Speicher nicht lesbar: ${relative(dataDir, path).split('\\').join('/')}`,
+                    message: `Tresor-Speicher nicht lesbar: ${store}`,
                     detail: 'Der Zugang ist gespeichert, aber der Schlüssel fehlt oder passt nicht — nichts gelöscht.',
                     fix: { type: 'info', hint: 'Den richtigen Tresor-Schlüssel wieder bereitstellen (NOVA_CREDENTIAL_KEY_FILE, systemd LoadCredential xaventra-credential-key oder Docker-Secret); danach ist der Zugang wieder da.', safe: false },
                 })

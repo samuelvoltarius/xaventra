@@ -157,7 +157,8 @@ const GENERIC = new Set([
  * minus generic words. Only these ever reach the store.
  */
 export function contentTerms(content: string): string[] {
-    const tokens = String(content || '').match(/[\p{L}][\p{L}\p{N}-]*/gu) ?? []
+    // Explicit type: tsc can mis-infer regex match results to `never` depending on the import graph (see llm-factory.ts).
+    const tokens: string[] = Array.from(String(content || '').match(/[\p{L}][\p{L}\p{N}-]*/gu) ?? [])
     const out: string[] = []
     tokens.forEach((token, index) => {
         if (index === 0 || token.length < 3 || !/^\p{Lu}/u.test(token)) return

@@ -156,7 +156,7 @@ export function recordRuntimeDoctorFinding(input: {
 // executes anything: the finding is the input for the read-only Doctor research.
 // ---------------------------------------------------------------------------
 
-export type ErrorFindingSource = 'uncaught-exception' | 'reply-delivery' | 'tool-failure'
+export type ErrorFindingSource = 'uncaught-exception' | 'reply-delivery' | 'tool-failure' | 'vault'
 
 export interface ErrorFindingInput {
     source: ErrorFindingSource
