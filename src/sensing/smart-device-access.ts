@@ -1,4 +1,5 @@
 /** Private per-device access, bound to the exact owner-approved route generation. */
+import { readSecretJson, sealPlaintextSecretsDir, writeSecretJson } from '../secrets/local-sealed-store.js'
 import { mkdirSync, chmodSync, readFileSync, writeFileSync, renameSync, rmSync } from 'node:fs'
 import { randomUUID, createHash } from 'node:crypto'
 import { join } from 'node:path'
@@ -17,18 +18,20 @@ const path = (root: string, id: string) => {
     if (!/^dev-[a-f0-9]{10}$/.test(id)) throw new Error('Invalid device ID')
     return join(root, 'secrets', 'smart-devices', id + '.json')
 }
-const read = (root: string, id: string): any => { try { const v = JSON.parse(readFileSync(path(root, id), 'utf8')); return v && typeof v === 'object' && !Array.isArray(v) ? v : {} } catch { return {} } }
+const read = (root: string, id: string): any => { try { const v = readSecretJson(path(root, id)); return v && typeof v === 'object' && !Array.isArray(v) ? v : {} } catch { return {} } }
 function save(root: string, d: DeviceRecord, field: string, values: object, owner: string): void {
     persist(root, d.id, { ...read(root, d.id), [field]: { ...values, fingerprint: sensingDeviceFingerprint(d), owner, approvedAt: d.approvedAt, revision: randomUUID() } })
 }
 function persist(root: string, id: string, values: object): void {
     const directory = join(root, 'secrets', 'smart-devices'); mkdirSync(directory, { recursive: true, mode: 0o700 })
-    const temporary = path(root, id) + '.' + randomUUID() + '.tmp'
-    try {
-        writeFileSync(temporary, JSON.stringify(values), { mode: 0o600, flag: 'wx' })
-        renameSync(temporary, path(root, id))
-    } finally { rmSync(temporary, { force: true }) }
-    try { chmodSync(directory, 0o700); chmodSync(path(root, id), 0o600) } catch {}
+    // 30.10.2026: sealed in the vault (local-sealed-store), never plaintext.
+    writeSecretJson(path(root, id), values)
+    try { chmodSync(directory, 0o700) } catch {}
+}
+
+/** Start migration (30.10.2026): plaintext Hue/Tuya keys are sealed (ids only in results). */
+export function migrateSmartDeviceSecretsToVault(root: string): { migrated: string[]; failed: string[] } {
+    return sealPlaintextSecretsDir(join(root, 'secrets', 'smart-devices'), /^dev-[a-f0-9]{10}$/)
 }
 function valid(value: any): value is TuyaLocalAccess {
     return typeof value?.key === 'string' && /^[\x21-\x7e]{16}$/.test(value.key) && ['3.1', '3.3', '3.4', '3.5'].includes(value.version)

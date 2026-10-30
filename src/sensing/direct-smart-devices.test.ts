@@ -1,4 +1,5 @@
 import { mkdtempSync, rmSync, readFileSync, existsSync } from 'node:fs'
+import { readSecretJson } from '../secrets/local-sealed-store.js'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, it, expect, vi } from 'vitest'
@@ -73,7 +74,9 @@ it('pairs only the approved local Hue bridge, reads actual lamp metadata and kee
     expect(directInventoryAwareness(p)).toContain('LCT015')
     expect(directInventoryAwareness(p)).not.toContain(key)
     expect(readFileSync(join(p, 'sensing', 'direct-inventory.json'), 'utf8')).not.toContain(key)
-    expect(JSON.parse(readFileSync(join(p, 'secrets', 'smart-devices', d.id + '.json'), 'utf8')).hueKey).toBe(key)
+    // 30.10.2026: the Hue key is sealed in the vault — never plaintext in the file, readable only through it.
+    expect(readFileSync(join(p, 'secrets', 'smart-devices', d.id + '.json'), 'utf8')).not.toContain(key)
+    expect(readSecretJson(join(p, 'secrets', 'smart-devices', d.id + '.json')).hueKey).toBe(key)
     request.mockClear()
     await refreshDirectInventory(p, signal, { interfaces, fetch: request })
     expect(request).not.toHaveBeenCalled() // measured metadata is cached for two minutes

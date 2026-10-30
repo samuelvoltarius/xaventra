@@ -236,7 +236,29 @@ TELEGRAM_ADMIN_CHAT_ID=your-chat-id
 OLLAMA_HOST=http://localhost:11434
 HETZNER_API_TOKEN=your-token        # For Auto-Provisioner
 NOVA_DOCKER_HOST=http://host:2375   # For Docker provisioning
+NOVA_CREDENTIAL_KEY_FILE=/var/lib/xaventra-native-<ver>-<date>/secrets/credential.key  # vault key outside the data tree
 ```
+
+### Vault key (30.10.2026)
+
+All sealed stores (Tresor `secrets/tresor`, connection access data `secrets/connections`,
+Hue/Tuya keys `secrets/smart-devices`, sealed fields of `auth.json`) use **one** key
+(AES-256-GCM, `src/secrets/local-sealed-store.ts`). It must not lie in the data tree that is
+copied for backups, peer swaps and the rollback copy of the runtime. Sources, in this order:
+
+1. systemd `LoadCredential=xaventra-credential-key:<path>` (read via `$CREDENTIALS_DIRECTORY`, never created).
+2. `NOVA_CREDENTIAL_KEY_FILE` — absolute path **outside** the runtime/data tree; created once (0600) if missing.
+   Native Main: `<root>/secrets/credential.key` next to `service.env`; the native update copies
+   `<oldRoot>/secrets` and rewrites `oldRoot → root` in `service.env`, so the key moves with the
+   secrets folder, never into the runtime copy.
+3. Docker peers: mount a secret at `/run/secrets/xaventra-credential-key` (read only), e.g.
+   `docker run --mount type=bind,src=/etc/xaventra/credential.key,dst=/run/secrets/xaventra-credential-key,readonly`.
+4. Without any of them the old per-directory key next to each store is used and the daemon warns at start.
+
+At start, plaintext secret files are sealed (backup, seal, read back) and, with an external key,
+every sealed store is re-sealed with it and read back; the old in-tree `.credential-key` files are
+removed only when nothing failed. A store that opens with no known key stays untouched. Only ids
+and paths are logged, never values.
 
 ---
 

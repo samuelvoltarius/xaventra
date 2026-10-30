@@ -357,7 +357,7 @@ export async function formatConnectionsText(deps: ViewDeps = {}): Promise<string
     const connected = view.verbunden.filter(item => item.status === 'verbunden')
     lines.push(connected.length ? `Verbunden: ${connected.map(item => item.title).join(', ')}` : 'Verbunden: noch nichts')
     const waiting = view.verbunden.filter(item => item.status !== 'verbunden')
-    if (waiting.length) lines.push(`Wartet: ${waiting.map(item => `${item.title} (${item.status === 'abgelaufen' ? 'Anmeldung abgelaufen' : item.status === 'wartet-auf-zugang' ? 'Zugang fehlt' : item.status === 'fehler' ? 'Fehler' : item.status === 'nicht-erreichbar' ? `nicht erreichbar${item.nichtErreichbar?.adresse ? ` unter ${item.nichtErreichbar.adresse}` : ''}` : 'Anmeldung fehlt'})`).join(', ')}`)
+    if (waiting.length) lines.push(`Wartet: ${waiting.map(item => `${item.title} (${item.status === 'abgelaufen' ? 'Anmeldung abgelaufen' : item.status === 'schluessel-fehlt' ? 'Zugang gespeichert, aber der Schlüssel fehlt — nichts gelöscht' : item.status === 'wartet-auf-zugang' ? 'Zugang fehlt' : item.status === 'fehler' ? 'Fehler' : item.status === 'nicht-erreichbar' ? `nicht erreichbar${item.nichtErreichbar?.adresse ? ` unter ${item.nichtErreichbar.adresse}` : ''}` : 'Anmeldung fehlt'})`).join(', ')}`)
     const inUse = view.gefunden.filter(item => item.verbunden && item.datenklasse === 'lokal' && !item.connectorId)
     if (inUse.length) lines.push(`Lokal in Nutzung: ${inUse.slice(0, 6).map(item => item.title).join(', ')}`)
     const found = view.gefunden.filter(item => !item.verbunden)

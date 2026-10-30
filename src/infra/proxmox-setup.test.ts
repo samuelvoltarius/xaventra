@@ -62,10 +62,12 @@ describe('Proxmox ohne Config (2.88)', () => {
         expect(runtime.ok).toBe(true)
         if (runtime.ok) expect(runtime.config).toMatchObject({ url: 'https://192.0.2.10:8006', fingerprint: FP, pool: 'xaventra' })
         expect(deps.fake.writes()).toEqual([])
-        // The token is only in the 0600 secrets file — not in the setup file, the card or the view.
+        // The token is only in the sealed 0600 secrets file — not in the setup file, the card or the view.
         const everything = JSON.stringify([readProxmoxAppSetup({ dataDir: dir }), listApprovalCards({ dataDir: dir, ledger: null }), await proxmoxAnsicht(deps)])
         expect(everything).not.toContain(token.split('=')[1])
-        expect(readdirSync(join(dir, 'secrets', 'connections'))).toEqual(['c-proxmox-adapter.json'])
+        // One secrets file per connection, next to the vault key (30.10.2026: sealed, never plaintext).
+        expect(readdirSync(join(dir, 'secrets', 'connections')).filter(name => name !== '.credential-key')).toEqual(['c-proxmox-adapter.json'])
+        expect(readFileSync(join(dir, 'secrets', 'connections', 'c-proxmox-adapter.json'), 'utf8')).not.toContain(token.split('=')[1])
         expect(readFileSync(join(dir, 'connections', 'proxmox.json'), 'utf8')).not.toContain(token.split('=')[1])
     })
 

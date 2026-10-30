@@ -192,7 +192,7 @@ export async function collectHeute(opts: ViewOptions = {}): Promise<HeuteView> {
     }, problems) ?? 0
     const verbindungFehler = await attempt('Verbindungen', async () => {
         const { loadConnections } = await import('../connections/connection-store.js')
-        return loadConnections({ dataDir: opts.dataDir }).filter(item => item.status === 'fehler' || item.status === 'abgelaufen' || item.status === 'nicht-erreichbar').length
+        return loadConnections({ dataDir: opts.dataDir }).filter(item => item.status === 'fehler' || item.status === 'abgelaufen' || item.status === 'nicht-erreichbar' || item.status === 'schluessel-fehlt').length
     }, problems) ?? 0
     const { buildCockpit, cockpitZeilen } = await import('../guided/ampel.js')
     const zeilen = cockpitZeilen(bericht?.abschnitte)

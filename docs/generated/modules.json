@@ -1367,6 +1367,7 @@
       "imports": [
         "../core/atomic-storage.js",
         "../core/data-root.js",
+        "../secrets/local-sealed-store.js",
         "./connector-catalog.js",
         "node:crypto",
         "node:fs",
@@ -3857,6 +3858,15 @@
     {
       "module": "src/doctor/types.ts",
       "imports": []
+    },
+    {
+      "module": "src/doctor/vault-check.ts",
+      "imports": [
+        "../secrets/local-sealed-store.js",
+        "./types.js",
+        "node:fs",
+        "node:path"
+      ]
     },
     {
       "module": "src/gateway.ts",
@@ -6899,6 +6909,7 @@
       "module": "src/sensing/direct-smart-devices.ts",
       "imports": [
         "../core/atomic-storage.js",
+        "../secrets/local-sealed-store.js",
         "../security/secret-redaction.js",
         "./connect-progress.js",
         "./device-registry.js",
@@ -7169,6 +7180,7 @@
     {
       "module": "src/sensing/smart-device-access.ts",
       "imports": [
+        "../secrets/local-sealed-store.js",
         "./device-registry.js",
         "./smart-device-route.js",
         "node:crypto",

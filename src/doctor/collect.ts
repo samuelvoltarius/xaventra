@@ -653,6 +653,10 @@ export async function collectDiagnostics(): Promise<DoctorReport> {
     const channelsResult = checkChannels(config)
     const meshResult = checkMesh()
     const gpuResult = checkGpuRuntime(gpuStatus)
+    // 30.10.2026: a sealed store no key opens is a finding, never a silent "no access".
+    const { checkVault } = await import('./vault-check.js')
+    const { getNovaDataDir } = await import('../core/data-root.js')
+    const vaultResult = checkVault([getNovaDataDir(), join(process.cwd(), '.nova-data')])
 
     // Flatten all issues
     const allIssues: DoctorIssue[] = [
@@ -664,6 +668,7 @@ export async function collectDiagnostics(): Promise<DoctorReport> {
         ...providersResult.issues,
         ...channelsResult.issues,
         ...meshResult.issues,
+        ...vaultResult.issues,
     ]
 
     // Sort: errors → warnings → info
@@ -676,10 +681,10 @@ export async function collectDiagnostics(): Promise<DoctorReport> {
     const warnings = allIssues.filter(i => i.severity === 'warning').length
     const infos = allIssues.filter(i => i.severity === 'info').length
     const checkCount = Object.values({
-        configResult, envResult, runtimeResult, gpuResult, portsResult, providersResult, channelsResult, meshResult,
+        configResult, envResult, runtimeResult, gpuResult, portsResult, providersResult, channelsResult, meshResult, vaultResult,
     }).length
     const okCount = Object.values({
-        configResult, envResult, runtimeResult, gpuResult, portsResult, providersResult, channelsResult, meshResult,
+        configResult, envResult, runtimeResult, gpuResult, portsResult, providersResult, channelsResult, meshResult, vaultResult,
     }).filter(r => r.ok).length
 
     // Config snapshot — non-secret fields only

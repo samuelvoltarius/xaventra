@@ -12,6 +12,37 @@
   helpers on nodes with a screen, maps and routes, music, a maker helper for
   boards and sensors.
 
+## [2.91.1] — 2026-10-30
+
+### Security
+
+- **Access data of connections is sealed.** Tokens, passwords and logins
+  entered for a connection (Home Assistant, Proxmox, telephone, n8n, …) lay
+  as plain JSON (file mode 0600) under `secrets/connections`. They are now
+  written sealed (AES-256-GCM, separate owner-only key). Existing plain files
+  are moved at start: a short backup, seal, read back, then the plain copy is
+  gone; a file that cannot be read stays untouched. Only connection ids are
+  logged, never values. Hue and Tuya keys of smart devices are sealed the same way.
+- **The vault key no longer travels with the data.** All sealed stores use one
+  key that can live outside the data tree (systemd credential,
+  `NOVA_CREDENTIAL_KEY_FILE`, or a Docker secret), so a copied backup or the
+  rollback copy of the runtime no longer holds lock and key together. Existing
+  stores are re-sealed with it at start and read back; the old keys in the
+  data tree are removed only when everything worked. See
+  `docs/CONFIGURATION.md` → Vault key.
+  **Rollback note:** after this start migration an older version cannot read
+  the sealed stores any more. The native rollback uses the old runtime copy,
+  which the new version never touches (it migrates only its own runtime and
+  the key in `<root>/secrets`) — so the rollback works, but that old copy
+  still holds the plaintext files until the old runtime folders are removed.
+- **A missing vault key is said, never hidden.** When a sealed store opens
+  with no known key, the connection shows „Der Zugang ist gespeichert, aber
+  der Schlüssel fehlt — nichts gelöscht“ (status `schluessel-fehlt`) instead
+  of looking empty, Home Assistant is no longer marked „Anmeldung abgelaufen“
+  and asks no new login, nothing is overwritten, and `/doctor` reports
+  „Tresor-Speicher nicht lesbar: <Pfad>“. With the right key everything is
+  as before.
+
 ## [2.91.0] — 2026-10-30
 
 Topic threads, step 1 (shadow). The owner keeps one chat; inside, every message
