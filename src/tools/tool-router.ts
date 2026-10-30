@@ -759,7 +759,8 @@ export function getRelevantTools(
         ...liveTools,
         ...rankedPacks.filter(candidate => candidate.primaryScore > 0).flatMap(candidate => candidate.pack.tools),
         ...dynamic,
-        ...(topicless ? [] : rankedPacks.filter(candidate => candidate.primaryScore <= 0).flatMap(candidate => candidate.pack.tools)),
+        // 2.92.2 (Akku 13:20:10 „Activated packs: mesh-network, web-search“): a question with its own profile topic neither.
+        ...(topicless || profileTools.length ? [] : rankedPacks.filter(candidate => candidate.primaryScore <= 0).flatMap(candidate => candidate.pack.tools)),
     ]
     const relevant = [...new Set(prioritizedNames)]
         .filter(name => !excluded.has(name) && !credentialMissing(name))

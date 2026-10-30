@@ -737,6 +737,11 @@ export async function runNovaAgent(params: AgentRunParams): Promise<AgentRespons
         const hassPlan = overviewPlan || k8sPlan ? null : homeAssistantStatusPlan({ content, permission: getUserPermission(authUserId, channel),
             internal: isInternalRequest, hasImage: Boolean(image), constrained: Boolean(kernel.contract.responseConstraints?.length), tools: toolDefinitions })
         if (hassPlan) forcedToolResponse = { content: '', toolCalls: hassPlan, finishReason: 'tool_calls' }
+        // 2.92.2: „welche knoten sind offline?“ starts with the mesh status, not the device inventory.
+        if (!forcedToolResponse && !isInternalRequest && !image && toolDefinitions.some((tool: any) => tool.name === 'mesh_status')) {
+            const { isNodeStatusQuestion } = await import('../core/request-capabilities.js')
+            if (isNodeStatusQuestion(content)) forcedToolResponse = { content: '', toolCalls: [{ name: 'mesh_status', arguments: {} }], finishReason: 'tool_calls' }
+        }
         // 2.89.9: a live value (battery, range, state ...) of a profile vehicle/device starts with Home Assistant, never with memory.
         let liveValueAsked: LiveValueQuestion | null = null
         if (getUserPermission(authUserId, channel) === 'owner' && !isInternalRequest && !image) {

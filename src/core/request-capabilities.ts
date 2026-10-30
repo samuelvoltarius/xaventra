@@ -102,7 +102,16 @@ export function isKubernetesStatusQuestion(text: string): boolean {
     return !/\b(?:neustart\w*|restart\w*|starte?|stoppe?|beende|installier\w*|deinstallier\w*|lösch\w*|loesch\w*|entfern\w*|skalier\w*|scale|update\w*|aktualisier\w*|deploy\w*|exec|shell|ssh|kubectl|helm|konfigurier\w*|label\w*|patch\w*|schalt\w*|reparier\w*)\b/i.test(value)
 }
 
+/** 2.92.2 („welche knoten sind offline?“ bekam die Geräteliste): a status question about the nodes, not an inventory. */
+export function isNodeStatusQuestion(text: string): boolean {
+    const value = String(text ?? '').trim()
+    if (value.length > 120 || value.startsWith('/') || mentionsScreenshot(value)) return false
+    return /(?<![\p{L}\p{N}_])(?:knoten|nodes?)(?![\p{L}\p{N}_])/iu.test(value)
+        && /(?<![\p{L}\p{N}_])(?:offline|online|erreichbar|unerreichbar|ausgefallen|down)(?![\p{L}\p{N}_])/iu.test(value)
+}
+
 export function isEnvironmentOverview(text: string): boolean {
+    if (isNodeStatusQuestion(text)) return false
     // Mesh-wide inventory is already read-only and all-nodes.
     if (isMeshWideInventoryRequest(text)) return true
     // "send mir was ..." requests a textual overview, not a file transfer.
