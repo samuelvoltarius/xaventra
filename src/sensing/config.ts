@@ -56,6 +56,8 @@ export interface SensingConfig {
         system: { enabled: boolean; intervalSec: number; timeoutSec: number }
     }
     discovery: { enabled: boolean; deadlineSec: number; ratePerSec: number; concurrency: number; maxHosts: number; mdns: boolean; tailnetHosts: string[]; firstRunDelaySec: number; intervalHours: number }
+    /** Späher (30.10.2026): this mesh worker searches its own networks and reports to Main. Only an explicit `true`. */
+    scout: boolean
 }
 
 export const DEFAULT_KEYWORDS = Object.freeze(['angebot', 'rechnung', 'termin', 'offer', 'quote', 'invoice', 'appointment'])
@@ -140,5 +142,6 @@ export function parseSensingConfig(raw: unknown, env: NodeJS.ProcessEnv = proces
             firstRunDelaySec: num(discovery.firstRunDelaySec, 120, 0, 86_400),
             intervalHours: num(discovery.intervalHours, 1, 1, 24 * 30),
         },
+        scout: root.scout === true,
     }
 }

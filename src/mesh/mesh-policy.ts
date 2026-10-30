@@ -1,4 +1,5 @@
 import { COORDINATED_KINDS, isSafeMeshKind, type AgentRequestPayload, type CodexCompletionRequestPayload, type CodexStatusRequestPayload, type MeshEnvelope, type MeshEnvelopeKind, type MeshMode, type MeshPeer, type MeshRole, type MissionRequestPayload, type RunCancelPayload, type ToolRequestPayload } from './transport-contracts.js'
+import { validDiscoveryReport } from './discovery-report.js'
 import { MeshIdentity, MeshReplayGuard } from './mesh-identity.js'
 import { join } from 'node:path'
 import { getNovaDataDir } from '../core/data-root.js'
@@ -49,6 +50,8 @@ const REQUEST_ROLES: Partial<Record<MeshEnvelopeKind, readonly MeshRole[]>> = {
     'exchange.request': ['system', 'owner', 'admin'],
     'git.request': ['system', 'owner', 'admin'],
     'capture.request': ['system', 'owner', 'admin'],
+    // Späher (30.10.2026): a scout worker reports its own-network findings; observers never.
+    'discovery.report': ['system', 'worker'],
     'codex.status.request': ['system', 'owner', 'admin'],
     'codex.complete.request': ['system', 'owner', 'admin'],
     // 2.88 Main succession (journal replication, share release): node-to-node only.
@@ -192,6 +195,8 @@ export class MeshPolicy {
             }
         }
         if (envelope.kind === 'tool.request') return this.verifyTool(envelope, peer)
+        if (envelope.kind === 'discovery.report') return validDiscoveryReport(envelope.payload)
+            ? { accepted: true } : { accepted: false, reason: 'invalid_discovery_report' }
         if (envelope.kind === 'capture.request') return validNodeCaptureRequest(envelope.payload) && envelope.targetNode !== '*'
             ? { accepted: true } : { accepted: false, reason: 'invalid_capture_request' }
         if (envelope.kind === 'exchange.request') return validExchangeRequest(envelope.payload) && envelope.targetNode !== '*'

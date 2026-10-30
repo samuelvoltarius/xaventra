@@ -235,6 +235,12 @@ export function reportedRemoteAgentTools(node: string): string[] | undefined {
     return [...list]
 }
 
+/** Späher: broadcast the own-network findings; only Main (not node-only) takes them over. */
+export async function publishDiscoveryReport(payload: import('./discovery-report.js').DiscoveryReportPayload): Promise<void> {
+    const transport = router || initMeshTransportRuntime()
+    await transport.broadcast(transport.create('discovery.report', '*', payload))
+}
+
 export function currentCaptureNodes(): string[] {
     return [getLocalNodeId(), ...Object.values(peerStates).filter(p => Date.now() - p.lastSeen < 120_000 && watchKnownNodes().includes(p.nodeId)).map(p => p.nodeId)].filter((id, i, all) => all.indexOf(id) === i).slice(0, 16)
 }
@@ -655,6 +661,15 @@ async function handleEnvelope(envelope: MeshEnvelope, messageHandler?: MessageHa
         // P19: replaced Kubernetes replica pods must not pile up forever.
         if (workloadPeerEntries.length) peerStates = pruneEphemeralPeerStates(peerStates, workloadPeerEntries)
         persistPeerStates(); return
+    }
+    if (envelope.kind === 'discovery.report') {
+        // Späher: only Main takes over findings; the router already verified signature, peer and role.
+        if (process.env.NOVA_NODE_ONLY === 'true') return
+        const { validDiscoveryReport } = await import('./discovery-report.js')
+        if (!validDiscoveryReport(envelope.payload)) return
+        const { ingestScoutReport } = await import('../sensing/runtime.js')
+        await ingestScoutReport(envelope.sourceNode, envelope.payload).catch(() => undefined)
+        return
     }
     if (envelope.kind === 'node.tools') {
         peerStates[envelope.sourceNode] = { ...peerStates[envelope.sourceNode], nodeId: envelope.sourceNode, lastSeen: Date.now(), tools: envelope.payload as ToolInventoryPayload, publicKeyFingerprint: MeshIdentity.fingerprint(envelope.publicKey) }

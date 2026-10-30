@@ -14,6 +14,23 @@
 
 ## [2.91.1] — 2026-10-30
 
+Sealed access data with the key outside the data tree, and a scout node for the home network.
+
+**Operation:** set `NOVA_CREDENTIAL_KEY_FILE` (or a systemd credential / Docker secret) to a key file
+outside the runtime folder before the first start of 2.91.1; the start migration re-seals all stores
+with it. The way back is only the old runtime copy (see the rollback note below), not a downgrade in place.
+
+### Added
+
+- **A scout node finds devices in its own network.** Device search ran only
+  on Main, which stands at another site and does not see the home LAN. A mesh
+  worker with `autonomy.sensing.scout: true` (off by default; meant for the
+  NAS) now runs the same careful search in its own networks and sends the
+  findings signed to Main. Main checks every address with the same rule as
+  before (never public, only inside the scout's private network), notes which
+  node saw it, and asks as usual before connecting anything. Unsigned,
+  changed or malformed reports and reports from observers are dropped.
+
 ### Security
 
 - **Access data of connections is sealed.** Tokens, passwords and logins

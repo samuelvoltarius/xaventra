@@ -117,6 +117,14 @@ API request needs a token, unknown `Host` names (DNS rebinding) and foreign
 - `quietHours`: the one quiet-hours definition for every owner message (planner thoughts, loop, messenger, sensing).
 - `thresholds`: the one disk/RAM threshold definition for L0, L21, node self-check, Nachtwache (unless a check sets its own), self-heal and the Wächter RAM forecast. On a vLLM node (detected from the node profile or a running vLLM process; force with `memory.vllmNode`) the RAM percentage is no finding, because vLLM reserves GPU unified memory permanently: a warning needs available memory below `memory.vllmMinAvailableMB` (default 4096, critical below half), swap growing by `memory.vllmSwapGrowthMB` (default 1024) between checks, or an OOM kill (critical on every node).
 
+- `sensing.scout` (Späher, only an explicit `true`, per node): this mesh worker searches **its own**
+  networks (the same bounded discovery as Main: fixed ports, mDNS, SSDP, Tuya; private subnets of
+  its own interfaces up to /24 and its own tailnet only) and sends the findings as a signed
+  `discovery.report` to Main. Main accepts reports only from configured peers with role
+  `worker`/`system`, applies the same gate (net-scope: never public, only inside the reported private
+  subnet) and records accepted devices with `seenBy`; cards and connections stay on Main. Example for
+  the NAS in the home LAN: `"autonomy": { "sensing": { "enabled": true, "scout": true } }`.
+
 `socialCheckIns` and `dream-cycle` are opt-in. Operational events are handled
 separately and may notify only when their producer is trusted or supplies a
 fresh Outcome/Tool/Health/Mesh/Trace/Doctor evidence reference. Generic LLM
