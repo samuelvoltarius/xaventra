@@ -17,8 +17,10 @@
 Sealed access data with the key outside the data tree, and a scout node for the home network.
 
 **Operation:** set `NOVA_CREDENTIAL_KEY_FILE` (or a systemd credential / Docker secret) to a key file
-outside the runtime folder before the first start of 2.91.1; the start migration re-seals all stores
-with it. The way back is only the old runtime copy (see the rollback note below), not a downgrade in place.
+outside the runtime/data tree (native Main: `<root>/secrets/credential.key` next to `service.env`); the start
+migration re-seals all stores with it and reads them back. Without it the old key next to each store keeps
+working and the daemon warns at start. The way back is only the old runtime copy (see the rollback note
+below), never a downgrade in place.
 
 ### Added
 

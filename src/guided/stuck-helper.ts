@@ -58,9 +58,12 @@ export function findeLoesung(q: HilfeQuellen): HilfeAntwort | null {
     const mapped = (severity: DoctorIssue['severity']) => issues.filter(issue => issue.severity === severity).map(issue => HILFE_DIAGNOSE[issue.code]).find(Boolean)
     const error = mapped('error')
     if (error) return { ...error, quelle: 'diagnose' }
-    const login = (q.verbindungen || []).find(item => ['abgelaufen', 'wartet-auf-anmeldung', 'fehler', 'nicht-erreichbar', 'wartet-auf-zugang'].includes(item.status))
+    const login = (q.verbindungen || []).find(item => ['abgelaufen', 'wartet-auf-anmeldung', 'fehler', 'nicht-erreichbar', 'wartet-auf-zugang', 'schluessel-fehlt'].includes(item.status))
     if (login) {
-        const satz = login.status === 'nicht-erreichbar'
+        // 2.91.1: a sealed store without its key is no expired login - nothing to sign in again, nothing deleted.
+        const satz = login.status === 'schluessel-fehlt'
+            ? `Der Zugang zu ${login.title} ist gespeichert, aber der Tresor-Schlüssel fehlt — nichts gelöscht. Sobald der richtige Schlüssel wieder bereitsteht, ist der Zugang wieder da; /doctor zeigt den betroffenen Speicher.`
+            : login.status === 'nicht-erreichbar'
             ? `${login.title} ist gerade nicht erreichbar; die Anmeldung ist in Ordnung und ich versuche es selbst wieder.`
             : login.status === 'fehler'
             ? `${login.title} antwortet gerade nicht; unter „Verbindungen“ kannst du die Verbindung einmal neu herstellen.`
