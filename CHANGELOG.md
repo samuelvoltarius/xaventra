@@ -25,6 +25,7 @@ Goal reached means done. Every fix red first from the real flow, with a counter-
 - **/doctor.** The headline names warnings; a port change is never a safe fix.
 - **Test pods.** The official nginx image is refused in the plan, with `nginxinc/nginx-unprivileged` as the hint.
 - **Version.** One source of the running version (`src/core/running-version.ts`), never the working directory.
+- **The repair sandbox starts again.** It allowed 1024 open files; with about 1000 test files vitest stopped before the first test (`EMFILE`). The limit is now 8192 and a test keeps it well above the real test file count.
 
 ### Changed
 
