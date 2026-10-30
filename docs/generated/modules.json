@@ -2316,6 +2316,10 @@
       "imports": []
     },
     {
+      "module": "src/core/panoptes-notify.ts",
+      "imports": []
+    },
+    {
       "module": "src/core/paths.ts",
       "imports": [
         "../config/config-path.js",
@@ -7090,6 +7094,21 @@
       "imports": [
         "../core/proactive.js",
         "./ports.js"
+      ]
+    },
+    {
+      "module": "src/sensing/panoptes-client.ts",
+      "imports": []
+    },
+    {
+      "module": "src/sensing/panoptes-standbild.ts",
+      "imports": [
+        "../core/data-root.js",
+        "../secrets/local-sealed-store.js",
+        "./panoptes-client.js",
+        "node:crypto",
+        "node:fs",
+        "node:path"
       ]
     },
     {

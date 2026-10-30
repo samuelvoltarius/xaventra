@@ -265,6 +265,17 @@ PNG/JPEG up to 8 MB; no link, no free path. Images of the car (`auto/`) and loca
 screenshots are refused. Without a MiniMax key the answer says so; such an image never goes to
 another service. `minimax_vision` takes https addresses only.
 
+### Panoptes still on a guard event (30.10.2026)
+
+`"autonomy": { "panoptes": { "enabled": true, "url": "http://<car-address>:<port>" } }` (default off,
+Main only). `/panoptes koppeln` (owner) requests a pairing of kind `dienst` and shows the check number;
+the owner allows it at the car and switches on „Standbild bei Ereignis“ there. The JWT stays sealed in
+the vault. Then one still per `ereignisId` is fetched, kept at most 72 h in `.nova-vision/auto`,
+evaluated with MiniMax and sent to the owner. The client (`src/sensing/panoptes-client.ts`) has a hard
+path allowlist: pairing, `/api/ha/v1/ereignisse`, `/api/waechter/standbild/<id>`,
+`/api/surveillance/status`, `/api/sitzung/erneuern|abmelden`. No clips, recordings, vehicle endpoints
+or coordinates. An event without `ereignisId` is logged honestly and nothing is fetched.
+
 ### Cameras (30.10.2026)
 
 The search recognises cameras without login. After the owner's Ja on the card, user and password

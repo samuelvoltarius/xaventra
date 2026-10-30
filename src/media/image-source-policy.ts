@@ -4,7 +4,7 @@
  *   - only files in the private image folders under `.nova-vision`, never a free path
  *   - node captures only from released nodes (default the lab; XAVENTRA_VISION_NODES)
  *   - camera stills in `kamera/`
- *   - images of the car (`auto/`) stay refused until the Panoptes rules allow them
+ *   - images of the car (`auto/`): only the single Panoptes still of an event, at most 72 h old
  *   - local desktop screenshots stay refused (Alfred's PC block, until he lifts it)
  * Bytes never go to logs, audit, model text or memory.
  */
@@ -12,10 +12,11 @@ import { lstatSync, readFileSync, realpathSync } from 'node:fs'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { getRuntimeRoot } from '../core/data-root.js'
 
-export type ImageSource = 'lab' | 'kamera'
+export type ImageSource = 'lab' | 'kamera' | 'auto'
 export interface SendableImage { base64: string; mime: 'image/png' | 'image/jpeg'; source: ImageSource }
 
 const MAX_BYTES = 8 * 1024 * 1024
+const AUTO_MAX_AGE_MS = 72 * 60 * 60_000
 const PNG = Buffer.from('89504e470d0a1a0a', 'hex')
 const JPEG = Buffer.from('ffd8ff', 'hex')
 const visionRoot = () => join(getRuntimeRoot(), '.nova-vision')
@@ -39,7 +40,12 @@ function sourceOf(path: string): ImageSource {
         if (node && allowedNodes().includes(node)) return 'lab'
         throw refused(node ? `Aufnahme von ${node}` : 'Aufnahme ohne Knotenangabe')
     }
-    if (folder === 'auto') throw refused('Bild vom Auto (nur nach den Panoptes-Regeln)')
+    if (folder === 'auto') {
+        let fresh = false
+        try { fresh = Date.now() - lstatSync(full).mtimeMs <= AUTO_MAX_AGE_MS } catch { /* missing file: refused below */ }
+        if (/^panoptes_[a-f0-9]{32}\.jpg$/.test(basename(full)) && fresh) return 'auto'
+        throw refused('Bild vom Auto (nur frische Panoptes-Standbilder)')
+    }
     throw refused('lokale Desktop-Aufnahme')
 }
 

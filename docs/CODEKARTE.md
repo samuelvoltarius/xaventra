@@ -412,6 +412,9 @@ Werkzeuge `mesh_screenshot` + `mesh_desktop_input` (`docs/COMPUTER_USE.md`).
 spricht nur `/api/desktop` an. „Relay" in diesem Repo = Mesh-Relay
 (`src/mesh/relay-server.ts`).
 
+Panoptes-Standbild: `src/sensing/panoptes-client.ts` (Erlaubnisliste) und
+`src/sensing/panoptes-standbild.ts`; Bildquellen-Sperre `src/media/image-source-policy.ts`.
+
 **Tests:** `src/desktop/*.test.ts`, `src/desktop-direct/*.test.ts`,
 `src/host/*.test.ts`, `desktop/tests/*` (`npm run test:desktop`),
 `check:desktop-ui`, `check:desktop-core`.

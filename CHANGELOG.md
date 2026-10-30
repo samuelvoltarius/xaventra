@@ -19,6 +19,24 @@
   whole-project check could not pass. The limit is now 8192 and a test keeps it
   well above the real number of test files.
 
+### Added (next patch, version set at release)
+
+- **Connect a camera.** After your Ja on the card you enter user and password
+  once in the app; they stay sealed in the vault. „Zeig mir die Einfahrt“ then
+  fetches one still (ONVIF), on the node that found the camera, over the
+  encrypted direct mesh path. No video, no sound, nothing runs on its own, and
+  the still is gone after 24 hours. Without access, or with a pure RTSP camera,
+  she says so and tries nothing.
+  On Telegram the still goes to the asking owner as a picture; if that fails,
+  or in the app (no attachment way yet), she says so.
+- **A still from the car when the guard notices something.** With
+  `autonomy.panoptes` switched on and after pairing (`/panoptes koppeln` shows
+  the check number, you allow it at the car and switch on „Standbild bei
+  Ereignis“ there), Xaventra fetches exactly one still per event, evaluates it
+  with MiniMax and sends it to you. Kept at most 72 hours. No clips, no live
+  image, no vehicle commands, no coordinates; the client refuses every other
+  path.
+
 ## [2.92.1] — 2026-10-30
 
 One way, step 1: the owner has one history on every surface. Plus cameras recognised without login and local stills for the vision model.
@@ -60,17 +78,6 @@ One way, step 1: the owner has one history on every surface. Plus cameras recogn
   and maker it names openly, and a card „Neu gefunden: Kamera …“ says how she
   would connect. No image is fetched, nothing is logged in to, and default
   passwords are never tried; access data is entered only by the owner.
-
-### Added (next patch, version set at release)
-
-- **Connect a camera.** After your Ja on the card you enter user and password
-  once in the app; they stay sealed in the vault. „Zeig mir die Einfahrt“ then
-  fetches one still (ONVIF), on the node that found the camera, over the
-  encrypted direct mesh path. No video, no sound, nothing runs on its own, and
-  the still is gone after 24 hours. Without access, or with a pure RTSP camera,
-  she says so and tries nothing.
-  On Telegram the still goes to the asking owner as a picture; if that fails,
-  or in the app (no attachment way yet), she says so.
 
 ## [2.92.0] — 2026-10-30
 

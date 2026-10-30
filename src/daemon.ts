@@ -1830,6 +1830,16 @@ async function startDaemon() {
             setSensingSinks({ thoughtSink: createSensingThoughtSink(), eventSink: createResponsibilityEventSink(createAutoReminderEventSink(new JsonlEventSink(join(process.cwd(), '.nova-data')))) })
             const sensing = startSensing({ nodeOnly: process.env.NOVA_NODE_ONLY === 'true' })
             if (sensing.started) console.log(`[Nova] ✓ Wahrnehmen aktiv (${sensing.reason})`)
+            // Wächter-Standbild über die Panoptes-Kopplung: Schalter aus = nichts; nur am Main.
+            if (process.env.NOVA_NODE_ONLY !== 'true') {
+                const { startPanoptes } = await import('./sensing/panoptes-standbild.js')
+                const { sensingDataDir } = await import('./sensing/runtime.js')
+                const { setPanoptesNotifier } = await import('./sensing/panoptes-standbild.js')
+                const { telegramPanoptesNotify } = await import('./core/panoptes-notify.js')
+                setPanoptesNotifier(telegramPanoptesNotify)
+                const panoptes = startPanoptes((autonomyCfg as any).panoptes, sensingDataDir())
+                if (panoptes.started) console.log(`[Nova] ✓ Panoptes: ${panoptes.reason}`)
+            }
         } catch (err) { console.debug(`[Nova] Wahrnehmen skipped: ${err}`) }
 
         await startAutonomyLoop(notifyFn, {
