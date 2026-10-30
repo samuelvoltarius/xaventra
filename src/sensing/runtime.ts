@@ -153,6 +153,13 @@ export function buildSensingBus(options: { nodeId?: string; role?: 'main' | 'wor
  * duplicate the main's observations, and they never talk to the owner.
  */
 export function startSensing(options: { nodeOnly: boolean; nodeId?: string; autoDiscovery?: boolean; discoveryRunner?: () => Promise<unknown>; scoutRunner?: () => Promise<unknown> }): { started: boolean; reason: string } {
+    // 2.91.2: a scout that does not start says why (it was a silent gap on the NAS).
+    const scoutBlocked = options.nodeOnly && state.config.scout
+        ? (!state.config.enabled ? 'autonomy.sensing.enabled=false' : !state.config.discovery.enabled ? 'autonomy.sensing.discovery.enabled=false' : '') : ''
+    if (scoutBlocked) {
+        sensingLog(`Späher steht an, startet nicht: ${scoutBlocked}`)
+        return { started: false, reason: `Späher startet nicht: ${scoutBlocked}` }
+    }
     if (!state.config.enabled) return { started: false, reason: 'autonomy.sensing.enabled=false' }
     // Späher (30.10.2026): a worker only searches when the operator made it a scout; no adapters,
     // no cards here — the findings go signed to Main, which keeps the one gate rule.
@@ -208,7 +215,7 @@ async function runScoutOnce(deps: DiscoveryDeps = {}): Promise<void> {
     const cfg = state.config
     const report = await discoverDevices({
         deadlineMs: cfg.discovery.deadlineSec * 1000, ratePerSec: cfg.discovery.ratePerSec, concurrency: cfg.discovery.concurrency,
-        maxHosts: cfg.discovery.maxHosts, mdns: cfg.discovery.mdns, tailnetHosts: cfg.discovery.tailnetHosts,
+        maxHosts: cfg.discovery.maxHosts, mdns: cfg.discovery.mdns, tailnetHosts: cfg.discovery.tailnetHosts, allowSubnets: cfg.discovery.subnets,
     }, { mdnsBrowse: cfg.discovery.mdns ? realMdnsBrowse : undefined, ssdpBrowse: cfg.discovery.mdns ? ms => realSsdpBrowse(ms, deps.interfaces) : undefined,
         tuyaBrowse: cfg.discovery.mdns ? ms => realTuyaBrowse(ms, deps.interfaces) : undefined, ...deps })
     const payload = {
@@ -319,7 +326,7 @@ async function performDiscovery(deps: RunDeps, signal?: AbortSignal): Promise<st
     try {
         const report = await discoverDevices({
             deadlineMs: signal ? Math.min(cfg.discovery.deadlineSec * 1000, 60_000) : cfg.discovery.deadlineSec * 1000, ratePerSec: cfg.discovery.ratePerSec, concurrency: cfg.discovery.concurrency,
-            maxHosts: cfg.discovery.maxHosts, mdns: cfg.discovery.mdns, tailnetHosts: cfg.discovery.tailnetHosts,
+            maxHosts: cfg.discovery.maxHosts, mdns: cfg.discovery.mdns, tailnetHosts: cfg.discovery.tailnetHosts, allowSubnets: cfg.discovery.subnets,
             cursor: readDiscoveryCursor(dataDir), signal: controller.signal,
         }, { mdnsBrowse: cfg.discovery.mdns ? realMdnsBrowse : undefined, ssdpBrowse: cfg.discovery.mdns ? ms => realSsdpBrowse(ms, deps.interfaces) : undefined,
             tuyaBrowse: cfg.discovery.mdns ? ms => realTuyaBrowse(ms, deps.interfaces, controller.signal) : undefined, ...deps })

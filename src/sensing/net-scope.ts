@@ -56,7 +56,8 @@ export function ownSubnets(interfaces: InterfaceMap = networkInterfaces() as Int
     for (const [name, list] of Object.entries(interfaces)) {
         // Interface identity, not the 172/12 range: real LANs may use 172.*.
         // Named container-only bridges are not physical LAN discovery scopes.
-        if (/^(?:docker\d+|veth[\w-]*|br-[a-f0-9]{8,}|virbr\d+)$/i.test(name)) continue
+        // 2.91.2: Synology names its Docker bridges `docker-<hex>` (172.20.0.0/24 was scanned as LAN).
+        if (/^(?:docker\d+|docker-[a-f0-9]+|veth[\w-]*|br-[a-f0-9]{8,}|virbr\d+)$/i.test(name)) continue
         for (const entry of list || []) {
             const family = entry.family === 4 ? 'IPv4' : entry.family
             if (family !== 'IPv4' || entry.internal || !isStrictIpv4(entry.address)) continue
@@ -69,6 +70,42 @@ export function ownSubnets(interfaces: InterfaceMap = networkInterfaces() as Int
         }
     }
     return { subnets, hasTailnet, own }
+}
+
+/**
+ * 2.91.2: optional allowlist `autonomy.sensing.discovery.subnets` (CIDRs). It only narrows: the result is the
+ * intersection with the own subnets; an entry outside every own private subnet (public, foreign, malformed) is
+ * ignored with its reason. With an allowlist the tailnet is searched only when an entry lies in it.
+ * An empty allowlist leaves the scope unchanged.
+ */
+export function restrictScope<T extends { subnets: Cidr[]; hasTailnet: boolean }>(scope: T, allow: readonly string[]):
+    T & { ignored: Array<{ entry: string; reason: string }> } {
+    if (!allow.length) return { ...scope, ignored: [] }
+    const subnets: Cidr[] = []
+    const ignored: Array<{ entry: string; reason: string }> = []
+    let hasTailnet = false
+    for (const entry of allow) {
+        const match = /^(\d{1,3}(?:\.\d{1,3}){3})\/(\d{1,2})$/.exec(String(entry).trim())
+        const bits = match ? Number(match[2]) : NaN
+        if (!match || !isStrictIpv4(match[1]) || bits < 8 || bits > 32) { ignored.push({ entry, reason: 'kein gültiges IPv4-Netz (a.b.c.d/n)' }); continue }
+        const base = (ipToInt(match[1]) & maskOf(bits)) >>> 0
+        if (isTailnet(match[1])) {
+            if (scope.hasTailnet) hasTailnet = true
+            else ignored.push({ entry, reason: 'kein eigenes Tailnet-Interface' })
+            continue
+        }
+        if (!isPrivateRange(match[1])) { ignored.push({ entry, reason: 'nicht privat (öffentliches oder Sondernetz)' }); continue }
+        let used = false
+        for (const own of scope.subnets) {
+            // The narrower of the two, when one contains the other.
+            const cut = bits >= own.bits ? (inCidr(intToIp(base), own.base, own.bits) ? { base, bits } : null)
+                : (inCidr(intToIp(own.base), base, bits) ? own : null)
+            if (cut && !subnets.some(item => item.base === cut.base && item.bits === cut.bits)) subnets.push(cut)
+            if (cut) used = true
+        }
+        if (!used) ignored.push({ entry, reason: 'fremdes Netz (kein eigenes Interface)' })
+    }
+    return { ...scope, subnets, hasTailnet, ignored }
 }
 
 export interface ScopeDecision { allowed: boolean; reason: string }

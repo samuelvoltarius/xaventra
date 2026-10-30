@@ -124,6 +124,15 @@ API request needs a token, unknown `Host` names (DNS rebinding) and foreign
   `worker`/`system`, applies the same gate (net-scope: never public, only inside the reported private
   subnet) and records accepted devices with `seenBy`; cards and connections stay on Main. Example for
   the NAS in the home LAN: `"autonomy": { "sensing": { "enabled": true, "scout": true } }`.
+  Since 2.91.2 `scout: true` alone is enough on a worker: it implies `sensing.enabled` and
+  `sensing.discovery.enabled` unless either is explicitly `false`, with gentle worker defaults
+  (`discovery.firstRunDelaySec` 300, `intervalHours` 6, `ratePerSec` 10, `concurrency` 4; explicit values
+  win). A scout that does not start logs one line with the reason (`Späher steht an, startet nicht: …`).
+  Docker bridges (`docker0`, Synology `docker-<hex>`, `br-<hex>`, `veth*`, `virbr*`) are never scanned.
+- `sensing.discovery.subnets` (2.91.2, optional): allowlist of CIDRs, e.g. `["192.168.0.0/24"]`. When set,
+  discovery searches **only** inside it, intersected with the own private subnets (a narrower entry narrows
+  them); the tailnet only when an entry lies in it. It never widens the scope: public, foreign or malformed
+  entries are ignored with a log line (`discovery.subnets: <entry> ignoriert (<Grund>)`).
 
 `socialCheckIns` and `dream-cycle` are opt-in. Operational events are handled
 separately and may notify only when their producer is trusted or supplies a

@@ -21,7 +21,7 @@
  * }
  */
 
-import { defaultOn } from '../core/autonomy-defaults.js'
+import { defaultOn, isAutonomyWorker } from '../core/autonomy-defaults.js'
 import { getQuietHours } from '../core/quiet-hours.js'
 
 export interface PrinterDeviceConfig {
@@ -55,7 +55,7 @@ export interface SensingConfig {
         mail: MailAdapterConfig
         system: { enabled: boolean; intervalSec: number; timeoutSec: number }
     }
-    discovery: { enabled: boolean; deadlineSec: number; ratePerSec: number; concurrency: number; maxHosts: number; mdns: boolean; tailnetHosts: string[]; firstRunDelaySec: number; intervalHours: number }
+    discovery: { enabled: boolean; deadlineSec: number; ratePerSec: number; concurrency: number; maxHosts: number; mdns: boolean; tailnetHosts: string[]; firstRunDelaySec: number; intervalHours: number; subnets: string[] }
     /** Späher (30.10.2026): this mesh worker searches its own networks and reports to Main. Only an explicit `true`. */
     scout: boolean
 }
@@ -73,6 +73,10 @@ const strings = (value: unknown, max = 200): string[] => (Array.isArray(value) ?
 export function parseSensingConfig(raw: unknown, env: NodeJS.ProcessEnv = process.env): SensingConfig {
     const on = (value: unknown): boolean => defaultOn(value, env)
     const root = obj(raw)
+    // 2.91.2 (NAS rollout): on a worker every switch is "missing = off" - scout:true alone started nothing.
+    // A scout worker implies sensing and discovery unless they are explicitly off, with gentle worker defaults.
+    const scoutWorker = root.scout === true && isAutonomyWorker(env)
+    const scoutOn = (value: unknown): boolean => scoutWorker && (value === undefined || value === null) ? true : on(value)
     const notify = obj(root.notify)
     const adapters = obj(root.adapters)
     const printer = obj(adapters.printer)
@@ -99,7 +103,7 @@ export function parseSensingConfig(raw: unknown, env: NodeJS.ProcessEnv = proces
         .map((entry: any) => ({ id: entry.id, name: typeof entry.name === 'string' ? entry.name : undefined, urgent: entry.urgent === true }))
     const imap = obj(mail.imap)
     return {
-        enabled: on(root.enabled),
+        enabled: scoutOn(root.enabled),
         notify: {
             // Default: the one quiet-hours definition (off = 0–0 = never quiet).
             quietStart: num(notify.quietStart, Math.max(0, getQuietHours().start), 0, 23),
@@ -132,15 +136,17 @@ export function parseSensingConfig(raw: unknown, env: NodeJS.ProcessEnv = proces
             system: { enabled: on(system.enabled), intervalSec: num(system.intervalSec, 120, 30, 3600), timeoutSec: num(system.timeoutSec, 10, 1, 60) },
         },
         discovery: {
-            enabled: on(discovery.enabled),
+            enabled: scoutOn(discovery.enabled),
             deadlineSec: num(discovery.deadlineSec, 60, 1, 300),
-            ratePerSec: num(discovery.ratePerSec, 40, 1, 200),
-            concurrency: num(discovery.concurrency, 16, 1, 64),
+            ratePerSec: num(discovery.ratePerSec, scoutWorker ? 10 : 40, 1, 200),
+            concurrency: num(discovery.concurrency, scoutWorker ? 4 : 16, 1, 64),
             maxHosts: num(discovery.maxHosts, 512, 1, 1024),
             mdns: discovery.mdns !== false,
             tailnetHosts: strings(discovery.tailnetHosts, 64),
-            firstRunDelaySec: num(discovery.firstRunDelaySec, 120, 0, 86_400),
-            intervalHours: num(discovery.intervalHours, 1, 1, 24 * 30),
+            firstRunDelaySec: num(discovery.firstRunDelaySec, scoutWorker ? 300 : 120, 0, 86_400),
+            intervalHours: num(discovery.intervalHours, scoutWorker ? 6 : 1, 1, 24 * 30),
+            // 2.91.2: optional allowlist (CIDRs) inside the own networks; never widens the scope (net-scope restrictScope).
+            subnets: strings(discovery.subnets, 16),
         },
         scout: root.scout === true,
     }

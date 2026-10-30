@@ -29,9 +29,9 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { tailscaleStatusCommand } from '../startup/tailscale-status.js'
 import { localNeighbors } from './neighbors.js'
-import { isPrivateRange, isTailnet, ownSubnets, scanHosts, scanTargetAllowed, type Cidr, type InterfaceMap } from './net-scope.js'
+import { isPrivateRange, isTailnet, ownSubnets, restrictScope, scanHosts, scanTargetAllowed, type Cidr, type InterfaceMap } from './net-scope.js'
 import { DEVICE_LABEL, type DeviceCandidate, type DeviceType } from './device-registry.js'
-import { cleanText } from './ports.js'
+import { cleanText, sensingLog } from './ports.js'
 import type { SsdpDescription } from './ssdp.js'
 import { identifyHardware } from './hardware-recognition.js'
 
@@ -66,6 +66,8 @@ export interface DiscoveryOptions {
     probeTimeoutMs?: number
     cursor?: DiscoveryCursor
     signal?: AbortSignal
+    /** 2.91.2: allowlist (autonomy.sensing.discovery.subnets) inside the own networks; never widens. */
+    allowSubnets?: string[]
 }
 
 export interface DiscoveryCursor { scopeKey: string; hostOffset: number; portIndex: number }
@@ -288,7 +290,9 @@ export async function discoverDevices(options: DiscoveryOptions, deps: Discovery
     const startedAt = now()
     const deadline = startedAt + options.deadlineMs
     const probeTimeout = Math.max(100, Math.min(options.probeTimeoutMs ?? 800, options.deadlineMs))
-    const scope = ownSubnets(deps.interfaces)
+    const restricted = restrictScope(ownSubnets(deps.interfaces), options.allowSubnets || [])
+    for (const item of restricted.ignored) sensingLog(`discovery.subnets: ${item.entry} ignoriert (${item.reason})`)
+    const scope = { subnets: restricted.subnets, hasTailnet: restricted.hasTailnet, own: restricted.own }
     const matterRoutes = options.mdns ? await localMatterRoutes(deps.interfaces) : []
     const neighbors = await (deps.neighbors || (() => localNeighbors(Math.max(100, Math.min(1500, options.deadlineMs / 8)))))().catch(() => [])
     const peers = scope.hasTailnet ? await (deps.tailnetPeers || (() => localTailnetPeers(Math.max(100, Math.min(2000, options.deadlineMs / 4)))))().catch(() => []) : []
