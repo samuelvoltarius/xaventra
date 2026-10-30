@@ -3864,6 +3864,7 @@
     {
       "module": "src/doctor/vault-check.ts",
       "imports": [
+        "../core/self-doctor.js",
         "../secrets/local-sealed-store.js",
         "./types.js",
         "node:fs",

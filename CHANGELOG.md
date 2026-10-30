@@ -12,6 +12,29 @@
   helpers on nodes with a screen, maps and routes, music, a maker helper for
   boards and sensors.
 
+## [2.92.0] — 2026-10-30
+
+Self-repair, step 1: real errors become findings. Nothing here executes
+anything; the commands only show.
+
+### Added
+
+- **One real error line is one finding.** Uncaught exceptions, lost replies,
+  tool failures and unreadable vault stores each become one Doctor finding per
+  signature (the line without numbers and ids). A repeat raises the count;
+  the same failure in another task is the same case. `/doctor` lists
+  "Fehler-Signaturen" with signature, count and last seen; the stored line is
+  redacted and bounded.
+
+### Removed
+
+- **The old self-repair paths are gone.** `src/supervisor/*` (LLM fix, branch,
+  build, merge, `git reset --hard`), `src/watchdog.ts`,
+  `src/process/nova-watchdog.ts` with their bin entries and scripts, and the
+  `ResilienceManager`. None of them was in use. `/supervisor` now only points
+  to `/doctor`; code changes run through PATCH_GATE alone. The process
+  supervisor (`src/supervisor.ts`, `npm run supervisor`) stays.
+
 ## [2.91.2] — 2026-10-30
 
 ### Added
