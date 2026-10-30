@@ -12,6 +12,13 @@
   helpers on nodes with a screen, maps and routes, music, a maker helper for
   boards and sensors.
 
+### Fixed (next patch, version set at release)
+
+- **The repair sandbox starts again.** It allowed 1024 open files; with 1002
+  test files vitest stopped before the first test (`EMFILE`), so the
+  whole-project check could not pass. The limit is now 8192 and a test keeps it
+  well above the real number of test files.
+
 ## [2.92.1] — 2026-10-30
 
 One way, step 1: the owner has one history on every surface. Plus cameras recognised without login and local stills for the vision model.

@@ -1,14 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { EventEmitter } from 'node:events'
 import { PassThrough } from 'node:stream'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, symlinkSync, linkSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readdirSync, writeFileSync, readFileSync, rmSync, symlinkSync, linkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 
 const mocks = vi.hoisted(() => ({ spawn: vi.fn(), execFileSync: vi.fn() }))
 vi.mock('node:child_process', () => mocks)
-import { assertPatchSourcePath, validatePatchInSandbox } from './patch-sandbox.js'
+import { assertPatchSourcePath, REPAIR_SANDBOX_LIMITS, validatePatchInSandbox } from './patch-sandbox.js'
 
 describe('repair sandbox boundary (scripted Docker, not live isolation proof)', () => {
     let root: string
@@ -127,5 +127,15 @@ describe('repair sandbox boundary (scripted Docker, not live isolation proof)', 
         })
         const result = await validatePatchInSandbox(request(root))
         expect(result.verified).toBe(false); expect(result.output).toContain('Source changed')
+    })
+})
+
+describe('sandbox file limit (EMFILE, 30.10.2026)', () => {
+    // vitest opens every test file while collecting: at 1002 test files nofile=1024 ended the
+    // whole-project baseline before the first test. The limit keeps a margin to the real count.
+    it('stays well above the number of test files', () => {
+        const count = (dir: string): number => readdirSync(dir, { withFileTypes: true }).reduce((sum, entry) =>
+            sum + (entry.isDirectory() ? count(join(dir, entry.name)) : entry.name.endsWith('.test.ts') ? 1 : 0), 0)
+        expect(REPAIR_SANDBOX_LIMITS.openFiles).toBeGreaterThanOrEqual(count(join(process.cwd(), 'src')) * 4)
     })
 })

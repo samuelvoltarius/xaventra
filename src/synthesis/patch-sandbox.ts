@@ -41,7 +41,7 @@ export type PatchSnapshot = Record<string, string>
  * command in the rollback phase (2.83.0). Operators may only shorten a command.
  */
 // 2.89.8: the suite grew again (≈6.6k tests, 180 e2e); the baseline regression exceeded 480 s on 2 CPUs.
-export const REPAIR_SANDBOX_LIMITS = Object.freeze({ commandDefaultMs: 720_000, commandMaxMs: 720_000, commandMinMs: 1000, totalBudgetMs: 3_300_000 })
+export const REPAIR_SANDBOX_LIMITS = Object.freeze({ commandDefaultMs: 720_000, commandMaxMs: 720_000, commandMinMs: 1000, totalBudgetMs: 3_300_000, openFiles: 8192 })
 
 export function repairSandboxCommandTimeout(value: string | undefined): number {
     const timeout = Number(value || REPAIR_SANDBOX_LIMITS.commandDefaultMs)
@@ -237,7 +237,7 @@ export async function validatePatchInSandbox(request: PatchSandboxRequest): Prom
                 outcome = await docker(['run', '--name', name, '--pull=never', '--network=none', '--read-only',
                     '--user=1000:1000', '--cap-drop=ALL', '--security-opt=no-new-privileges:true',
                     '--pids-limit=128', '--memory=4g', '--memory-swap=4g', '--cpus=2',
-                    '--ulimit=nofile=1024:1024', '--ipc=private', '--init', '--log-driver=none',
+                    `--ulimit=nofile=${REPAIR_SANDBOX_LIMITS.openFiles}:${REPAIR_SANDBOX_LIMITS.openFiles}`, '--ipc=private', '--init', '--log-driver=none',
                     '--tmpfs=/workspace:rw,nosuid,nodev,size=512m,uid=1000,gid=1000,mode=0700',
                     '--tmpfs=/tmp:rw,nosuid,nodev,size=512m,uid=1000,gid=1000,mode=0700',
                     '--entrypoint=/usr/bin/env', '-i', image, '-i', 'PATH=/usr/local/bin:/usr/bin:/bin',
