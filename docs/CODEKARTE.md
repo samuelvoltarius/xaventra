@@ -112,6 +112,13 @@ dort auch `featureEnabled` für die standardmäßig eingeschalteten Fähigkeiten
 Neue Prompt-Blöcke bekommen ihr Thema über die Überschrift
 (`task-prompt.ts` `TOPIC_RULES`); ohne Thema bleiben sie immer drin.
 
+**Ein Verlauf (Ein Weg):** welcher Verlauf zu einem Zug gehört, entscheidet nur
+`src/core/conversation-scope.ts` `conversationScope` (Lauf, Wiederholungen,
+Nachtrag des Zugs, `/clear`). Ohne Raum und in Räumen mit `ownerHistory`
+(TopicRoom, vom Client ausdrücklich gesetzt, nur Owner) der Owner-Verlauf; alle
+anderen Räume behalten ihren eigenen. Owner-Principals verknüpft allein
+`src/users/owner-accounts.ts` (Konfiguration, Token-Zugang, Link-Code), nie Namen.
+
 **Themen-Fäden (2.91.0, Schalter `context.threads`, Standard shadow):** die eine
 Zuordnung je Nachricht ist `src/core/topic-threads.ts` `assignThread` (Regeln
 raum → antwort → rueckfrage → korrektur → smalltalk → inhalt → marke → folge → unklar → allgemein;

@@ -14,6 +14,7 @@ import { traceStep } from './request-tracer.js'
 import { ReplyDeliveryError, deliveryFailureText, protectReplyDelivery } from './reply-delivery-error.js'
 import { stripInternalHistoryNotes, withoutInternalNotes } from './history-note-filter.js'
 import { selectContextPolicy } from './context-policy.js'
+import { conversationScope } from './conversation-scope.js'
 import { conversationResponseGuidance, detectActionIntent, honestNoToolResponse, responseClaimsCompletedAction, toolProvidesActionEvidence } from './action-intent.js'
 import { isNovaSystemAuthored } from './system-message.js'
 import { markOwnerTurn, runAsPotentialOwnerTurn } from './owner-activity.js'
@@ -820,7 +821,7 @@ async function handleMessageInScope(
             ])
             const room = getDesktopAgentContext()
             syncDeliveredTurn(principalId, channel, { request: content, delivered: text, ...turnSync },
-                room ? { conversationId: room.roomId, botId: room.botId } : {}, from)
+                conversationScope(room, { owner: principalContext.permission === 'owner' }), from)
         } catch (error) { stageFailure('Gesprächsverlauf', error) }
     }
     const answer = async (text: string, step?: string): Promise<void> => {
@@ -2188,10 +2189,13 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
         // 2.90.0 Kontext je Aufgabe: Lagebild + Aufgaben-Prompt (context-switches.ts) and one measurement line per turn.
         const { prepareTurnPrompt } = await import('./turn-context.js')
         // 2.91.0: topic threads only for the owner in a direct chat (groups, guests, phone and system turns keep one history).
+        // Ein Weg: one answer to „which history?“ for the run, its retries and the delivered-turn sync.
+        const turnScope = conversationScope(desktopContext, { owner: principalContext.permission === 'owner' })
         const threadEligible = !isSystemAuthored && principalContext.permission === 'owner' && isGroupMessage === false && !requestIsGroup
         const turnContext = await prepareTurnPrompt({
             prompt: systemPrompt, request: content, policy: contextPolicy, toolNames: execution?.allowedTools,
-            principalId: threadEligible ? principalId : undefined, roomId: desktopContext?.roomId, isGroup: !threadEligible,
+            principalId: threadEligible ? principalId : undefined, roomId: turnScope.conversationId, isGroup: !threadEligible,
+            historyScope: desktopContext ? (turnScope.conversationId ? 'raum' : 'owner') : undefined,
         })
         const turnStartedAt = Date.now()
         systemPrompt = turnContext.prompt
@@ -2223,8 +2227,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             systemPrompt,
             llm: llmForCall,
             tools: executionTools,
-            conversationId: desktopContext?.roomId,
-            botId: desktopBot?.id,
+            ...turnScope,
             preferredNodeIds: desktopContext?.preferredNodeIds,
             modelOverride: desktopContext?.modelMode === 'pinned' && desktopContext.pinnedModel
                 ? {
@@ -2360,7 +2363,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
             // Reset session if supervisor says so
             if (supervised.shouldResetSession) {
                 console.log(`[L0] 🔄 Session-Reset für ${from}`)
-                clearSession(principalId, channel, { conversationId: desktopContext?.roomId, botId: desktopBot?.id })
+                clearSession(principalId, channel, turnScope)
             }
 
             // Retry the agent call
@@ -2660,7 +2663,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                     let conversationLines: string[] = []
                     try {
                         const { getSession } = await import('../agents/nova-runner.js')
-                        const past = getSession(principalId, channel, { conversationId: desktopContext?.roomId, botId: desktopBot?.id }).history.slice(-9, -1)
+                        const past = getSession(principalId, channel, turnScope).history.slice(-9, -1)
                         conversationLines = past.map((turn: any) => `${turn.role === 'user' ? 'Nutzer' : 'Assistent'}: ${String(turn.content || '').slice(0, 400)}`)
                     } catch { /* no history: the check runs as before */ }
                     const validation = await Promise.race([
@@ -2703,7 +2706,7 @@ Erkanntes Sentiment: ${sentiment.sentiment} (${(sentiment.confidence * 100).toFi
                 finalContent = isNodeScreenshotRequest(content) ? sanitizeInternalOutboundArtifacts(await nodeScreenshotAnswer(content, [...successfulExecutions, ...failedExecutions], (result as any).modelContent ?? supervised.content)) : screenshotFailureResponse(failedExecutions)
                 try {
                     const { replaceLastAssistantInHistory } = await import('../agents/nova-runner.js')
-                    replaceLastAssistantInHistory(principalId, channel, finalContent, { conversationId: desktopContext?.roomId, botId: desktopBot?.id })
+                    replaceLastAssistantInHistory(principalId, channel, finalContent, turnScope)
                 } catch { /* history sync is best effort */ }
             }
 

@@ -151,3 +151,27 @@ describe('2.91.0 Themen-Fäden über den Telegram-Eingang (Schattenbetrieb)', ()
         expect(prompt.replace(/\d{1,2}:\d{2}(:\d{2})?/g, '')).toBe(before.prompt.replace(/\d{1,2}:\d{2}(:\d{2})?/g, ''))
     }, 120_000)
 })
+
+describe('Ein Weg: ein Verlauf für Telegram und markierte Räume (echter Eingang)', () => {
+    const inRoom = async (ownerHistory: boolean) => {
+        const { runWithDesktopAgentContext } = await import('../desktop/desktop-agent-context.js')
+        await runWithDesktopAgentContext({
+            principalId: 'live-owner', clientId: 'test', authorizationUserId: 'desktop:live-owner', roomId: 'room-a', botId: 'nova',
+            ownerHistory, preferredNodeIds: [], modelMode: 'auto',
+        }, () => entry('desktop', 'desktop:live-owner', 'Wie voll ist der Akku vom Dolphin?', async () => undefined))
+        expect(fixtures.agent).toHaveBeenCalled()
+        return { run: fixtures.agent.mock.calls.at(-1)![0] as { conversationId?: string }, metrics: fixtures.metrics.at(-1) }
+    }
+    it('a marked room runs in the owner history and through the threads', async () => {
+        const { run, metrics } = await inRoom(true)
+        expect(run.conversationId).toBeUndefined()
+        expect(metrics.historyScope).toBe('owner')
+        expect(metrics.threadKey).toBe('auto')
+    }, 120_000)
+    it('Gegenprobe: a room without the mark keeps its own history and stays outside the threads', async () => {
+        const { run, metrics } = await inRoom(false)
+        expect(run.conversationId).toBe('room-a')
+        expect(metrics.historyScope).toBe('raum')
+        expect(metrics.threadRule).toBe('raum')
+    }, 120_000)
+})

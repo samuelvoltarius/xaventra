@@ -426,7 +426,7 @@ export function registerDesktopApi(app: Express, resolveMessageHandler: () => Me
                     const response = await withDesktopBotTimeout(signal => runWithDesktopAgentContext({
                         abortSignal: signal,
                         principalId: ownerId, clientId: desktopClientId(req), authorizationUserId,
-                        roomId: room.id, botId: bot.id, preferredNodeIds: requestedNodes,
+                        roomId: room.id, botId: bot.id, ownerHistory: room.ownerHistory === true && isDesktopOwner(req), preferredNodeIds: requestedNodes,
                         modelMode: room.modelMode, pinnedModel: pinnedRoute?.id || room.pinnedModel,
                         pinnedProvider: pinnedRoute?.provider,
                         pinnedNodeId: pinnedRoute?.nodeId,

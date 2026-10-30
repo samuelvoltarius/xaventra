@@ -157,6 +157,20 @@ describe('2.90.0 /kontext and /lage commands', () => {
     })
 })
 
+describe('Ein Weg: /kontext je Kanal', () => {
+    it('shows built, sent, cap rate and model input per channel; room traffic apart', () => {
+        const text = formatKontext([
+            turn({ channel: 'Telegram', promptRawChars: 22_000, promptSentChars: 11_000, modelInputChars: 36_000 }),
+            turn({ channel: 'Telegram', promptRawChars: 22_000, promptSentChars: 11_000, capped: false, modelInputChars: 36_000 }),
+            turn({ channel: 'desktop', historyScope: 'raum', promptRawChars: 21_000, promptSentChars: 11_400, modelInputChars: 26_000 }),
+            turn({ channel: 'desktop', historyScope: 'owner', promptRawChars: 20_000, promptSentChars: 11_000, modelInputChars: 30_000 }),
+        ])
+        expect(text).toContain('Telegram: 2 Züge, 22.0k → 11.0k, gekappt 50 %, Eingabe 36.0k')
+        expect(text).toContain('desktop (Raum): 1 Zug, 21.0k → 11.4k, gekappt 100 %, Eingabe 26.0k')
+        expect(text).toContain('desktop: 1 Zug, 20.0k → 11.0k, gekappt 100 %, Eingabe 30.0k')
+    })
+})
+
 describe('2.91.0 /themen', () => {
     it('answers the owner (view only) and refuses a guest', async () => {
         const { handleCommand } = await import('./slash-commands.js')

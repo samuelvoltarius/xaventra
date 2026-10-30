@@ -1769,6 +1769,12 @@
       ]
     },
     {
+      "module": "src/core/conversation-scope.ts",
+      "imports": [
+        "../agents/session-checkpoints.js"
+      ]
+    },
+    {
       "module": "src/core/conversation-turn.ts",
       "imports": [
         "./action-intent.js"
@@ -2073,6 +2079,7 @@
         "./action-intent.js",
         "./channel-name.js",
         "./context-policy.js",
+        "./conversation-scope.js",
         "./history-note-filter.js",
         "./operating-mode-prompt.js",
         "./owner-activity.js",

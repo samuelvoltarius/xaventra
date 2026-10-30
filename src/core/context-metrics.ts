@@ -59,6 +59,8 @@ export interface ContextTurnMetrics {
     taskPromptUntagged?: string[]
     lagebildMode?: string
     lagebildChars?: number
+    /** Ein Weg: Desktop turn in the owner history or in its own room (acceptance and probe rooms). */
+    historyScope?: 'owner' | 'raum'
     /** 2.91.0 topic threads (shadow): which thread, by which rule, and how much of the recent history is foreign. */
     threadMode?: string
     threadId?: string
@@ -104,7 +106,7 @@ const KEYS: ReadonlyArray<keyof ContextTurnMetrics> = [
     'reducedHeadings', 'modelInputChars', 'systemChars', 'historyChars', 'toolSchemaChars', 'toolsOffered', 'modelCalls',
     'maxModelInputChars', 'toolCalls', 'selfInfoCalls', 'outcome', 'durationMs', 'taskPromptMode', 'taskPromptChars',
     'taskPromptWouldCap', 'taskPromptTopics', 'taskPromptOmitted', 'taskPromptRescued', 'taskPromptUntagged', 'lagebildMode', 'lagebildChars',
-    'threadMode', 'threadId', 'threadKey', 'threadRule', 'threadNew', 'foreignHistoryShare',
+    'historyScope', 'threadMode', 'threadId', 'threadKey', 'threadRule', 'threadNew', 'foreignHistoryShare',
     'threadName', 'threadMerged', 'threadWoke', 'threadCorrected', 'activeThreads', 'restingThreads',
 ]
 
@@ -215,6 +217,19 @@ export function summarizeContextMetrics(entries: readonly ContextTurnMetrics[]):
 
 const k = (chars: number) => `${(chars / 1000).toFixed(1)}k`
 
+/** Ein Weg: the same numbers per channel, so a real difference between channels is visible. Room traffic stands apart. */
+function channelLines(entries: readonly ContextTurnMetrics[]): string[] {
+    const groups = new Map<string, ContextTurnMetrics[]>()
+    for (const entry of entries) {
+        const label = `${entry.channel}${entry.historyScope === 'raum' ? ' (Raum)' : ''}`
+        groups.set(label, [...(groups.get(label) ?? []), entry])
+    }
+    return [...groups].map(([label, group]) => {
+        const s = summarizeContextMetrics(group)
+        return `${label}: ${s.turns === 1 ? '1 Zug' : `${s.turns} Züge`}, ${k(s.medianPromptRawChars)} → ${k(s.medianPromptSentChars)}, gekappt ${s.capRatePercent} %${s.medianModelInputChars ? `, Eingabe ${k(s.medianModelInputChars)}` : ''}`
+    })
+}
+
 /** /kontext: short owner overview of the last turns. */
 export function formatKontext(entries: readonly ContextTurnMetrics[]): string {
     if (!entries.length) return '📏 Noch keine Kontext-Messung (sie entsteht bei jedem Zug mit Modell).'
@@ -225,6 +240,7 @@ export function formatKontext(entries: readonly ContextTurnMetrics[]): string {
         `Systemprompt Median: ${k(s.medianPromptRawChars)} gebaut → ${k(s.medianPromptSentChars)} gesendet`,
         s.medianModelInputChars ? `Ganze Modelleingabe Median: ${k(s.medianModelInputChars)} Zeichen` : '',
         `Werkzeugaufrufe Median: ${s.medianToolCalls} · Selbstauskunft höchstens ${s.maxSelfInfoCalls}× in einem Zug`,
+        ...channelLines(entries),
         s.taskPromptTurns ? `Aufgaben-Prompt (Probe): Median ${k(s.medianTaskPromptChars)}, müsste ${s.taskPromptWouldCap}× gekappt werden` : '',
         s.threadTurns ? `Themen (Probe): ${s.threadTurns} Züge zugeordnet, Fremd-Verlauf Median ${s.medianForeignHistoryPercent} % · Regeln ${Object.entries(s.threadRules).map(([rule, count]) => `${rule} ${count}`).join(', ')}` : '',
         s.threadTurns ? `Automatisch: ${s.threadsCreated} neu angelegt, ${s.threadMerges} zusammengeführt, ${s.threadCorrections} selbst korrigiert` : '',

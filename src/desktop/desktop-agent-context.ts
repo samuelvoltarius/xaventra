@@ -6,6 +6,8 @@ export interface DesktopAgentContext {
     authorizationUserId: string
     roomId: string
     botId: string
+    /** Ein Weg: the room shares the owner history (TopicRoom.ownerHistory, owner clients only). */
+    ownerHistory?: boolean
     preferredNodeIds: string[]
     modelMode: 'auto' | 'pinned'
     pinnedModel?: string
