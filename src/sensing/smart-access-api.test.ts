@@ -78,3 +78,26 @@ it('requires a separate Matter pairing confirmation and rejects completion after
         expect((await post({ pairingCode: code, confirmPairing: 'ja' })).status).toBe(409); expect(matterRead).toHaveBeenCalledOnce()
     } finally { await new Promise<void>(resolve => server.close(() => resolve())); rmSync(root, { recursive: true, force: true }) }
 })
+it('a released camera offers the owner form; the login is sealed and never comes back', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'cam-api-')), app = express(), owner = { permission: 'owner', principalId: 'owner' }
+    recordCandidates(root, [{ type: 'camera', host: '192.168.1.60', port: 8000, via: 'udp', name: 'Einfahrt' }])
+    const id = loadDevices(root)[0].id
+    approveDevice(root, id, owner)
+    app.use(express.json({ limit: '8kb' }))
+    registerSmartAccessApi(app, { root: () => root, owner: async () => owner, authoritative: () => true,
+        ownerOnly: (req, res) => { if (req.headers.authorization === 'Bearer test-owner') return true; res.status(403).end(); return false } })
+    const server = app.listen(0, '127.0.0.1')
+    await new Promise<void>(resolve => server.once('listening', resolve))
+    const base = `http://127.0.0.1:${(server.address() as any).port}/api/desktop/smart-geraete`
+    const headers = { 'Content-Type': 'application/json', Authorization: 'Bearer test-owner' }
+    const passwort = ['fixture', 'kamera', String(4711)].join('-')
+    try {
+        const before = await (await fetch(base, { headers })).json() as any
+        expect(before.devices[0]).toMatchObject({ protocol: 'kamera', accessStored: false, route: 'local' })
+        expect(before.devices[0].fields.map((f: any) => f.name)).toEqual(['benutzer', 'passwort'])
+        const reply = await fetch(`${base}/${id}/zugang`, { method: 'POST', headers, body: JSON.stringify({ fingerprint: before.devices[0].fingerprint, values: { benutzer: 'betrachter', passwort } }) })
+        expect(reply.status).toBe(200); expect(await reply.text()).not.toContain(passwort)
+        const after = await (await fetch(base, { headers })).text()
+        expect(after).not.toContain(passwort); expect(after).not.toContain('betrachter'); expect(JSON.parse(after).devices[0].accessStored).toBe(true)
+    } finally { await new Promise<void>(resolve => server.close(() => resolve())); rmSync(root, { recursive: true, force: true }) }
+})

@@ -203,6 +203,12 @@ const SKILL_PACKS: SkillPack[] = [
         tools: ['desktop_control', 'desktop_workspace', 'desktop_status', 'desktop_screenshot', 'desktop_input', 'mesh_screenshot', 'mesh_desktop_input', 'analyze_image'],
     },
     {
+        // Kamera anbinden: one still of a connected camera, read only; evaluation through the image gate.
+        name: 'kamera', description: 'Standbild einer angebundenen Kamera holen und auswerten',
+        keywords: ['kamera', 'kameras', 'überwachungskamera', 'einfahrt', 'standbild'],
+        tools: ['kamera_standbild', 'analyze_image'],
+    },
+    {
         name: 'nova-desktop-control', description: 'Nova Desktop sicher navigieren, fokussieren und aktualisieren',
         keywords: ['nova desktop', 'desktop app', 'desktop-app', 'themenraum', 'nova studio öffnen', 'nova studio oeffnen', 'app fokussieren', 'öffne die nodes', 'oeffne die nodes'],
         tools: ['desktop_control', 'desktop_status', 'desktop_workspace'],

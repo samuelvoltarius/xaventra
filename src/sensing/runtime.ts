@@ -35,6 +35,7 @@ import { createHardwareAdapter } from './adapters/hardware.js'
 import { refreshHaInventory, haInventoryEvents } from './ha-inventory.js'
 import { realSsdpBrowse } from './ssdp.js'
 import { realOnvifBrowse, realRtspProbe } from './camera-discovery.js'
+import { pruneCameraStills } from './camera-access.js'
 import { realTuyaBrowse } from './tuya-discovery.js'
 import { createDirectSmartAdapter, requestHuePairing } from './direct-smart-devices.js'
 import { chooseSmartRoute, selectedSmartRoute, approveSmartRoute, smartRouteEvents } from './smart-device-route.js'
@@ -63,6 +64,9 @@ const state: RuntimeState = {
     raw: undefined, rootConfig: {}, config: parseSensingConfig(undefined),
     dataDir: join(process.cwd(), '.nova-data'), bus: null, sinks: {}, discoveryRunning: false, timers: [],
 }
+
+/** The sensing data folder (devices, smart secrets, camera access). */
+export const sensingDataDir = (): string => state.dataDir
 
 export function setSensingConfig(raw: unknown, rootConfig: any = {}, dataDir?: string): SensingConfig {
     state.raw = raw
@@ -320,6 +324,7 @@ async function performDiscovery(deps: RunDeps, signal?: AbortSignal): Promise<st
     const cfg = state.config
     if (!cfg.enabled || !cfg.discovery.enabled) return 'Geräte-Suche ist aus (autonomy.sensing.enabled bzw. autonomy.sensing.discovery.enabled steht auf false).'
     state.discoveryRunning = true
+    try { pruneCameraStills() } catch { /* retried with the next search or still */ }
     const controller = new AbortController()
     const stop = () => controller.abort(signal?.reason)
     signal?.addEventListener('abort', stop, { once: true })

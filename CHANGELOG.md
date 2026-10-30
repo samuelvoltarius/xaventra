@@ -35,6 +35,15 @@
   would connect. No image is fetched, nothing is logged in to, and default
   passwords are never tried; access data is entered only by the owner.
 
+### Added (next patch, version set at release)
+
+- **Connect a camera.** After your Ja on the card you enter user and password
+  once in the app; they stay sealed in the vault. „Zeig mir die Einfahrt“ then
+  fetches one still (ONVIF), on the node that found the camera, over the
+  encrypted direct mesh path. No video, no sound, nothing runs on its own, and
+  the still is gone after 24 hours. Without access, or with a pure RTSP camera,
+  she says so and tries nothing.
+
 ## [2.91.2] — 2026-10-30
 
 ### Added

@@ -237,7 +237,8 @@ export function claimOwnerAsk(dataDir: string, key: string, nowMs = Date.now()):
 }
 
 export function monitoredDevices(dataDir: string): DeviceRecord[] {
-    return loadDevices(dataDir).filter(item => item.status === 'eingerichtet')
+    // A camera is asked only on request (one still), never polled.
+    return loadDevices(dataDir).filter(item => item.status === 'eingerichtet' && item.type !== 'camera')
 }
 
 /** Persist one offer only after its sensing event was successfully published. */

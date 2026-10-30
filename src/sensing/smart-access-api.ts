@@ -3,6 +3,7 @@ import { loadDevices, sensingDeviceFingerprint, type Approver } from './device-r
 import { approvedSmartRoute } from './smart-device-route.js'
 import { getTuyaLocalAccess, submitTuyaLocalAccess, getEspHomeAccess, submitEspHomeAccess, getTuyaCloudAccess, getShellyCloudAccess, submitSmartCloudAccess, getMatterAccess, submitMatterAccess, beginMatterAttempt, finishMatterAttempt, matterFabricPath } from './smart-device-access.js'
 import { readMatterPeer } from './matter-client.js'
+import { readCameraAccess, submitCameraAccess } from './camera-access.js'
 import { accessStored, connectionState, standKontext } from '../connections/connection-state.js'
 import { currentSmartFunctions, switchSupported, proposeSmartSwitch, confirmSmartSwitch } from './smart-control.js'
 import { executeSmartSwitch } from './smart-control-http.js'
@@ -21,7 +22,11 @@ export function registerSmartAccessApi(app: Express, options: {
         const all = loadDevices(root)
         // 2.89: the one connection truth — the same state as the device list and „Verbindungen“.
         const kontext = standKontext(root, { devices: all })
-        res.json({ devices: all.filter(d => ['tuya-announcements', 'esphome-native', 'shelly-readonly', 'matter-ip', 'hue-readonly', 'tasmota-readonly'].includes(d.hardware?.connector)).map(d => ({
+        // Kamera anbinden: cameras the owner said Ja to; only the form schema, never a stored login.
+        const kameras = all.filter(d => d.type === 'camera' && d.approvedBy).map(d => ({ id: d.id, name: d.name, fingerprint: sensingDeviceFingerprint(d), route: 'local', protocol: 'kamera',
+            accessStored: Boolean(readCameraAccess(root, d.id)), zustand: readCameraAccess(root, d.id) ? 'verbunden' : 'wartet', grund: readCameraAccess(root, d.id) ? 'Zugang gespeichert, Standbild nur auf Anfrage' : 'Zugang fehlt noch', verbunden: Boolean(readCameraAccess(root, d.id)), controls: [],
+            fields: [{ name: 'benutzer', secret: false, label: 'Benutzer der Kamera (am besten ein eigener Nur-Lesen-Benutzer)' }, { name: 'passwort', secret: true, label: 'Passwort der Kamera' }] }))
+        res.json({ devices: [...kameras, ...all.filter(d => ['tuya-announcements', 'esphome-native', 'shelly-readonly', 'matter-ip', 'hue-readonly', 'tasmota-readonly'].includes(d.hardware?.connector)).map(d => ({
             id: d.id, name: d.name, fingerprint: sensingDeviceFingerprint(d), route: approvedSmartRoute(root, d),
             protocol: d.hardware?.connector === 'matter-ip' ? 'matter' : d.hardware?.connector === 'esphome-native' ? 'esphome' : d.hardware?.connector === 'shelly-readonly' ? 'shelly' : d.hardware?.connector === 'hue-readonly' ? 'hue' : d.hardware?.connector === 'tasmota-readonly' ? 'tasmota' : 'tuya',
             // Hue pairing key included; Matter counts only once its access is connected.
@@ -37,7 +42,7 @@ export function registerSmartAccessApi(app: Express, options: {
                         ? [{ name: 'client', secret: true, label: 'Tuya Access-ID' }, { name: 'secret', secret: true, label: 'Tuya Access-Secret' }, { name: 'region', label: 'Tuya-Region', choices: ['eu', 'us', 'cn', 'in'] }] : []
                 : d.hardware?.connector === 'matter-ip' ? getMatterAccess(root, d) ? [] : [{ name: 'pairingCode', secret: true, label: 'Privater manueller Matter-Pairing-Code (11 oder 21 Ziffern)' }, { name: 'confirmPairing', label: 'Einmaliges Pairing durchführen, bestehende Fabrics erhalten', choices: ['ja'] }]
                     : d.hardware?.connector === 'esphome-native' ? [{ name: 'psk', secret: true, label: 'ESPHome API Encryption-Key', length: 44 }] : d.hardware?.connector === 'tuya-announcements' ? [{ name: 'key', secret: true, label: 'Tuya Local-Key', length: 16 }, { name: 'version', label: 'Tuya-Protokoll', choices: ['3.1', '3.3', '3.4', '3.5'] }] : [],
-        })) })
+        }))] })
     })
     app.post('/api/desktop/smart-geraete/:id/aktion', async (req, res) => {
         if (!options.ownerOnly(req, res)) return
@@ -83,6 +88,10 @@ export function registerSmartAccessApi(app: Express, options: {
                     finishMatterAttempt(root, d, access.revision)
                     return void res.status(409).json({ ok: false, message: 'Matter-Pairing nicht bestätigt. Zustand prüfen; kein automatisches Wiederholen und kein Zurücksetzen bestehender Fabrics.' })
                 }
+            }
+            if (d?.type === 'camera') {
+                const result = submitCameraAccess(root, id, String(req.body?.fingerprint || ''), req.body?.values, await options.owner(req))
+                return void res.status(result.ok ? 200 : 409).json(result)
             }
             const submit = d && approvedSmartRoute(root, d) === 'cloud' ? submitSmartCloudAccess : d?.hardware?.connector === 'esphome-native' ? submitEspHomeAccess : submitTuyaLocalAccess
             const result = submit(root, id, String(req.body?.fingerprint || ''), req.body?.values, await options.owner(req))

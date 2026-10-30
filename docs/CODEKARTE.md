@@ -807,7 +807,7 @@ verantwortet. Der Check (unten) schlägt fehl, wenn ein Werkzeug fehlt.
 - **Mesh/Knoten (Bereich 8):** `mesh_delegate` `mesh_route` `mesh_repo_task`
   `mesh_capabilities` `mesh_deploy` `mesh_download_file` `mesh_exchange_list`
   `mesh_exchange_send` `mesh_exchange_write` `mesh_inspect_url` `mesh_nodes`
-  `mesh_recommendations` `mesh_scan` `mesh_screenshot` `mesh_desktop_input` `mesh_services`
+  `mesh_recommendations` `mesh_scan` `mesh_screenshot` `mesh_desktop_input` `kamera_standbild` `mesh_services`
   `mesh_status` `mesh_strengths` `mesh_transport_status` `mesh_update`
 - **Infra (Bereich 9):** `proxmox_vm` `cluster_status` `docker_control` `docker_logs`
   `docker_ps` `docker_status` `ssh_command` `port_scan` `network_info`

@@ -265,6 +265,15 @@ PNG/JPEG up to 8 MB; no link, no free path. Images of the car (`auto/`) and loca
 screenshots are refused. Without a MiniMax key the answer says so; such an image never goes to
 another service. `minimax_vision` takes https addresses only.
 
+### Cameras (30.10.2026)
+
+The search recognises cameras without login. After the owner's Ja on the card, user and password
+are entered only in the desktop app (Verbindungen) and stay sealed in the vault. `kamera_standbild`
+fetches one still on request: the login goes only to the node that found the camera, only for that
+address, in a signed ephemeral `capture.request` over the encrypted direct mesh path; without such a
+path it ends with an error. The still lies at most 24 h in `.nova-vision/kamera`. No stream, no
+sound, no polling. Only ONVIF for now; a pure RTSP camera gets an honest answer.
+
 ### Vault key (30.10.2026)
 
 All sealed stores (Tresor `secrets/tresor`, connection access data `secrets/connections`,
