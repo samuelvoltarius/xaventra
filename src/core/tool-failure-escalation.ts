@@ -275,6 +275,25 @@ export function guardNoChangeClaim(content: string, executions: ReadonlyArray<Ex
     return escalationWithCompletedEffects(content, executions, tools)
 }
 
+/**
+ * 2.90.4 (Telegram "test" 23:23:51-24:01): mesh_delegate failed three times with the same error in one run. A tool
+ * that already failed twice in this run with the same failure signature (numbers and ids ignored, any arguments) is
+ * not run again; the note tells the model why. Returns null when the call may run.
+ */
+export function repeatedFailureNote(executions: ReadonlyArray<Execution>, toolName: string): string | null {
+    const signature = (result: unknown) => String(typeof result === 'string' ? result : JSON.stringify(result ?? ''))
+        .replace(/[0-9a-f]{8,}|\d+/gi, '#').replace(/\s+/g, ' ').trim().slice(0, 160)
+    const counts = new Map<string, number>()
+    for (const item of executions) {
+        if (item.toolName !== toolName || item.success !== false) continue
+        const key = signature(item.result)
+        const count = (counts.get(key) || 0) + 1
+        counts.set(key, count)
+        if (count >= 2) return `⚠️ ${toolName}: in diesem Auftrag zweimal mit demselben Fehler gescheitert („${key.slice(0, 120)}“) — nicht erneut ausgeführt. Sag dem Nutzer ehrlich, was nicht ging.`
+    }
+    return null
+}
+
 /** Values a successful hass_get returned in this run (at most 3); other reads have no safe short form. */
 function readValues(executions: ReadonlyArray<{ toolName?: string; success?: boolean; result?: unknown }>): string[] {
     const out: string[] = []

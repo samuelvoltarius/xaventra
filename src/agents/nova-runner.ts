@@ -40,7 +40,7 @@ import type { ResponseConstraint } from '../core/response-contract.js'
 import { isReasoningOnlyResponse, reasoningEffortForTurn, recoverReasoningOnlyResponse } from '../core/reasoning-policy.js'
 import { recoverMissingResource } from '../core/missing-resource-recovery.js'
 import { recoverTransientReadOnlyTool } from '../core/typed-tool-recovery.js'
-import { escalateVerifiedToolFailures, escalationWithCompletedEffects, type VerifiedToolFailureObservation } from '../core/tool-failure-escalation.js'
+import { escalateVerifiedToolFailures, escalationWithCompletedEffects, repeatedFailureNote, type VerifiedToolFailureObservation } from '../core/tool-failure-escalation.js'
 import { NativeToolReceiptStore } from '../core/native-tool-receipts.js'
 import { hydrateNativeToolCheckpoint, publishNativeToolCheckpoint } from '../core/native-tool-takeover.js'
 import { selectContractTools } from './tool-contract-selection.js'
@@ -1284,6 +1284,14 @@ Function Calls der API — kein Text, kein Code-Block, kein Beschreiben.`
                         }
                         // Soft warning: skip THIS tool but continue with others
                         toolResults.push(loopWarning)
+                        continue
+                    }
+
+                    // 2.90.4: the same tool with the same failure twice in this run is not run a third time.
+                    const repeated = repeatedFailureNote(toolExecutions as any, call.name)
+                    if (repeated) {
+                        console.log(`[Nova Agent] ⚠️ Skipping ${call.name} — failed twice with the same error in this run`)
+                        toolResults.push(repeated)
                         continue
                     }
 
