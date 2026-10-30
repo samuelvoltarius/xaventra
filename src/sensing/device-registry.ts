@@ -24,6 +24,8 @@ export type DeviceType = 'moonraker' | 'octoprint' | 'prusalink' | 'bambu' | 'ho
     | 'n8n' | 'paperless' | 'immich' | 'jellyfin' | 'nextcloud' | 'networkservice' | 'networkdevice'
     // 2.88: Proxmox VE (port 8006, own CA) — connected in „Verbindungen → Proxmox“ with one token.
     | 'proxmox'
+    // 30.10.2026: found by ONVIF/RTSP without login; connecting is a later, owner-approved step.
+    | 'camera'
 export type DeviceStatus = 'gefunden' | 'eingerichtet' | 'abgelehnt' | 'aus'
 
 export interface DeviceRecord {
@@ -75,6 +77,7 @@ export const DEVICE_LABEL: Record<DeviceType, string> = {
     networkservice: 'Netzwerkdienst (Typ und Steuerbarkeit ungeprüft)',
     networkdevice: 'LAN-Gerät (Nachbartabelle, Online-Status und Steuerbarkeit ungeprüft)',
     proxmox: 'Proxmox VE (VMs)',
+    camera: 'Kamera',
 }
 
 export function deviceId(candidate: Pick<DeviceCandidate, 'type' | 'host' | 'port'>): string {
@@ -173,7 +176,7 @@ export function setDeviceStatus(dataDir: string, id: string, status: 'abgelehnt'
  * 2.85 Paket A: services that are only listed under „Gefunden“ in „Verbindungen“ —
  * never auto-monitored, never asked about (Bedarfsregel: finding alone never asks).
  */
-export const SILENT_SERVICE_TYPES: ReadonlySet<DeviceType> = Object.freeze(new Set<DeviceType>(['n8n', 'paperless', 'immich', 'jellyfin', 'nextcloud', 'networkservice', 'networkdevice', 'proxmox'])) as ReadonlySet<DeviceType>
+export const SILENT_SERVICE_TYPES: ReadonlySet<DeviceType> = Object.freeze(new Set<DeviceType>(['n8n', 'paperless', 'immich', 'jellyfin', 'nextcloud', 'networkservice', 'networkdevice', 'proxmox', 'camera'])) as ReadonlySet<DeviceType>
 
 /** Types a read-only adapter can watch without any credential. */
 export const AUTO_MONITOR_TYPES: ReadonlySet<DeviceType> = Object.freeze(new Set<DeviceType>(['moonraker'])) as ReadonlySet<DeviceType>

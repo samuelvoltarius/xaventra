@@ -27,6 +27,13 @@
   by MiniMax but ignored: the model answered without seeing anything. It now
   uses `image_url` (format test on the live key), and the tool takes https
   addresses only.
+- **Xaventra recognises cameras in her own network.** The search now asks for
+  ONVIF cameras (WS-Discovery) and sends an RTSP `OPTIONS` to an open port
+  554, both without any login, only to addresses inside the own networks
+  (also on a scout node). A camera becomes a device of its own with the model
+  and maker it names openly, and a card „Neu gefunden: Kamera …“ says how she
+  would connect. No image is fetched, nothing is logged in to, and default
+  passwords are never tried; access data is entered only by the owner.
 
 ## [2.91.2] — 2026-10-30
 
