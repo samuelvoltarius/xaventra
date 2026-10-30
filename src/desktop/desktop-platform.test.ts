@@ -211,3 +211,22 @@ describe('Nova Desktop platform stores', () => {
         expect(files).not.toContain('desktop-old.png')
     })
 })
+
+describe('Ein Weg: ownerHistory am Raum ist ausdrücklich', () => {
+    it('is off unless set, survives a reload and can be taken back', async () => {
+        const { mkdtempSync, rmSync } = await import('node:fs')
+        const { tmpdir } = await import('node:os')
+        const { join } = await import('node:path')
+        const { TopicRoomStore } = await import('./topic-room-store.js')
+        const dir = mkdtempSync(join(tmpdir(), 'rooms-'))
+        try {
+            const file = join(dir, 'rooms.json')
+            const store = new TopicRoomStore(file)
+            const base = { title: 'Zentrale', topic: '', botIds: ['nova'], preferredNodeIds: [], modelMode: 'auto' as const }
+            expect(store.createRoom('owner', base).ownerHistory).toBeUndefined()
+            const marked = store.createRoom('owner', { ...base, ownerHistory: true })
+            expect(new TopicRoomStore(file).getRoom(marked.id, 'owner')?.ownerHistory).toBe(true)
+            expect(store.updateRoom(marked.id, 'owner', { ownerHistory: false }).ownerHistory).toBe(false)
+        } finally { rmSync(dir, { recursive: true, force: true }) }
+    })
+})

@@ -12,8 +12,34 @@
   helpers on nodes with a screen, maps and routes, music, a maker helper for
   boards and sensors.
 
-### Added (next patch, version set at release)
+### Fixed (next patch, version set at release)
 
+- **The repair sandbox starts again.** It allowed 1024 open files; with 1002
+  test files vitest stopped before the first test (`EMFILE`), so the
+  whole-project check could not pass. The limit is now 8192 and a test keeps it
+  well above the real number of test files.
+
+## [2.92.1] — 2026-10-30
+
+One way, step 1: the owner has one history on every surface. Plus cameras recognised without login and local stills for the vision model.
+
+### Added
+
+- **One history for the owner.** Telegram, HUD, CLI and every Desktop room
+  marked `ownerHistory` share the owner's history and run through the topic
+  threads; which history a turn belongs to is decided in one place. The mark
+  is set explicitly by the client (`POST`/`PATCH /api/desktop/rooms`) and only
+  counts for the owner; a room without it keeps its own history, so
+  acceptance and probe rooms stay apart.
+- **`/kontext` per channel.** Prompt built and sent, cut rate and model input
+  for each channel, rooms with their own history shown apart.
+- **Xaventra recognises cameras in her own network.** The search now asks for
+  ONVIF cameras (WS-Discovery) and sends an RTSP `OPTIONS` to an open port
+  554, both without any login, only to addresses inside the own networks
+  (also on a scout node). A camera becomes a device of its own with the model
+  and maker it names openly, and a card „Neu gefunden: Kamera …“ says how she
+  would connect. No image is fetched, nothing is logged in to, and default
+  passwords are never tried; access data is entered only by the owner.
 - **Xaventra can read her own screenshots.** `analyze_image` now evaluates
   lab captures (and later camera stills) with MiniMax, so she can say what is
   on the page she opened. Only images from the private folders and released
@@ -21,7 +47,7 @@
   desktop stay refused, and without a MiniMax key she says so instead of
   using another service.
 
-### Fixed (next patch, version set at release)
+### Fixed
 
 - **`minimax_vision` really sees the image.** The request format was accepted
   by MiniMax but ignored: the model answered without seeing anything. It now
@@ -45,6 +71,29 @@
   she says so and tries nothing.
   On Telegram the still goes to the asking owner as a picture; if that fails,
   or in the app (no attachment way yet), she says so.
+
+## [2.92.0] — 2026-10-30
+
+Self-repair, step 1: real errors become findings. Nothing here executes
+anything; the commands only show.
+
+### Added
+
+- **One real error line is one finding.** Uncaught exceptions, lost replies,
+  tool failures and unreadable vault stores each become one Doctor finding per
+  signature (the line without numbers and ids). A repeat raises the count;
+  the same failure in another task is the same case. `/doctor` lists
+  "Fehler-Signaturen" with signature, count and last seen; the stored line is
+  redacted and bounded.
+
+### Removed
+
+- **The old self-repair paths are gone.** `src/supervisor/*` (LLM fix, branch,
+  build, merge, `git reset --hard`), `src/watchdog.ts`,
+  `src/process/nova-watchdog.ts` with their bin entries and scripts, and the
+  `ResilienceManager`. None of them was in use. `/supervisor` now only points
+  to `/doctor`; code changes run through PATCH_GATE alone. The process
+  supervisor (`src/supervisor.ts`, `npm run supervisor`) stays.
 
 ## [2.91.2] — 2026-10-30
 

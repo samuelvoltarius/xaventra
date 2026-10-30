@@ -12,7 +12,6 @@ const ACTIVE_FILES = [
     'src/mesh/node-intelligence.ts',
     'src/tts/text-to-speech.ts',
     'src/utils/nova-utils.ts',
-    'src/process/nova-watchdog.ts',
 ]
 
 const writes = vi.hoisted(() => [] as Array<{ path: string; options: unknown }>)

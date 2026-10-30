@@ -57,6 +57,8 @@ export async function prepareTurnPrompt(input: {
     isGroup?: boolean
     replyTo?: string
     threadStore?: TopicThreadStore
+    /** Ein Weg: a Desktop turn in the owner history or in its own room (measured per channel). */
+    historyScope?: 'owner' | 'raum'
     profileEntities?: ReadonlyArray<{ name: string; kind: string; aliases?: string[] }>
 }): Promise<TurnContext> {
     const raw = input.prompt
@@ -159,6 +161,7 @@ export async function prepareTurnPrompt(input: {
                     taskPromptUntagged: metrics.taskPromptUntagged,
                     lagebildMode: metrics.lagebildMode,
                     lagebildChars: metrics.lagebildChars,
+                    historyScope: input.historyScope,
                     threadMode: metrics.threadMode,
                     threadId: metrics.threadId,
                     threadKey: metrics.threadKey,

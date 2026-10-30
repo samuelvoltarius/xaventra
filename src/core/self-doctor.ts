@@ -11,6 +11,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import { resolveConfigPath } from '../config/config-path.js'
+import { redactSecrets } from '../security/secret-redaction.js'
 
 
 export type DoctorSeverity = 'info' | 'warning' | 'critical'
@@ -148,6 +149,141 @@ export function recordRuntimeDoctorFinding(input: {
     return finding
 }
 
+// ---------------------------------------------------------------------------
+// 2.92.0 Selbstreparatur Stufe 1: one real error line = exactly one finding.
+// Uncaught exceptions, lost replies and tool failures are keyed by a signature
+// (the line without numbers/ids); a repeat only raises the count. Nothing here
+// executes anything: the finding is the input for the read-only Doctor research.
+// ---------------------------------------------------------------------------
+
+export type ErrorFindingSource = 'uncaught-exception' | 'reply-delivery' | 'tool-failure' | 'vault'
+
+export interface ErrorFindingInput {
+    source: ErrorFindingSource
+    /** What makes two occurrences the same error (normalized before hashing). */
+    key: string
+    /** The real log line, stored redacted as evidence. */
+    line: string
+    title: string
+    category?: DoctorFinding['category']
+    severity?: DoctorSeverity
+}
+
+export interface ErrorSignatureView {
+    id: string
+    signature: string
+    source: ErrorFindingSource
+    title: string
+    count: number
+    firstSeen: string
+    lastSeen: string
+    logLine: string
+    status: DoctorStatus
+}
+
+/** B4: a burst of the same error writes the store at most once per minute per signature. */
+const ERROR_FINDING_WRITE_GAP_MS = 60_000
+const MAX_LOG_LINE = 300
+const pendingErrorFindings = new Map<string, { input: ErrorFindingInput; signature: string; count: number; firstSeen: string; lastSeen: string; lastWrite?: number }>()
+
+export function normalizeErrorLine(text: string): string {
+    return String(text || '').replace(/[0-9a-f]{8,}/gi, '#').replace(/\d+/g, '#').replace(/\s+/g, ' ').trim().slice(0, 240)
+}
+
+export function errorFindingSignature(source: ErrorFindingSource, key: string): string {
+    return createHash('sha256').update(`${source}|${normalizeErrorLine(key)}`).digest('hex').slice(0, 12)
+}
+
+/** Record one occurrence; returns the written finding, or null while the write is deferred. */
+export function recordErrorFinding(input: ErrorFindingInput, options: { now?: Date; ingest?: boolean } = {}): DoctorFinding | null {
+    const now = options.now || new Date()
+    const signature = errorFindingSignature(input.source, input.key)
+    const id = stableId(['signature', signature])
+    const entry = pendingErrorFindings.get(id) || { input, signature, count: 0, firstSeen: now.toISOString(), lastSeen: now.toISOString() }
+    entry.input = input
+    entry.count++
+    entry.lastSeen = now.toISOString()
+    pendingErrorFindings.set(id, entry)
+    if (entry.lastWrite !== undefined && now.getTime() - entry.lastWrite < ERROR_FINDING_WRITE_GAP_MS) return null
+    return writeErrorFinding(id, now, options.ingest !== false)
+}
+
+/** Write every deferred count (the hourly Doctor run and /doctor call this). */
+export function flushErrorFindings(now: Date = new Date()): number {
+    let written = 0
+    for (const [id, entry] of pendingErrorFindings) {
+        if (entry.count > 0 && writeErrorFinding(id, now, false)) written++
+    }
+    return written
+}
+
+function writeErrorFinding(id: string, now: Date, ingest: boolean): DoctorFinding | null {
+    const entry = pendingErrorFindings.get(id)
+    if (!entry || entry.count === 0) return null
+    const store = loadFindings()
+    const existing = store.find(f => f.id === id)
+    const reopened = !existing || existing.status === 'resolved'
+    const evidence = existing?.evidence || {}
+    const logLine = redactSecrets(String(entry.input.line || '')).replace(/\s+/g, ' ').trim().slice(0, MAX_LOG_LINE)
+    const finding = upsertFinding(store, {
+        id,
+        title: entry.input.title,
+        detail: logLine,
+        category: entry.input.category || (entry.input.source === 'tool-failure' ? 'tools' : 'health'),
+        severity: entry.input.severity || 'warning',
+        source: `error-signature:${entry.input.source}`,
+        recommendation: 'Read-only Doctor research per signature; a code fix only via sandbox, regression test and PATCH_GATE.',
+        evidence: {
+            signature: entry.signature,
+            count: (Number(evidence.count) || 0) + entry.count,
+            firstSeen: String(evidence.firstSeen || entry.firstSeen),
+            lastSeen: entry.lastSeen,
+            logLine,
+        },
+    })
+    saveFindings(store)
+    entry.count = 0
+    entry.lastWrite = now.getTime()
+    void syncFinding(finding).catch(() => undefined)
+    if (ingest && reopened) {
+        void import('../doctor/failure-research-coordinator.js')
+            .then(({ getFailureResearchCoordinator }) => { getFailureResearchCoordinator().ingest(finding) })
+            .catch(() => undefined)
+    }
+    return finding
+}
+
+export function listErrorSignatures(): ErrorSignatureView[] {
+    return loadFindings()
+        .filter(f => String(f.source || '').startsWith('error-signature:'))
+        .map(f => ({
+            id: f.id,
+            signature: String(f.evidence?.signature || ''),
+            source: String(f.source).slice('error-signature:'.length) as ErrorFindingSource,
+            title: f.title,
+            count: Number(f.evidence?.count) || 0,
+            firstSeen: String(f.evidence?.firstSeen || f.createdAt),
+            lastSeen: String(f.evidence?.lastSeen || f.updatedAt),
+            logLine: String(f.evidence?.logLine || ''),
+            status: f.status,
+        }))
+        .sort((a, b) => b.lastSeen.localeCompare(a.lastSeen))
+}
+
+/** /doctor section: open signatures, newest first — „Titel — Signatur · Anzahl× · zuletzt“. */
+export function formatErrorSignatures(options: { timeZone?: string; limit?: number } = {}): string {
+    const open = listErrorSignatures().filter(item => item.status === 'open')
+    if (!open.length) return ''
+    const when = new Intl.DateTimeFormat('de-AT', { timeZone: options.timeZone || 'Europe/Vienna', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })
+    const format = (iso: string) => {
+        const parts = Object.fromEntries(when.formatToParts(new Date(iso)).map(part => [part.type, part.value]))
+        return `${parts.day}.${parts.month}. ${parts.hour}:${parts.minute}`
+    }
+    const lines = open.slice(0, options.limit ?? 5).map(item => `• ${item.title} — ${item.signature} · ${item.count}× · zuletzt ${format(item.lastSeen)}`)
+    const more = open.length > lines.length ? `\n… +${open.length - lines.length} weitere` : ''
+    return `Fehler-Signaturen (${open.length} offen):\n${lines.join('\n')}${more}`
+}
+
 function loadSupabaseConfig(): { url: string; key: string } | null {
     try {
         const configPath = resolveConfigPath()
@@ -225,6 +361,7 @@ export function updateDoctorFindingStatus(id: string, status: DoctorStatus): boo
 }
 
 export async function runSelfDoctor(): Promise<DoctorRunResult> {
+    flushErrorFindings()
     const findings = loadFindings()
     const runStartedAt = nowIso()
     // What this run loaded. Only entries that differ from it were changed by
