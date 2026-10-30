@@ -505,7 +505,22 @@ export function routedToolNames(): string[] { return [...STATICALLY_ROUTED] }
  */
 export function toolExpansionPolicy(primaryMessage: string): { sealed: boolean; excluded: ReadonlySet<string> } {
     if (isNodeWorkstationRequest(primaryMessage) || isNodeScreenshotRequest(primaryMessage) || isDirectUrlCheck(primaryMessage)) return { sealed: true, excluded: new Set() }
+    if (isTopiclessShortMessage(primaryMessage)) return { sealed: true, excluded: new Set() }
     return { sealed: false, excluded: routeExclusions(primaryMessage, detectActionIntent(primaryMessage)) }
+}
+
+/** Probe and greeting words: a message made only of them (and the assistant's name) names no topic of its own. */
+const PROBE_OR_GREETING = /^(?:(?:test|testen|teste|probe|ping|hallo|hi|hey|hello|servus|moin|huhu|yo|xaventra|nova)[\s,!?.…]*){1,3}$/iu
+
+/**
+ * 2.90.4 (Telegram "test" 23:23:37): a probe or greeting without a topic of its own ("test", "hallo?", "ping") loads
+ * no tool pack from the history: no load_skill_pack, no history-only packs, no on-demand tools. Deliberately a
+ * fixed list - a single word like "status" or "wetter" is a request; "weiter"/"ja" keep the open task's way.
+ * Topic threads in general follow in 2.91.
+ */
+export function isTopiclessShortMessage(primaryMessage: string): boolean {
+    const value = String(primaryMessage || '').trim()
+    return value.length > 0 && value.length <= 40 && PROBE_OR_GREETING.test(value)
 }
 
 // ============================================
@@ -711,14 +726,16 @@ export function getRelevantTools(
 
     const dynamic = dynamicMatches(allTools, primaryMessage)
     const nothingMatched = !explicitToolNames.length && !liveTools.length && !rankedPacks.length && !dynamic.length
+    // 2.90.4: "test" & co. pick up neither the fallback pack loader nor packs that only the history names.
+    const topicless = isTopiclessShortMessage(primaryMessage)
     const prioritizedNames = [
         ...CORE_TOOLS,
-        ...(nothingMatched ? FALLBACK_TOOLS : []),
+        ...(nothingMatched && !topicless ? FALLBACK_TOOLS : []),
         ...explicitToolNames,
         ...liveTools,
         ...rankedPacks.filter(candidate => candidate.primaryScore > 0).flatMap(candidate => candidate.pack.tools),
         ...dynamic,
-        ...rankedPacks.filter(candidate => candidate.primaryScore <= 0).flatMap(candidate => candidate.pack.tools),
+        ...(topicless ? [] : rankedPacks.filter(candidate => candidate.primaryScore <= 0).flatMap(candidate => candidate.pack.tools)),
     ]
     const relevant = [...new Set(prioritizedNames)]
         .filter(name => !excluded.has(name) && !credentialMissing(name))
