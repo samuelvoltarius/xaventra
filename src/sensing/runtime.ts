@@ -34,6 +34,7 @@ import { markHardwareAsked, sensingDeviceFingerprint, deviceId } from './device-
 import { createHardwareAdapter } from './adapters/hardware.js'
 import { refreshHaInventory, haInventoryEvents } from './ha-inventory.js'
 import { realSsdpBrowse } from './ssdp.js'
+import { realOnvifBrowse, realRtspProbe } from './camera-discovery.js'
 import { realTuyaBrowse } from './tuya-discovery.js'
 import { createDirectSmartAdapter, requestHuePairing } from './direct-smart-devices.js'
 import { chooseSmartRoute, selectedSmartRoute, approveSmartRoute, smartRouteEvents } from './smart-device-route.js'
@@ -217,11 +218,13 @@ async function runScoutOnce(deps: DiscoveryDeps = {}): Promise<void> {
         deadlineMs: cfg.discovery.deadlineSec * 1000, ratePerSec: cfg.discovery.ratePerSec, concurrency: cfg.discovery.concurrency,
         maxHosts: cfg.discovery.maxHosts, mdns: cfg.discovery.mdns, tailnetHosts: cfg.discovery.tailnetHosts, allowSubnets: cfg.discovery.subnets,
     }, { mdnsBrowse: cfg.discovery.mdns ? realMdnsBrowse : undefined, ssdpBrowse: cfg.discovery.mdns ? ms => realSsdpBrowse(ms, deps.interfaces) : undefined,
+            onvifBrowse: cfg.discovery.mdns ? ms => realOnvifBrowse(ms, deps.interfaces) : undefined, rtspProbe: realRtspProbe,
         tuyaBrowse: cfg.discovery.mdns ? ms => realTuyaBrowse(ms, deps.interfaces) : undefined, ...deps })
     const payload = {
         subnets: report.scope.subnets.slice(0, 8), hasTailnet: report.scope.hasTailnet,
         candidates: report.candidates.slice(0, 512).map(c => ({ type: c.type, host: c.host, port: c.port, via: c.via,
-            ...(c.name ? { name: cleanText(c.name, 120) } : {}) })),
+            ...(c.name ? { name: cleanText(c.name, 120) } : {}),
+            ...(c.evidence && JSON.stringify(c.evidence).length <= 2000 ? { evidence: c.evidence } : {}) })),
     }
     const { publishDiscoveryReport } = await import('../mesh/mesh-transport-runtime.js')
     await publishDiscoveryReport(payload)
@@ -329,6 +332,7 @@ async function performDiscovery(deps: RunDeps, signal?: AbortSignal): Promise<st
             maxHosts: cfg.discovery.maxHosts, mdns: cfg.discovery.mdns, tailnetHosts: cfg.discovery.tailnetHosts, allowSubnets: cfg.discovery.subnets,
             cursor: readDiscoveryCursor(dataDir), signal: controller.signal,
         }, { mdnsBrowse: cfg.discovery.mdns ? realMdnsBrowse : undefined, ssdpBrowse: cfg.discovery.mdns ? ms => realSsdpBrowse(ms, deps.interfaces) : undefined,
+            onvifBrowse: cfg.discovery.mdns ? ms => realOnvifBrowse(ms, deps.interfaces) : undefined, rtspProbe: realRtspProbe,
             tuyaBrowse: cfg.discovery.mdns ? ms => realTuyaBrowse(ms, deps.interfaces, controller.signal) : undefined, ...deps })
         if (controller.signal.aborted) return 'Geräte-Suche beim Stoppen abgebrochen.'
         const known = loadDevices(dataDir)

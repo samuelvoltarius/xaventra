@@ -26,8 +26,8 @@ import { isIP } from 'node:net'
 import { atomicWriteJsonSync } from '../core/atomic-storage.js'
 import { loadDevices, type DeviceCandidate, type DeviceRecord, type DeviceStatus, type DeviceType } from './device-registry.js'
 
-export type GeraetArt = 'homeassistant' | 'hue' | 'tuya' | 'matter' | 'drucker' | 'tv' | 'dienst' | 'geraet'
-export type VerbindenArt = 'homeassistant' | 'hue' | 'tuya' | 'matter'
+export type GeraetArt = 'homeassistant' | 'hue' | 'tuya' | 'matter' | 'kamera' | 'drucker' | 'tv' | 'dienst' | 'geraet'
+export type VerbindenArt = 'homeassistant' | 'hue' | 'tuya' | 'matter' | 'kamera'
 
 export interface GeraetDienst { id: string; typ: DeviceType; port: number; via: DeviceRecord['via']; status: DeviceStatus; adresse: string }
 export interface Geraet {
@@ -184,6 +184,7 @@ function artOf(r: DeviceRecord): { art: GeraetArt; score: number } {
     if (isHue(r)) return { art: 'hue', score: 90 }
     if (r.hardware?.ecosystem === 'tuya') return { art: 'tuya', score: 80 }
     if (r.hardware?.connector === 'matter-ip' || ['_matter._tcp.local', '_matterc._udp.local'].includes(service(r))) return { art: 'matter', score: 70 }
+    if (r.type === 'camera') return { art: 'kamera', score: 65 }
     if (PRINTERS.has(r.type) || r.hardware?.kind === 'printer' || ['_ipp._tcp.local', '_ipps._tcp.local'].includes(service(r))) return { art: 'drucker', score: 60 }
     if (r.hardware?.kind === 'tv' || ['_googlecast._tcp.local', '_airplay._tcp.local'].includes(service(r))) return { art: 'tv', score: 50 }
     if (!UNSPECIFIC.has(r.type)) return { art: 'dienst', score: 40 }
@@ -193,7 +194,7 @@ function artOf(r: DeviceRecord): { art: GeraetArt; score: number } {
 }
 
 const ART_TITLE: Record<GeraetArt, string> = {
-    homeassistant: 'Home Assistant', hue: 'Hue Bridge', tuya: 'Tuya-Gerät', matter: 'Matter-Gerät', drucker: 'Drucker', tv: 'TV/Medien', dienst: 'Dienst', geraet: 'Gerät',
+    homeassistant: 'Home Assistant', hue: 'Hue Bridge', tuya: 'Tuya-Gerät', matter: 'Matter-Gerät', kamera: 'Kamera', drucker: 'Drucker', tv: 'TV/Medien', dienst: 'Dienst', geraet: 'Gerät',
 }
 /** 2.86.1: own services in plain words (the „Dienste“ list under Verbindungen). */
 const SERVICE_TITLE: Partial<Record<DeviceType, string>> = { n8n: 'Automationen (n8n)', paperless: 'Dokumente (Paperless)', immich: 'Fotos (Immich)', jellyfin: 'Filme und Serien (Jellyfin)', nextcloud: 'Dateien (Nextcloud)' }
@@ -229,6 +230,11 @@ function alltagsName(art: GeraetArt, primary: DeviceRecord, members: DeviceRecor
     if (art === 'homeassistant' || art === 'hue' || art === 'tuya' || art === 'matter') return ART_TITLE[art]
     const all = [primary, ...members.filter(m => m !== primary)]
     const ev = (key: string) => all.map(m => readable(str(m.evidence?.[key]))).find(Boolean) || ''
+    if (art === 'kamera') {
+        const name = all.map(m => m.type === 'camera' && m.name !== `Kamera ${m.host}` ? readable(m.name) : '').find(Boolean) || ''
+        const modell = [ev('manufacturer'), ev('model')].filter(Boolean).join(' ') || ev('server')
+        return ['Kamera', name, modell ? `(${modell})` : ''].filter(Boolean).join(' ')
+    }
     const confirmed = all.find(m => m.hardware?.certainty === 'confirmed')?.hardware
     const services = all.map(service)
     const modell = [ev('md'), ev('model'), ev('ty'), ev('modelid'), confirmed?.model || ''].filter(Boolean).join(' ')
@@ -328,11 +334,11 @@ export function consolidateDevices(records: DeviceRecord[], ctx: Konsolidierungs
             ort: tailnet ? 'Heimnetz + Tailnet' : 'Heimnetz', adressen,
             dienste: members.map(m => ({ id: m.id, typ: m.type, port: m.port, via: m.via, status: m.status, adresse: m.host })).sort((a, b) => a.adresse.localeCompare(b.adresse) || a.port - b.port || a.id.localeCompare(b.id)),
             primaryId: primary.id, status,
-            verbinden: status === 'gefunden' && ['homeassistant', 'hue', 'tuya', 'matter'].includes(best.art) ? best.art as VerbindenArt : null,
+            verbinden: status === 'gefunden' && ['homeassistant', 'hue', 'tuya', 'matter', 'kamera'].includes(best.art) ? best.art as VerbindenArt : null,
             lastSeenAt: members.map(m => m.lastSeenAt).sort().at(-1) || primary.lastSeenAt,
         })
     }
-    const order: Record<GeraetArt, number> = { homeassistant: 0, hue: 1, tuya: 2, matter: 3, drucker: 4, tv: 5, dienst: 6, geraet: 7 }
+    const order: Record<GeraetArt, number> = { homeassistant: 0, hue: 1, tuya: 2, matter: 3, kamera: 4, drucker: 5, tv: 6, dienst: 7, geraet: 8 }
     geraete.sort((a, b) => order[a.art] - order[b.art] || a.titel.localeCompare(b.titel) || a.id.localeCompare(b.id))
     // 2.86.1 Punkt 2: never two identical lines — devices without a shared feature are numbered.
     const gesehen = new Map<string, number>()

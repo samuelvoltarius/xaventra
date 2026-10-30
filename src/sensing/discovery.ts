@@ -33,6 +33,7 @@ import { isPrivateRange, isTailnet, ownSubnets, restrictScope, scanHosts, scanTa
 import { DEVICE_LABEL, type DeviceCandidate, type DeviceType } from './device-registry.js'
 import { cleanText, sensingLog } from './ports.js'
 import type { SsdpDescription } from './ssdp.js'
+import type { OnvifFind, RtspAnswer } from './camera-discovery.js'
 import { identifyHardware } from './hardware-recognition.js'
 
 export const DISCOVERY_PORTS = Object.freeze([22, 443, 80, 445, 3389, 631, 9100, 554, 1883, 8080, 8443, 7125, 5000, 8883, 8123, 5678, 8000, 2283, 8096, 8006])
@@ -49,6 +50,10 @@ export interface DiscoveryDeps {
     mdnsBrowse?: (timeoutMs: number) => Promise<Array<{ type: DeviceType; host: string; port: number; name?: string; hints?: Record<string, string> }>>
     ssdpBrowse?: (timeoutMs: number) => Promise<SsdpDescription[]>
     tuyaBrowse?: (timeoutMs: number) => Promise<DeviceCandidate[]>
+    /** ONVIF WS-Discovery (no login); every answer is re-checked against the gate. */
+    onvifBrowse?: (timeoutMs: number) => Promise<OnvifFind[]>
+    /** RTSP OPTIONS on an open port 554 (no login, no image). */
+    rtspProbe?: (host: string, port: number, timeoutMs: number) => Promise<RtspAnswer | null>
     now?: () => number
     sleep?: (ms: number) => Promise<void>
     tailnetPeers?: () => Promise<string[]>
@@ -361,6 +366,18 @@ export async function discoverDevices(options: DiscoveryOptions, deps: Discovery
             }
         }
     }
+    // Kameras erkennen: ONVIF answers are untrusted, the gate decides each address.
+    if (options.mdns && deps.onvifBrowse && !limiter.expired() && !options.signal?.aborted) {
+        const found = await deps.onvifBrowse(Math.min(2000, options.deadlineMs / 8)).catch(() => [])
+        for (const camera of found.slice(0, 32)) {
+            const decision = scanTargetAllowed(camera.host, scope)
+            if (!decision.allowed) { rejected.push({ host: camera.host, reason: `ONVIF: ${decision.reason}` }); continue }
+            if (!Number.isInteger(camera.port) || camera.port < 1 || camera.port > 65535) continue
+            add({ type: 'camera', host: camera.host, port: camera.port, via: 'udp', ...(camera.name ? { name: cleanText(camera.name, 80) } : {}),
+                evidence: { quelle: 'ONVIF WS-Discovery (ohne Anmeldung)', port: camera.port,
+                    ...(camera.model ? { model: cleanText(camera.model, 80) } : {}), ...(camera.manufacturer ? { manufacturer: cleanText(camera.manufacturer, 80) } : {}) } })
+        }
+    }
     const probeHost = async (host: string, hostIndex: number): Promise<void> => {
         const firstPort = hostIndex === 0 && validCursor && hostOffset === saved.hostOffset ? saved.portIndex : 0
         progress.set(hostIndex, firstPort)
@@ -372,6 +389,15 @@ export async function discoverDevices(options: DiscoveryOptions, deps: Discovery
             const open = await limiter.run(() => tcpProbe(host, port, probeTimeout))
             if (open === undefined) return
             if (!open) { progress.set(hostIndex, portIndex + 1); continue }
+            if (port === 554 && deps.rtspProbe) {
+                const answer = await limiter.run(() => deps.rtspProbe!(host, port, probeTimeout))
+                if (answer === undefined) return
+                if (answer) {
+                    add({ type: 'camera', host, port, via: 'tcp', evidence: { quelle: 'RTSP OPTIONS (ohne Anmeldung)', port, rtsp: answer.status, zugang: answer.zugang, ...(answer.server ? { server: cleanText(answer.server, 80) } : {}) } })
+                    progress.set(hostIndex, portIndex + 1)
+                    continue
+                }
+            }
             if (port === 8883) {
                 add({ type: 'networkservice', host, port, via: 'tcp', evidence: { quelle: 'TCP-Connect', port, hinweis: 'TLS/MQTT-Port offen; kein Beleg für einen Bambu-Drucker' } })
                 progress.set(hostIndex, portIndex + 1)

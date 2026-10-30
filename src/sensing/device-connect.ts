@@ -77,6 +77,7 @@ const SCHRITT: Record<string, string> = {
     hue: 'Drück die runde Taste auf der Hue Bridge, dann Ja',
     tuya: 'Danach einmal den Code aus der Tuya-App eingeben',
     matter: 'Danach den Code vom Aufkleber am Gerät eingeben',
+    kamera: 'Benutzer und Passwort der Kamera in der App eingeben',
 }
 
 function kurzOf(g: Geraet): string {
@@ -102,6 +103,10 @@ function cardInputs(g: Geraet, weg?: 'local' | 'cloud'): Array<Parameters<typeof
             // The way over the manufacturer is only an explicit wish in the app — its own question.
             dedupeKey: route === 'local' ? key : `${key}:cloud` }]
     }
+    // Kameras erkennen: found without login; the card says the way, nothing is tried on its own.
+    if (g.verbinden === 'kamera') return [{ ...base, titel: `Neu gefunden: ${g.titel}`, beleg: `${g.titel} in deinem Netz gefunden, ohne Anmeldung erkannt. Bisher kein Bild und kein Login.`,
+        aktion: { kind: DEVICE_CONNECT_KIND, ref: g.primaryId },
+        vorschlag: 'So würde ich mich verbinden: über ONVIF oder RTSP, nur lesend, ein Standbild auf Abruf. Dafür brauche ich Benutzer und Passwort der Kamera; die gibst nur du in der App unter Verbindungen ein (nicht im Chat). Standard-Passwörter probiere ich nie aus.', dedupeKey: key }]
     if (g.verbinden === 'matter') return [{ ...base, titel: 'Smart-Gerät verbinden?', beleg, aktion: { kind: DEVICE_CONNECT_KIND, ref: g.primaryId },
         vorschlag: 'Ja = ich bereite das Verbinden vor. Den Code vom Aufkleber am Gerät gibst du danach in der App unter Verbindungen ein (nicht im Chat). Geschaltet wird nichts.', dedupeKey: key }]
     return []
@@ -225,6 +230,7 @@ export async function connectDevice(deps: DeviceConnectDeps, ref: string, approv
         return approved
     }
     if (geraet.art === 'hue') return connectHue(deps, record, approver)
+    if (geraet.art === 'kamera') return { ok: true, message: 'Vorgemerkt. Der Kamera-Anschluss kommt im nächsten Schritt; dann gibst du Benutzer und Passwort in der App ein. Bis dahin ist nichts angemeldet und es gibt kein Bild.' }
     if (geraet.art === 'tuya' || geraet.art === 'matter') {
         const way: SmartRoute = geraet.art === 'tuya' && route === 'cloud' ? 'cloud' : 'local'
         const chosen = chooseSmartRoute(deps.dataDir, id, way, approver, nowOf(deps))

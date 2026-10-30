@@ -12,9 +12,9 @@
   helpers on nodes with a screen, maps and routes, music, a maker helper for
   boards and sensors.
 
-## [Next] — Nummer vergibt die Integration
+## [2.92.1] — 2026-10-30
 
-One way, step 1: the owner has one history on every surface.
+One way, step 1: the owner has one history on every surface. Plus cameras recognised without login and local stills for the vision model.
 
 ### Added
 
@@ -26,6 +26,13 @@ One way, step 1: the owner has one history on every surface.
   acceptance and probe rooms stay apart.
 - **`/kontext` per channel.** Prompt built and sent, cut rate and model input
   for each channel, rooms with their own history shown apart.
+- **Xaventra recognises cameras in her own network.** The search now asks for
+  ONVIF cameras (WS-Discovery) and sends an RTSP `OPTIONS` to an open port
+  554, both without any login, only to addresses inside the own networks
+  (also on a scout node). A camera becomes a device of its own with the model
+  and maker it names openly, and a card „Neu gefunden: Kamera …“ says how she
+  would connect. No image is fetched, nothing is logged in to, and default
+  passwords are never tried; access data is entered only by the owner.
 
 ## [2.92.0] — 2026-10-30
 

@@ -51,7 +51,7 @@ export interface FoundItem {
     zustand?: Verbindungszustand
     grund?: string
     /** Paket L: one real device (consolidated); `verbinden` = its connect way (button in the view). */
-    geraet?: { id: string; verbinden: 'homeassistant' | 'hue' | 'tuya' | 'matter' | null; dienste: number }
+    geraet?: { id: string; verbinden: 'homeassistant' | 'hue' | 'tuya' | 'matter' | 'kamera' | null; dienste: number }
     /** 2.88: no checked connector — matching entries from the (cached, checked) MCP directory. */
     verzeichnis?: Vorschlag[]
 }
@@ -204,6 +204,7 @@ export async function collectConnections(deps: ViewDeps = {}): Promise<Connectio
         hue: 'kann dann die Lampen lesen; geschaltet wird nur nach eigener Karte',
         tuya: 'kann dann lesen (lokal oder Cloud, du wählst); geschaltet wird nur nach eigener Karte',
         matter: 'kann nach der Kopplung lesen; geschaltet wird nur nach eigener Karte',
+        kamera: 'ohne Anmeldung erkannt; Bild erst nach deinem Zugang, nur lesend',
         tv: 'erkannt; Steuerbarkeit noch ungeprüft', geraet: 'erkannt; Typ und Steuerbarkeit noch ungeprüft',
     }
     const konsolidiert = consolidateDevices(records as any, ctx)
